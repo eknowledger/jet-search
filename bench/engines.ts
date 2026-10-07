@@ -1,4 +1,5 @@
 import type { BenchEngine } from "./engine";
+import { fts5Engine, initFts5 } from "./fts5-engine";
 import { jadeEngine } from "./jade-engine";
 import { jetEngine } from "./jet-engine";
 
@@ -7,4 +8,11 @@ export const ENGINES: Record<string, () => BenchEngine> = {
 	jade: jadeEngine,
 	jet: jetEngine,
 	"jet-score": () => jetEngine(false),
+	fts5: () => fts5Engine({ detail: "column" }),
+	"fts5-none": () => fts5Engine({ detail: "none" }),
+};
+
+/** Engines that need set-up before use (SQLite's WASM module), once per process. */
+export const prepare = async (name: string): Promise<void> => {
+	if (name.startsWith("fts5")) await initFts5();
 };
