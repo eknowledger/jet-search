@@ -3,6 +3,7 @@ import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Entry, ModalHost, OpenHow } from "./modal/jet-modal";
 import type { Search } from "./search";
+import type { IndexStatus } from "./index-status";
 
 /** The icon for a note, by its `type` property: email, project, otherwise a page. */
 export const iconOf = (app: App, file: TFile): string => {
@@ -24,7 +25,60 @@ export class JetHost implements ModalHost {
 		private readonly save: () => void,
 		private readonly newTab: () => boolean,
 		private readonly search: () => Search,
+		private readonly index?: { status: () => Promise<IndexStatus>; rebuild: () => Promise<void> },
 	) {}
+
+	/** The popover from the footer: excerpts, the double tap window, the index. */
+	renderSettings(el: HTMLElement): void {
+		const s = this.data().settings;
+		const row = (name: string, desc: string): HTMLElement => {
+			const r = el.createDiv({ cls: "jet-si2" });
+			const t = r.createDiv({ cls: "jet-sitx" });
+			t.createDiv({ cls: "jet-sinm", text: name });
+			t.createDiv({ cls: "jet-sids", text: desc });
+			return r;
+		};
+		const ex = row("Show excerpts", "A line around the best hit");
+		const tog = ex.createDiv({ cls: `checkbox-container${s.excerpts ? " is-enabled" : ""}` });
+		tog.addEventListener("click", () => {
+			s.excerpts = !s.excerpts;
+			tog.toggleClass("is-enabled", s.excerpts);
+			this.save();
+		});
+		const win = row("Double tap window", "Two clean taps of ⇧ within this time");
+		const sel = win.createEl("select", { cls: "dropdown" });
+		for (const ms of [250, 350, 500]) sel.createEl("option", { text: `${ms} ms`, attr: { value: String(ms) } });
+		sel.value = String(s.shiftInterval);
+		sel.addEventListener("change", () => {
+			s.shiftInterval = Number(sel.value);
+			this.save();
+		});
+		if (!this.index) return;
+		const card = el.createDiv({ cls: "jet-idx" });
+		const head = card.createDiv({ cls: "jet-ir" });
+		const state = head.createSpan({ cls: "jet-ok", text: "…" });
+		const rb = head.createSpan({ cls: "jet-rb2", text: "Rebuild", attr: { role: "button" } });
+		const grid = card.createDiv({ cls: "jet-ig" });
+		const fill = (x: IndexStatus): void => {
+			state.setText(x.state);
+			state.toggleClass("is-warn", !x.ok);
+			grid.empty();
+			for (const [k, v] of [
+				["Notes", x.notes],
+				["Size", x.size],
+				["Updated", x.updated],
+			]) {
+				grid.createSpan({ text: k });
+				grid.createSpan({ text: v });
+			}
+		};
+		const index = this.index;
+		void index.status().then(fill);
+		rb.addEventListener("click", () => {
+			state.setText("Rebuilding…");
+			void index.rebuild().then(() => index.status().then(fill));
+		});
+	}
 
 	list(text: string, paint: (entries: Entry[], status?: string) => void): void {
 		if (!text.trim()) {
@@ -147,7 +201,7 @@ export class JetHost implements ModalHost {
 			await this.app.workspace.getLeaf(this.newTab() ? "tab" : false).openFile(file);
 		})().catch((e: unknown) => {
 			console.error("Jet Search: could not create the note", e);
-			new Notice("Jet Search: could not create the note");
+			new Notice("The note could not be created.");
 		});
 	}
 

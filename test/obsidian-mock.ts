@@ -360,6 +360,62 @@ export class Setting {
 		this.descEl.textContent = description;
 		return this;
 	}
+
+	setHeading(): this {
+		this.settingEl.classList.add("setting-item-heading");
+		return this;
+	}
+
+	addToggle(f: (c: Control) => unknown): this {
+		f(new Control(this.controlEl));
+		return this;
+	}
+
+	addDropdown(f: (c: Control) => unknown): this {
+		f(new Control(this.controlEl));
+		return this;
+	}
+
+	addTextArea(f: (c: Control) => unknown): this {
+		f(new Control(this.controlEl));
+		return this;
+	}
+
+	addButton(f: (c: Control) => unknown): this {
+		f(new Control(this.controlEl));
+		return this;
+	}
+}
+
+/** Any setting control: every setter chains, onChange/onClick keep the handler. */
+export class Control {
+	readonly buttonEl = document.createElement("button");
+	handler: ((v: unknown) => unknown) | null = null;
+	constructor(readonly el: HTMLElement) {
+		el.appendChild(this.buttonEl);
+	}
+	setValue(): this {
+		return this;
+	}
+	addOptions(): this {
+		return this;
+	}
+	setButtonText(t: string): this {
+		this.buttonEl.textContent = t;
+		return this;
+	}
+	onChange(h: (v: unknown) => unknown): this {
+		this.handler = h;
+		return this;
+	}
+	onClick(h: () => unknown): this {
+		this.handler = h;
+		return this;
+	}
+	then(f: (x: this) => unknown): this {
+		f(this);
+		return this;
+	}
 }
 
 export class Notice {

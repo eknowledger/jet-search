@@ -12,6 +12,8 @@ export type JetSettings = {
 	newTab: boolean;
 	/** Show the preview pane (⌘. toggles). */
 	preview: boolean;
+	/** Show an excerpt line under results found in the text. */
+	excerpts: boolean;
 	/** Folders left out of the index, as path prefixes. */
 	exclude: string[];
 	/** Stemming languages (English on by default). */
@@ -23,6 +25,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	shiftInterval: 350,
 	newTab: false,
 	preview: true,
+	excerpts: true,
 	exclude: [],
 	stemming: ["en"],
 };
@@ -53,6 +56,7 @@ export const normalizeData = (raw: unknown): JetData => {
 				: DEFAULT_SETTINGS.shiftInterval,
 		newTab: typeof s.newTab === "boolean" ? s.newTab : DEFAULT_SETTINGS.newTab,
 		preview: typeof s.preview === "boolean" ? s.preview : DEFAULT_SETTINGS.preview,
+		excerpts: typeof s.excerpts === "boolean" ? s.excerpts : DEFAULT_SETTINGS.excerpts,
 		exclude: Array.isArray(s.exclude) ? s.exclude.filter((x): x is string => typeof x === "string") : [],
 		stemming: Array.isArray(s.stemming) ? s.stemming.filter((x): x is string => typeof x === "string") : ["en"],
 	};

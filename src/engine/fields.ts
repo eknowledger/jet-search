@@ -111,6 +111,9 @@ export type RawNote = {
 	inLinks: number;
 };
 
+/** Body text indexed per note, at most (a huge note never stalls the index). */
+export const MAX_BODY_CHARS = 2_000_000;
+
 /** A note's fields from what Obsidian gathered (the worker's side of `RawNote`). */
 export const fieldsFromRaw = (r: RawNote): NoteInput => {
 	const folders = r.path.split("/").slice(0, -1);
@@ -123,7 +126,7 @@ export const fieldsFromRaw = (r: RawNote): NoteInput => {
 		tags: terms(r.tags.join(" ")),
 		folder: terms(folders.join(" ")),
 		links: terms(r.links.join(" ")),
-		body: terms(r.text.slice(r.bodyStart).replace(/\]\([^)\s]*\)/g, "]")),
+		body: terms(r.text.slice(r.bodyStart, r.bodyStart + MAX_BODY_CHARS).replace(/\]\([^)\s]*\)/g, "]")),
 	};
 	for (const h of r.headings)
 		(h.level === 1 ? fields.h1 : h.level === 2 ? fields.h2 : fields.h3).push(...terms(h.text));

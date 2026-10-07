@@ -50,6 +50,8 @@ export type ModalHost = {
 	insertLink(path: string): void;
 	/** ⇧↵: create a note named after the text and open it. */
 	create(text: string): void;
+	/** The footer's settings popover, if this host has one. */
+	renderSettings?(el: HTMLElement): void;
 };
 
 /** The selection rests this long before the preview renders. */
@@ -204,6 +206,25 @@ export class JetModal extends Modal {
 			h.createEl("kbd", { text: key });
 			h.appendText(label);
 		}
+		const render = this.host.renderSettings?.bind(this.host);
+		if (!render) return;
+		this.footEl.createSpan({ cls: "jet-sp" });
+		const btn = this.footEl.createSpan({
+			cls: "jet-fbt",
+			attr: { "aria-label": "Search settings", role: "button" },
+		});
+		setIcon(btn, "sliders-horizontal");
+		btn.addEventListener("mousedown", (e) => e.preventDefault());
+		btn.addEventListener("click", () => {
+			const open = this.contentEl.querySelector(".jet-setp");
+			if (open) {
+				open.remove();
+				btn.removeClass("is-on");
+				return;
+			}
+			btn.addClass("is-on");
+			render(this.contentEl.createDiv({ cls: "jet-setp" }));
+		});
 	}
 
 	private render(): void {

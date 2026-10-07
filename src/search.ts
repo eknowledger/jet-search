@@ -67,7 +67,8 @@ export class Search {
 				return;
 			}
 			paint(first, this.status());
-			// Excerpts for the rows people see, cut from Obsidian's cached text.
+			// Excerpts for the rows people see, cut from Obsidian's cached text, unless turned off.
+			if (!this.data().settings.excerpts) return;
 			const excerpts = await this.excerpts(first, reply.terms);
 			if (excerpts.size) paint(this.compose(tier0, reply, now, excerpts), this.status());
 		})().catch((e: unknown) => console.error("Jet Search: search failed", e));

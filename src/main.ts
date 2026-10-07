@@ -3,6 +3,7 @@ import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
 import { Feeder } from "./index/feeder";
+import { indexStatus, rebuild } from "./index-status";
 import { addCommandAs, hasCommand, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
@@ -63,6 +64,7 @@ export default class JetSearchPlugin extends Plugin {
 				this.wake();
 				return this.search;
 			},
+			{ status: () => indexStatus(this), rebuild: () => rebuild(this) },
 		);
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
