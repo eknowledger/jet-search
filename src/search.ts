@@ -1,4 +1,4 @@
-import { type App, parseFrontMatterAliases, type TFile } from "obsidian";
+import { type App, type CachedMetadata, getAllTags, parseFrontMatterAliases, type TFile } from "obsidian";
 import { type JetData, frecency } from "./data";
 import { cutExcerpt } from "./excerpt/excerpt";
 import { filterPhrases, PHRASE_CHECK_LIMIT, quotedPhrases } from "./rank";
@@ -6,6 +6,7 @@ import { iconOf } from "./host";
 import type { Feeder } from "./index/feeder";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Entry } from "./modal/jet-modal";
+import { type MetaField, type MetaHit, MetaIndex, type MetaNote } from "./tier0/meta";
 import { type NameHit, NameIndex } from "./tier0/names";
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
@@ -17,6 +18,10 @@ type Shown = NonNullable<Item["excerpt"]> & { offset: number };
 const MAX_TITLES = 8;
 /** Excerpts are cut for this many content rows (the visible ones and a little more). */
 const EXCERPT_ROWS = 24;
+/** Notes found by a heading, tag or property while the index builds. */
+const MAX_META = 20;
+/** Frontmatter keys Tier 0 already covers (aliases, tags) or that say nothing (position, styling). */
+const SKIP_PROPERTIES = new Set(["aliases", "alias", "tags", "tag", "cssclasses", "cssclass", "position"]);
 
 /**
  * Answers the modal's text: Tier 0 names in the same frame, then the worker's
@@ -25,6 +30,8 @@ const EXCERPT_ROWS = 24;
  */
 export class Search {
 	private names: NameIndex | null = null;
+	/** Headings, tags and properties, only while the content index is not ready. */
+	private meta: MetaIndex | null = null;
 	private readonly idOf = new Map<string, number>();
 	private readonly pathOf = new Map<number, string>();
 	private nextId = 1;
@@ -42,14 +49,15 @@ export class Search {
 		this.current = { text, paint };
 		const names = this.nameIndex();
 		const tier0 = names.match(text, { limit: 40 });
+		const meta = this.metaHits(text);
 		const now = Date.now();
-		paint(this.compose(tier0, null, now, new Map()), this.status());
+		paint(this.compose(tier0, null, now, new Map(), meta), this.status());
 		void (async () => {
 			try {
 				await this.feeder.ensure();
 			} catch (e) {
 				console.error("Jet Search: the index could not be opened", e);
-				paint(this.compose(tier0, null, now, new Map()), "Full text unavailable (see console)");
+				paint(this.compose(tier0, null, now, new Map(), meta), "Full text unavailable (see console)");
 				return;
 			}
 			// Quoted phrases: more candidates from the worker, kept if their text has the phrase.
@@ -61,7 +69,7 @@ export class Search {
 				if (this.current?.text !== text) return;
 				reply = { ...reply, hits };
 			}
-			const first = this.compose(tier0, reply, now, new Map());
+			const first = this.compose(tier0, reply, now, new Map(), meta);
 			if (!first.length) {
 				paint(await this.recovery(text), this.status());
 				return;
@@ -70,7 +78,7 @@ export class Search {
 			// Excerpts for the rows people see, cut from Obsidian's cached text, unless turned off.
 			if (!this.data().settings.excerpts) return;
 			const excerpts = await this.excerpts(first, reply.terms);
-			if (excerpts.size) paint(this.compose(tier0, reply, now, excerpts), this.status());
+			if (excerpts.size) paint(this.compose(tier0, reply, now, excerpts, meta), this.status());
 		})().catch((e: unknown) => console.error("Jet Search: search failed", e));
 	}
 
@@ -90,7 +98,13 @@ export class Search {
 		return p ? `Indexing ${p.done} of ${p.total}…` : "";
 	}
 
-	private compose(tier0: NameHit[], reply: QueryReply | null, now: number, excerpts: Map<string, Shown>): Entry[] {
+	private compose(
+		tier0: NameHit[],
+		reply: QueryReply | null,
+		now: number,
+		excerpts: Map<string, Shown>,
+		meta: readonly MetaHit[] = [],
+	): Entry[] {
 		const titles: Item[] = [];
 		const shown = new Set<string>();
 		for (const h of tier0) {
@@ -119,6 +133,17 @@ export class Search {
 			const ex = excerpts.get(h.path);
 			text.push(
 				this.item(file, now, { excerpt: ex ?? null, hit: { terms: reply?.terms ?? [], offset: ex?.offset } }),
+			);
+			shown.add(h.path);
+		}
+		// While the index builds: notes it has not reached yet, found by a heading, tag or property.
+		for (const m of meta) {
+			if (shown.has(m.path)) continue;
+			const file = this.app.vault.getFileByPath(m.path);
+			if (!file) continue;
+			shown.add(m.path);
+			text.push(
+				this.item(file, now, { excerpt: { text: m.field.text, marks: m.marks, more: 0 }, hit: { terms: [] } }),
 			);
 		}
 		if (!titles.length)
@@ -181,6 +206,39 @@ export class Search {
 		return out;
 	}
 
+	// ── Tier 0 before the index ─────────────────────────────
+
+	/** Whether the content index cannot answer for every note yet: never built, or building now. */
+	private indexNotReady(): boolean {
+		return this.feeder.progress !== null || this.data().indexedAt === null;
+	}
+
+	/** Headings, tags and properties matching `text` while the index is not ready; nothing after. */
+	private metaHits(text: string): MetaHit[] {
+		if (!this.indexNotReady()) {
+			this.meta = null;
+			return [];
+		}
+		if (!text.trim()) return [];
+		return this.metaIndex().match(text, { limit: MAX_META });
+	}
+
+	private metaIndex(): MetaIndex {
+		this.meta ??= new MetaIndex(this.app.vault.getMarkdownFiles().map((f) => this.metaNote(f)));
+		return this.meta;
+	}
+
+	private metaNote(file: TFile): MetaNote {
+		const cache = this.app.metadataCache.getFileCache(file);
+		const fields: MetaField[] = [];
+		if (cache) {
+			for (const h of cache.headings ?? []) fields.push({ kind: "heading", text: h.heading });
+			for (const t of new Set(getAllTags(cache) ?? [])) fields.push({ kind: "tag", text: t });
+			fields.push(...properties(cache));
+		}
+		return { path: file.path, fields };
+	}
+
 	// ── Tier 0 names: built on first open, kept by events ────────────────
 
 	private nameIndex(): NameIndex {
@@ -234,4 +292,16 @@ export const withoutTitleLine = (text: string, title: string): string => {
 	const m = /^#[ \t]+(.+)$/m.exec(text.slice(0, 4096));
 	if (!m || m[1]?.trim().toLowerCase() !== title.trim().toLowerCase()) return text;
 	return text.slice(0, m.index) + " ".repeat(m[0].length) + text.slice(m.index + m[0].length);
+};
+
+/** A note's property values as `key: value` fields (one per list item); objects are skipped. */
+const properties = (cache: CachedMetadata): MetaField[] => {
+	const out: MetaField[] = [];
+	for (const [key, value] of Object.entries(cache.frontmatter ?? {})) {
+		if (SKIP_PROPERTIES.has(key.toLowerCase())) continue;
+		for (const v of Array.isArray(value) ? value : [value])
+			if (typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+				if (String(v).trim()) out.push({ kind: "property", text: `${key}: ${String(v)}` });
+	}
+	return out;
 };
