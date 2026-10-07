@@ -85,6 +85,8 @@ export class Router {
 				return this.query(req);
 			case "mtimes":
 				return this.engine.mtimes();
+			case "suggest":
+				return this.engine.suggest(parseQuery(req.text));
 			case "save":
 				await this.save();
 				return { notes: this.engine.size };

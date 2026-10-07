@@ -445,6 +445,34 @@ export class JetEngine implements SearchEngine {
 		this.rebuildDelta();
 	}
 
+	/**
+	 * For a query that found nothing: each word not in the index replaced by the closest
+	 * spelling the index has (up to two edits, the most used one), and how many notes that finds.
+	 */
+	suggest(q: Query): { text: string | null; notes: number } {
+		const base = this.segs[0]?.seg;
+		if (!base || !q.words.length) return { text: null, notes: 0 };
+		let changed = false;
+		const words = q.words.map((w) => {
+			if (exactTerm(base, w) >= 0 || noTypos(w) || w.length < 3) return w;
+			let best: { t: string; df: number; e: number } | null = null;
+			for (const m of typoMatches(base.terms, w, 2, { limit: 200 })) {
+				if (m.prefix) continue;
+				const df = base.df[m.index] as number;
+				if (!best || m.edits < best.e || (m.edits === best.e && df > best.df))
+					best = { t: base.terms[m.index] as string, df, e: m.edits };
+			}
+			if (!best) return w;
+			changed = true;
+			return best.t;
+		});
+		if (!changed) return { text: null, notes: 0 };
+		const text = words.join(" ");
+		const notes = this.query({ words, excluded: q.excluded, phrases: [], lastIsPrefix: false }, { limit: 1000 })
+			.hits.length;
+		return { text: notes ? text : null, notes };
+	}
+
 	/** The paths and modified times of every live note (to catch up with the vault by mtime). */
 	mtimes(): Array<[string, number]> {
 		const out: Array<[string, number]> = [];

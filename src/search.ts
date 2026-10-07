@@ -62,6 +62,10 @@ export class Search {
 				reply = { ...reply, hits };
 			}
 			const first = this.compose(tier0, reply, now, new Map());
+			if (!first.length) {
+				paint(await this.recovery(text), this.status());
+				return;
+			}
 			paint(first, this.status());
 			// Excerpts for the rows people see, cut from Obsidian's cached text.
 			const excerpts = await this.excerpts(first, reply.terms);
@@ -134,6 +138,22 @@ export class Search {
 			icon: iconOf(this.app, file),
 			...extra,
 		};
+	}
+
+	/** Nothing matched: the spelling the vault uses, and creating the note. */
+	private async recovery(text: string): Promise<Entry[]> {
+		const s = await this.client.call({ op: "suggest", text });
+		const n = (k: number): string => `${k} note${k === 1 ? "" : "s"}`;
+		const out: Entry[] = [
+			{
+				type: "notice",
+				title: `No results for “${text.trim()}”`,
+				detail: s.text ? `Did you mean “${s.text}”? It is written that way in ${n(s.notes)}.` : undefined,
+			},
+		];
+		if (s.text) out.push({ type: "search", query: s.text, detail: n(s.notes) });
+		out.push({ type: "create", text: text.trim(), detail: "A new note with this name" });
+		return out;
 	}
 
 	private async read(path: string): Promise<string | null> {

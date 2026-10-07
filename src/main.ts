@@ -4,6 +4,7 @@ import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
 import { Feeder } from "./index/feeder";
 import { addCommandAs, hasCommand, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
+import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
 import { Search } from "./search";
 import { JetSettingTab } from "./settings-tab";
@@ -64,6 +65,7 @@ export default class JetSearchPlugin extends Plugin {
 			},
 		);
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
+		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
 		this.addSettingTab(new JetSettingTab(this.app, this));
 		this.app.workspace.onLayoutReady(() => this.listen());
 	}
@@ -100,6 +102,19 @@ export default class JetSearchPlugin extends Plugin {
 		modal.open();
 	}
 
+	/** Search in the open note; without a note, the vault search. */
+	openInNote(text = this.selection()): void {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view?.file) {
+			this.open(text);
+			return;
+		}
+		this.modal?.close();
+		const modal = new JetModal(this.app, new InNoteHost(this.app, view.file, view), text);
+		this.modal = modal;
+		modal.open();
+	}
+
 	private selection(): string {
 		const sel = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor.getSelection() ?? "";
 		return sel.length <= 100 && !sel.includes("\n") ? sel.trim() : "";
@@ -116,6 +131,15 @@ export default class JetSearchPlugin extends Plugin {
 				})
 			)
 				this.standIns.push(STAND_INS.open);
+		if (!hasCommand(this.app, STAND_INS.inNote))
+			if (
+				addCommandAs(this.app, {
+					id: STAND_INS.inNote,
+					name: "Jet Search: Search in this note",
+					callback: () => this.openInNote(),
+				})
+			)
+				this.standIns.push(STAND_INS.inNote);
 		// Shift-Shift, unless another plugin already owns double Shift.
 		const tap = new DoubleTap(() => this.data.settings.shiftInterval);
 		const watch = (doc: Document): void => {

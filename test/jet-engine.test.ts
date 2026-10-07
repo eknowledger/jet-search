@@ -278,3 +278,16 @@ describe("Jet engine word forms and compounds", () => {
 		expect(paths(e, "datenbank ")).toEqual(["db.md"]);
 	});
 });
+
+describe("Jet engine spelling suggestion", () => {
+	it("offers the spelling the vault uses for words it does not have, with how many notes it finds", () => {
+		const e = engine([
+			note("a.md", "The lantern room."),
+			note("b.md", "A lantern and a lamp."),
+			note("c.md", "Lanterns."),
+		]);
+		expect(e.suggest(parseQuery("lanterm room"))).toEqual({ text: "lantern room", notes: 1 });
+		expect(e.suggest(parseQuery("lantern"))).toEqual({ text: null, notes: 0 });
+		expect(e.suggest(parseQuery("zzzzqqq"))).toEqual({ text: null, notes: 0 });
+	});
+});

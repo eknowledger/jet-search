@@ -20,8 +20,14 @@ export type Entry =
 			badge?: string;
 			/** What to mark in the preview, and where the excerpt's hit is. */
 			hit?: { terms: readonly string[]; offset?: number };
+			/** In-note search: the line to jump to and the match to select. */
+			at?: { line: number; ch: number; len: number };
 	  }
-	| { type: "search"; query: string };
+	| { type: "search"; query: string; detail?: string }
+	/** A message line (no results), not selectable. */
+	| { type: "notice"; title: string; detail?: string }
+	/** Create a note named after the text (no-results screen). */
+	| { type: "create"; text: string; detail?: string };
 
 /** How to open a note. */
 export type OpenHow = "default" | "other" | "split";
@@ -30,7 +36,7 @@ export type OpenHow = "default" | "other" | "split";
 export type ModalHost = {
 	/** The list for this text (empty text: recents); `paint` may be called again as results arrive. */
 	list(text: string, paint: (entries: Entry[], status?: string) => void): void;
-	open(path: string, how: OpenHow): void;
+	open(path: string, how: OpenHow, at?: { line: number; ch: number; len: number }): void;
 	/** Footer hints for the current text. */
 	hints(text: string): Array<[key: string, label: string]>;
 	closed(text: string, opened: boolean): void;
@@ -257,9 +263,15 @@ export class JetModal extends Modal {
 			this.refresh();
 			return;
 		}
+		if (e.type === "create") {
+			this.opened = true;
+			this.host.create(e.text);
+			this.close();
+			return;
+		}
 		if (e.type !== "item") return;
 		this.opened = true;
-		this.host.open(e.path, how);
+		this.host.open(e.path, how, e.at);
 		this.close();
 	}
 
@@ -351,9 +363,15 @@ export class JetModal extends Modal {
 	}
 }
 
-const selectable = (e: Entry): boolean => e.type !== "header";
+const selectable = (e: Entry): boolean => e.type !== "header" && e.type !== "notice";
 const keyOf = (e: Entry): string | null =>
-	e.type === "item" ? `n:${e.path}` : e.type === "search" ? `s:${e.query}` : null;
+	e.type === "item"
+		? `n:${e.path}${e.at ? `:${e.at.line}` : ""}`
+		: e.type === "search"
+			? `s:${e.query}`
+			: e.type === "create"
+				? `c:${e.text}`
+				: null;
 
 /** Fill a pooled row element for an entry (rebuilt each time: rows are few and small). */
 const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
@@ -368,12 +386,24 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		if (e.count !== undefined) el.createSpan({ cls: "jet-hs", text: String(e.count) });
 		return;
 	}
+	if (e.type === "notice") {
+		el.className = "jet-notice";
+		el.removeAttribute("role");
+		setIcon(el.createSpan({ cls: "jet-ic" }), "search-x");
+		const b = el.createDiv({ cls: "jet-rb" });
+		b.createDiv({ cls: "jet-nt", text: e.title });
+		if (e.detail) b.createDiv({ cls: "jet-nd", text: e.detail });
+		return;
+	}
 	el.setAttr("role", "option");
 	el.setAttr("aria-selected", "false");
-	if (e.type === "search") {
-		el.className = "jet-row jet-row-search";
-		setIcon(el.createSpan({ cls: "jet-ic" }), "history");
-		el.createSpan({ cls: "jet-rt", text: e.query });
+	if (e.type === "search" || e.type === "create") {
+		el.className = `jet-row ${e.detail ? "jet-rowt" : "jet-row-search"}`;
+		setIcon(el.createSpan({ cls: "jet-ic" }), e.type === "create" ? "file-plus" : e.detail ? "search" : "history");
+		const b = el.createDiv({ cls: "jet-rb" });
+		const label = e.type === "create" ? `Create “${e.text}”` : e.detail ? `Search for “${e.query}”` : e.query;
+		b.createDiv({ cls: "jet-l1" }).createSpan({ cls: "jet-rt", text: label });
+		if (e.detail) b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: e.detail });
 		return;
 	}
 	const content = !!e.excerpt;

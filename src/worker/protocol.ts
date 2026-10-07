@@ -17,6 +17,8 @@ export type Request =
 	| { op: "rename"; from: string; to: string }
 	| { op: "query"; seq: number; text: string; limit: number; now: number; allow?: string[] }
 	| { op: "mtimes" }
+	/** No results: the closest spelling the vault uses, and how many notes it finds. */
+	| { op: "suggest"; text: string }
 	| { op: "save" }
 	| { op: "stats" }
 	/** Forget this vault's index (settings: Clear index). */
@@ -33,9 +35,11 @@ export type Reply<R extends Request> = R extends { op: "open" }
 		? QueryReply
 		: R extends { op: "mtimes" }
 			? Array<[string, number]>
-			: R extends { op: "stats" }
-				? Stats
-				: { notes: number };
+			: R extends { op: "suggest" }
+				? { text: string | null; notes: number }
+				: R extends { op: "stats" }
+					? Stats
+					: { notes: number };
 
 export type Envelope = { id: number; req: Request };
 export type Answer = { id: number; result?: unknown; error?: string };

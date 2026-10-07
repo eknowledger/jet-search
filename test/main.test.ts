@@ -35,10 +35,10 @@ describe("plugin start", () => {
 		document.body.replaceChildren();
 	});
 
-	it("registers one command to open search", async () => {
+	it("registers the two search commands", async () => {
 		const { plugin } = make();
 		await plugin.onload();
-		expect(plugin.commands.map((c) => c.id)).toEqual(["open"]);
+		expect(plugin.commands.map((c) => c.id)).toEqual(["open", "open-in-note"]);
 		expect(plugin.commands[0]?.name).toBe("Search notes");
 	});
 
