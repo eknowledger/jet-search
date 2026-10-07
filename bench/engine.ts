@@ -10,6 +10,9 @@ export type BenchEngine = {
 	build(notes: BenchNote[]): void;
 	save(): Uint8Array;
 	load(buf: Uint8Array): void;
-	query(q: string): string[];
+	/** Paths of the top results; `keep` limits them to some notes (a scope) before the top is taken. */
+	query(q: string, keep?: (path: string) => boolean): string[];
 	update(note: BenchNote): void;
+	/** Saving after an update when the engine keeps changes apart from its base (a sidecar); else save() is used. */
+	saveChanges?(): Uint8Array;
 };

@@ -24,7 +24,12 @@ export const jadeEngine = (): BenchEngine => {
 			if (!loaded) throw new Error("index did not load");
 			index = loaded;
 		},
-		query: (q: string) => index.search(parseQuery(q), { now }).map((h) => h.path),
+		query: (q: string, keep?: (path: string) => boolean) =>
+			index
+				.search(parseQuery(q), { now, limit: keep ? 100_000 : 50 })
+				.map((h) => h.path)
+				.filter((p) => !keep || keep(p))
+				.slice(0, 50),
 		update(n: BenchNote) {
 			index.upsert(n.path, n.mtime, noteFields(n.path, n.text));
 		},
