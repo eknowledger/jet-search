@@ -7,6 +7,112 @@
 type Listener = (...args: unknown[]) => unknown;
 export type EventRef = { off: () => void };
 
+// Obsidian's DOM helpers, as the app adds them to every element.
+type DomInfo = { cls?: string | string[]; text?: string; attr?: Record<string, string | number | boolean> };
+const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+const make = function (this: HTMLElement, tag: string, o: DomInfo | string = {}): HTMLElement {
+	const info = typeof o === "string" ? { cls: o } : o;
+	const el = this.ownerDocument.createElement(tag);
+	if (info.cls) el.className = Array.isArray(info.cls) ? info.cls.join(" ") : info.cls;
+	if (info.text !== undefined) el.textContent = info.text;
+	for (const [k, v] of Object.entries(info.attr ?? {})) el.setAttribute(k, String(v));
+	this.appendChild(el);
+	return el;
+};
+proto.createEl = make;
+proto.createDiv = function (this: HTMLElement, o?: DomInfo | string) {
+	return make.call(this, "div", o);
+};
+proto.createSpan = function (this: HTMLElement, o?: DomInfo | string) {
+	return make.call(this, "span", o);
+};
+proto.empty = function (this: HTMLElement) {
+	this.replaceChildren();
+};
+proto.setText = function (this: HTMLElement, t: string) {
+	this.textContent = t;
+};
+proto.appendText = function (this: HTMLElement, t: string) {
+	this.append(t);
+};
+proto.addClass = function (this: HTMLElement, ...c: string[]) {
+	this.classList.add(...c);
+};
+proto.removeClass = function (this: HTMLElement, ...c: string[]) {
+	this.classList.remove(...c);
+};
+proto.setAttr = function (this: HTMLElement, k: string, v: string | number | boolean) {
+	this.setAttribute(k, String(v));
+};
+
+export const setIcon = (el: HTMLElement, icon: string): void => {
+	el.setAttribute("data-icon", icon);
+};
+
+export const debounce = <A extends unknown[]>(fn: (...a: A) => void) => {
+	const d = (...a: A) => fn(...a);
+	d.cancel = () => d;
+	return d;
+};
+
+export type Modifier = "Mod" | "Ctrl" | "Meta" | "Shift" | "Alt";
+
+/** Obsidian's key scope: handlers in registration order; one returning false stops the key. */
+export class Scope {
+	keys: Array<{ modifiers: Modifier[]; key: string | null; func: (e: KeyboardEvent) => unknown }> = [];
+
+	register(modifiers: Modifier[], key: string | null, func: (e: KeyboardEvent) => unknown): unknown {
+		const h = { modifiers, key, func };
+		this.keys.push(h);
+		return h;
+	}
+
+	unregister(h: unknown): void {
+		this.keys = this.keys.filter((k) => k !== h);
+	}
+
+	/** Test helper: press a key with modifiers. */
+	press(key: string, modifiers: Modifier[] = []): boolean {
+		const want = [...modifiers].sort().join(",");
+		for (const k of this.keys)
+			if (k.key === key && [...k.modifiers].sort().join(",") === want)
+				if (k.func({ key, isComposing: false } as KeyboardEvent) === false) return true;
+		return false;
+	}
+}
+
+export class Modal {
+	readonly modalEl = document.createElement("div");
+	readonly contentEl = document.createElement("div");
+	readonly scope = new Scope();
+	isOpen = false;
+
+	constructor(readonly app: App) {
+		this.modalEl.appendChild(this.contentEl);
+		this.scope.register([], "Escape", () => {
+			this.close();
+			return false;
+		});
+	}
+
+	open(): void {
+		this.isOpen = true;
+		document.body.appendChild(this.modalEl);
+		this.onOpen();
+	}
+
+	close(): void {
+		if (!this.isOpen) return;
+		this.isOpen = false;
+		this.modalEl.remove();
+		this.onClose();
+	}
+
+	onOpen(): void {}
+
+	onClose(): void {}
+}
+
 /** Counts calls to every vault method that reads a file or lists files. */
 export class Vault {
 	readonly calls: string[] = [];
@@ -18,12 +124,18 @@ export class Vault {
 
 	getMarkdownFiles(): TFile[] {
 		this.calls.push("getMarkdownFiles");
-		return [];
+		return [...this.files.values()];
 	}
 
 	getFiles(): TFile[] {
 		this.calls.push("getFiles");
 		return [];
+	}
+
+	readonly files = new Map<string, TFile>();
+
+	getFileByPath(path: string): TFile | null {
+		return this.files.get(path) ?? null;
 	}
 
 	async read(_file: TFile): Promise<string> {
@@ -52,6 +164,16 @@ export class Vault {
 
 export class Workspace {
 	readonly layoutReadyCallbacks: (() => void)[] = [];
+	lastOpen: string[] = [];
+	readonly opened: Array<{ path: string; how: unknown }> = [];
+
+	getLastOpenFiles(): string[] {
+		return this.lastOpen;
+	}
+
+	getLeaf(how?: unknown): { openFile: (f: TFile) => Promise<void> } {
+		return { openFile: (f: TFile) => (this.opened.push({ path: f.path, how }), Promise.resolve()) };
+	}
 
 	onLayoutReady(callback: () => void): void {
 		this.layoutReadyCallbacks.push(callback);
@@ -62,9 +184,16 @@ export class Workspace {
 	}
 }
 
+export class MetadataCache {
+	getFileCache(_f: TFile): { frontmatter?: Record<string, unknown> } | null {
+		return null;
+	}
+}
+
 export class App {
 	readonly vault = new Vault();
 	readonly workspace = new Workspace();
+	readonly metadataCache = new MetadataCache();
 }
 
 export type PluginManifest = { id: string; name: string; version: string; dir?: string };
@@ -188,6 +317,8 @@ export class TAbstractFile {
 }
 
 export class TFile extends TAbstractFile {
+	stat = { mtime: 0, ctime: 0, size: 0 };
+
 	get basename(): string {
 		const name = this.path.split("/").pop() ?? this.path;
 		return name.replace(/\.md$/, "");

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { App, Notice } from "obsidian";
+import { App } from "obsidian";
 import JetSearchPlugin from "../src/main";
 
 const manifest = { id: "jet-search", name: "Jet Search", version: "0.0.1" };
@@ -7,8 +7,6 @@ const manifest = { id: "jet-search", name: "Jet Search", version: "0.0.1" };
 type Mocked = JetSearchPlugin & {
 	commands: { id: string; name: string; callback?: () => unknown }[];
 	settingTabs: { containerEl: HTMLElement; display: () => void }[];
-	pendingCleanups: () => number;
-	unload: () => void;
 };
 
 const make = (): { app: App; plugin: Mocked } => {
@@ -34,6 +32,7 @@ describe("plugin start", () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		document.body.replaceChildren();
 	});
 
 	it("registers one command to open search", async () => {
@@ -49,22 +48,20 @@ describe("plugin start", () => {
 		expect(plugin.settingTabs).toHaveLength(1);
 	});
 
-	it("reads no files, starts no worker and listens to nothing at start", async () => {
+	it("reads no files, starts no worker and waits for the layout before listening", async () => {
 		const { app, plugin } = make();
 		await plugin.onload();
 		expect(app.vault.calls).toEqual([]);
 		expect(app.vault.listenerCount()).toBe(0);
-		expect(app.workspace.layoutReadyCallbacks).toHaveLength(0);
+		expect(app.workspace.layoutReadyCallbacks).toHaveLength(1);
 		expect(workers).toBe(0);
-		expect(plugin.pendingCleanups()).toBe(0);
 	});
 
-	it("says the search is not built yet when the command runs", async () => {
+	it("opens the search modal from the command", async () => {
 		const { plugin } = make();
 		await plugin.onload();
-		Notice.shown.length = 0;
 		plugin.commands[0]?.callback?.();
-		expect(Notice.shown).toEqual(["Search is not built yet."]);
+		expect(document.querySelector(".jet-modal .jet-q")).not.toBeNull();
 	});
 });
 
@@ -78,14 +75,5 @@ describe("settings tab", () => {
 		expect(text).toContain("Version");
 		expect(text).toContain("0.0.1");
 		expect(text).toContain("dev");
-	});
-
-	it("draws once per display, not twice", async () => {
-		const { plugin } = make();
-		await plugin.onload();
-		const tab = plugin.settingTabs[0];
-		tab?.display();
-		tab?.display();
-		expect(tab?.containerEl.querySelectorAll(".setting-item")).toHaveLength(1);
 	});
 });

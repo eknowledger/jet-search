@@ -13,12 +13,8 @@ export const INDEX_VERSION = 1;
 /** Quiet time before the worker merges or saves after changes. */
 const IDLE_MS = 2000;
 
-type Timers = { set: (fn: () => void, ms: number) => unknown; clear: (h: unknown) => void };
-// The worker has no `window` (and no popout windows): its own global timers.
-const realTimers: Timers = {
-	set: (fn, ms) => globalThis.setTimeout(fn, ms),
-	clear: (h) => globalThis.clearTimeout(h as ReturnType<typeof globalThis.setTimeout>),
-};
+/** Timers, passed in: the worker's own (it has no window), or manual ones in tests. */
+export type Timers = { set: (fn: () => void, ms: number) => unknown; clear: (h: unknown) => void };
 
 /**
  * The worker's request handler, kept free of the Worker itself so tests can drive
@@ -34,7 +30,7 @@ export class Router {
 
 	constructor(
 		private readonly makeStore: (vaultId: string) => Store,
-		private readonly timers: Timers = realTimers,
+		private readonly timers: Timers,
 	) {}
 
 	async handle(req: Request): Promise<unknown> {

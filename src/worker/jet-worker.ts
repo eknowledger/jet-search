@@ -10,7 +10,11 @@ import { idbStore, memoryStore } from "./store";
 type Scope = { onmessage: ((e: MessageEvent<Envelope>) => void) | null; postMessage(msg: Answer): void };
 const scope = self as unknown as Scope;
 
-const router = new Router((vaultId) => (typeof indexedDB === "undefined" ? memoryStore() : idbStore(vaultId)));
+const worker = self as unknown as { setTimeout(fn: () => void, ms: number): number; clearTimeout(h: number): void };
+const router = new Router((vaultId) => (typeof indexedDB === "undefined" ? memoryStore() : idbStore(vaultId)), {
+	set: (fn, ms) => worker.setTimeout(fn, ms),
+	clear: (h) => worker.clearTimeout(h as number),
+});
 const queue: Envelope[] = [];
 let busy = false;
 
