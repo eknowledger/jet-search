@@ -55,6 +55,10 @@ const pack = (strings: readonly string[]): { offsets: Uint32Array; bytes: Uint8A
 };
 
 type TermBuild = { docs: number[]; tf: number[]; metaDocs: number[]; meta: number[]; inName: number[]; df: number };
+/** One note's row in the docs table. */
+type DocRow = { path: string; name: string; mtime: number; bodyLen: number; inLinks: number };
+
+const newTerm = (): TermBuild => ({ docs: [], tf: [], metaDocs: [], meta: [], inName: [], df: 0 });
 
 /**
  * Build a segment from notes. `averages`: the statistics to score field lengths against (a delta
@@ -68,7 +72,7 @@ export const buildSegment = (
 	const table = new Map<string, TermBuild>();
 	const entry = (t: string): TermBuild => {
 		let e = table.get(t);
-		if (!e) table.set(t, (e = { docs: [], tf: [], metaDocs: [], meta: [], inName: [], df: 0 }));
+		if (!e) table.set(t, (e = newTerm()));
 		return e;
 	};
 	notes.forEach((n, d) => {
@@ -97,9 +101,83 @@ export const buildSegment = (
 		}
 		for (const t of new Set([...body.keys(), ...meta.keys()])) entry(t).df++;
 	});
+	const docs = notes.map((n) => ({
+		path: n.path,
+		name: n.fields.name.join(" "),
+		mtime: n.mtime,
+		bodyLen: n.fields.body.length,
+		inLinks: inbound(nameOf(n.path)),
+	}));
+	return writeSegment(table, docs, averages);
+};
+
+/** A segment to merge: its live notes are those not marked in `dead`; `path` gives a note's current path. */
+export type MergePart = { seg: Segment; dead: Uint8Array | null; path: (d: number) => string };
+
+/**
+ * Merge segments into one: their live notes, in order, with postings decoded and
+ * re-encoded under new ids. Field scores keep the values their segment computed; the averages of the
+ * result are the parts' averages weighted by their live notes.
+ */
+export const mergeSegments = (parts: readonly MergePart[]): ArrayBuffer => {
+	const table = new Map<string, TermBuild>();
+	const docs: DocRow[] = [];
+	const averages = new Float32Array(FIELDS.length + 1);
+	for (const { seg, dead, path } of parts) {
+		const remap = new Int32Array(seg.docCount).fill(-1);
+		let live = 0;
+		for (let d = 0; d < seg.docCount; d++) {
+			if (dead?.[d]) continue;
+			remap[d] = docs.length;
+			docs.push({
+				path: path(d),
+				name: seg.names[d] as string,
+				mtime: seg.mtime[d] as number,
+				bodyLen: seg.bodyLen[d] as number,
+				inLinks: seg.inLinks[d] as number,
+			});
+			live++;
+		}
+		for (let i = 0; i < averages.length; i++)
+			averages[i] = (averages[i] as number) + (seg.averages[i] as number) * live;
+		const terms = seg.terms;
+		for (let t = 0; t < seg.termCount; t++) {
+			const term = terms[t] as string;
+			let e = table.get(term);
+			const before = e ? e.docs.length + e.metaDocs.length : 0;
+			const seen: number[] = [];
+			seg.forBody(t, (d, tf) => {
+				const n = remap[d] as number;
+				if (n < 0) return;
+				e ??= newTerm();
+				e.docs.push(n);
+				e.tf.push(tf);
+				seen.push(n);
+			});
+			for (let k = seg.metaOff[t] as number, end = seg.metaOff[t + 1] as number; k < end; k++) {
+				const n = remap[seg.metaDocs[k] as number] as number;
+				if (n < 0) continue;
+				e ??= newTerm();
+				e.metaDocs.push(n);
+				e.meta.push(seg.metaScore[k] as number);
+				e.inName.push(seg.metaInName[k] as number);
+				seen.push(n);
+			}
+			if (!e) continue;
+			if (!before) table.set(term, e);
+			e.df += new Set(seen).size;
+		}
+	}
+	const total = docs.length || 1;
+	for (let i = 0; i < averages.length; i++) averages[i] = Math.max(1, (averages[i] as number) / total);
+	return writeSegment(table, docs, averages);
+};
+
+/** Write the sections of a segment from its postings table and docs. */
+const writeSegment = (table: Map<string, TermBuild>, docs: readonly DocRow[], averages: Averages): ArrayBuffer => {
 	const terms = [...table.keys()].sort();
 	const T = terms.length;
-	const D = notes.length;
+	const D = docs.length;
 	const termPack = pack(terms);
 	const df = new Uint32Array(T);
 	const bodyOff = new Uint32Array(T + 1);
@@ -132,11 +210,11 @@ export const buildSegment = (
 	bodyOff[T] = w.length;
 	metaOff[T] = m;
 	const body = w.bytes();
-	const paths = pack(notes.map((n) => n.path));
-	const names = pack(notes.map((n) => n.fields.name.join(" ")));
-	const mtime = Float64Array.from(notes.map((n) => n.mtime));
-	const bodyLen = Uint32Array.from(notes.map((n) => n.fields.body.length));
-	const inLinks = Uint32Array.from(notes.map((n) => inbound(nameOf(n.path))));
+	const paths = pack(docs.map((n) => n.path));
+	const names = pack(docs.map((n) => n.name));
+	const mtime = Float64Array.from(docs.map((n) => n.mtime));
+	const bodyLen = Uint32Array.from(docs.map((n) => n.bodyLen));
+	const inLinks = Uint32Array.from(docs.map((n) => n.inLinks));
 	const sections: ArrayBufferView[] = [
 		termPack.offsets,
 		termPack.bytes,

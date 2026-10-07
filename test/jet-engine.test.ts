@@ -178,3 +178,72 @@ describe("query parsing", () => {
 		expect(parseQuery("tag:followup #important").words).toEqual(["followup", "important"]);
 	});
 });
+
+describe("Jet engine segments (first build in batches, merge)", () => {
+	const words = ["garden", "lantern", "orchard", "meadow", "harbor", "willow", "summit", "canyon", "river", "maple"];
+	const gen = (n: number): NoteInput[] =>
+		Array.from({ length: n }, (_, i) =>
+			note(
+				`notes/${words[i % 10]} ${i}.md`,
+				`# ${words[(i * 3) % 10]} plan\n${words[(i * 7) % 10]} and ${words[(i * 5 + 1) % 10]} notes, entry ${i}. ${i % 4 ? "" : "rare quokka"}`,
+				i * 1000,
+			),
+		);
+	const queries = ["garden", "lantern plan", "quokka", "meadow notes", "harb", "summitt "];
+
+	it("searches a batch as soon as it is added", () => {
+		const e = new JetEngine();
+		const notes = gen(40);
+		e.addBatch(notes.slice(0, 20));
+		expect(e.size).toBe(20);
+		expect(e.query(parseQuery("quokka ")).hits.length).toBe(5);
+		e.addBatch(notes.slice(20));
+		expect(e.size).toBe(40);
+		expect(e.query(parseQuery("quokka ")).hits.length).toBe(10);
+	});
+
+	it("merges batches into the same results as one build", () => {
+		const notes = gen(60);
+		const one = new JetEngine();
+		one.build(notes);
+		const many = new JetEngine();
+		for (let i = 0; i < 60; i += 15) many.addBatch(notes.slice(i, i + 15));
+		many.merge();
+		expect(many.shape).toEqual({ segments: 1, pending: 0 });
+		for (const q of queries) {
+			const a = one.query(parseQuery(q), { now: 0 }).hits.map((h) => h.path);
+			const b = many.query(parseQuery(q), { now: 0 }).hits.map((h) => h.path);
+			expect(new Set(b)).toEqual(new Set(a));
+		}
+	});
+
+	it("drops deleted and replaced notes when merging, and keeps renames and changes", () => {
+		const notes = gen(30);
+		const e = new JetEngine();
+		e.addBatch(notes.slice(0, 15));
+		e.addBatch(notes.slice(15));
+		e.delete(notes[0]?.path as string);
+		e.upsert(note(notes[1]?.path as string, "now about zebras"));
+		e.rename(notes[2]?.path as string, "moved/renamed.md");
+		e.merge();
+		expect(e.size).toBe(29);
+		expect(e.query(parseQuery("zebras ")).hits.map((h) => h.path)).toEqual([notes[1]?.path]);
+		expect(e.mtimes().map(([p]) => p)).toContain("moved/renamed.md");
+		expect(e.mtimes().map(([p]) => p)).not.toContain(notes[0]?.path);
+		const { base, sidecar } = e.save();
+		const back = new JetEngine();
+		back.load(base.slice(0), sidecar);
+		expect(back.size).toBe(29);
+		expect(back.query(parseQuery("zebras ")).hits.map((h) => h.path)).toEqual([notes[1]?.path]);
+	});
+
+	it("asks for a merge with several segments or many changes", () => {
+		const e = new JetEngine();
+		e.addBatch(gen(10));
+		expect(e.wantsMerge).toBe(false);
+		e.addBatch(gen(20).slice(10));
+		expect(e.wantsMerge).toBe(true);
+		e.merge();
+		expect(e.wantsMerge).toBe(false);
+	});
+});

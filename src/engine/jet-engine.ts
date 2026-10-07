@@ -2,7 +2,7 @@ import { noTypos } from "./analyzer";
 import type { NoteInput } from "./fields";
 import { FIELDS } from "./fields";
 import type { Query } from "./query";
-import { B_BODY, buildSegment, K1, Segment } from "./segment";
+import { B_BODY, buildSegment, K1, type MergePart, mergeSegments, Segment } from "./segment";
 import { lowerBound, prefixRange, typoBudget, typoMatches } from "./typos";
 
 /** One result: the note, its score, how many query words it matched, and its typo edits in total. */
@@ -85,30 +85,58 @@ const byKey = (a: Candidate, b: Candidate): boolean =>
 const byScore = (a: Candidate, b: Candidate): boolean =>
 	a.matched !== b.matched ? a.matched > b.matched : a.score > b.score;
 
+/** A frozen segment with its tombstones (notes replaced or deleted since it was built). */
+type SegPart = { seg: Segment; dead: Uint8Array; deadCount: number; renamed: Map<number, string>; scratch: Scratch };
+
 /**
- * Jet's engine: a frozen base segment, a small delta segment rebuilt from the
- * notes changed since, and tombstones over the base. Queries read both and skip tombstoned notes.
- * Pure: runs in the worker and in tests.
+ * Jet's engine: frozen segments (one after a load or a merge; several while a
+ * first build adds batches), a small delta segment rebuilt from the notes changed since, and
+ * tombstones over the frozen ones. Queries read them all and skip tombstoned notes; `merge()` folds
+ * everything into one segment (when idle, or before saving). Pure: runs in the worker and in tests.
  */
 export class JetEngine implements SearchEngine {
-	private base: Segment | null = null;
-	private dead = new Uint8Array(0);
-	private deadCount = 0;
-	private baseIds = new Map<string, number>();
-	private renamed = new Map<number, string>();
+	private segs: SegPart[] = [];
+	private ids = new Map<string, { s: SegPart; d: number }>();
 	private pending = new Map<string, NoteInput>();
 	private delta: Segment | null = null;
-	private baseScratch: Scratch | null = null;
 	private deltaScratch: Scratch | null = null;
-	private baseByName: Map<string, number> | null = null;
+	private inboundByName: Map<string, number> | null = null;
 
 	get size(): number {
-		return (this.base?.docCount ?? 0) - this.deadCount + this.pending.size;
+		let n = this.pending.size;
+		for (const s of this.segs) n += s.seg.docCount - s.deadCount;
+		return n;
+	}
+
+	/** Frozen segments and pending changes: what a merge would fold together. */
+	get shape(): { segments: number; pending: number } {
+		return { segments: this.segs.length, pending: this.pending.size };
+	}
+
+	/** Whether a merge is worth it now: several segments, or changes over 5% of the notes. */
+	get wantsMerge(): boolean {
+		return this.segs.length > 1 || this.pending.size > Math.max(20, 0.05 * this.size);
 	}
 
 	build(notes: readonly NoteInput[]): void {
+		this.reset();
 		const inbound = countInbound(notes);
-		this.setBase(new Segment(buildSegment(notes, (n) => inbound.get(n) ?? 0)));
+		this.addPart(new Segment(buildSegment(notes, (n) => inbound.get(n) ?? 0)));
+	}
+
+	/**
+	 * Add a batch of notes as a new frozen segment (a first build, newest notes first, searchable as it
+	 * goes). Notes already indexed are replaced. Field lengths are scored against the first batch's
+	 * averages so batches compare fairly.
+	 */
+	addBatch(notes: readonly NoteInput[]): void {
+		if (!notes.length) return;
+		for (const n of notes) {
+			this.kill(n.path);
+			if (this.pending.delete(n.path)) this.rebuildDelta();
+		}
+		const inbound = this.inbound();
+		this.addPart(new Segment(buildSegment(notes, inbound, this.segs[0]?.seg.averages)));
 	}
 
 	upsert(note: NoteInput): void {
@@ -131,11 +159,26 @@ export class JetEngine implements SearchEngine {
 			this.rebuildDelta();
 			return;
 		}
-		const id = this.baseIds.get(from);
-		if (id === undefined) return;
-		this.baseIds.delete(from);
-		this.baseIds.set(to, id);
-		this.renamed.set(id, to);
+		const at = this.ids.get(from);
+		if (!at) return;
+		this.ids.delete(from);
+		this.ids.set(to, at);
+		at.s.renamed.set(at.d, to);
+	}
+
+	/** Fold every segment and the pending changes into one segment. */
+	merge(): void {
+		if (this.segs.length <= 1 && !this.pending.size && !(this.segs[0]?.deadCount ?? 0)) return;
+		const parts: MergePart[] = this.segs.map((s) => ({
+			seg: s.seg,
+			dead: s.dead,
+			path: (d) => s.renamed.get(d) ?? (s.seg.paths[d] as string),
+		}));
+		const delta = this.delta;
+		if (delta) parts.push({ seg: delta, dead: null, path: (d) => delta.paths[d] as string });
+		const merged = new Segment(mergeSegments(parts));
+		this.reset();
+		this.addPart(merged);
 	}
 
 	query(q: Query, opts: QueryOptions = {}): QueryResult {
@@ -283,59 +326,94 @@ export class JetEngine implements SearchEngine {
 		};
 	}
 
+	/** The index as a base (one segment: merged first if needed) and a sidecar of nothing pending. */
 	save(): { base: ArrayBuffer; sidecar: Uint8Array } {
-		if (!this.base) throw new Error("nothing to save");
+		if (this.segs.length !== 1) this.merge();
+		const base = this.segs[0];
+		if (!base) throw new Error("nothing to save");
 		const side = {
-			dead: [...this.dead.keys()].filter((i) => this.dead[i]),
-			renamed: [...this.renamed],
+			dead: [...base.dead.keys()].filter((i) => base.dead[i]),
+			renamed: [...base.renamed],
 			pending: [...this.pending.values()],
 		};
-		return { base: this.base.buffer, sidecar: new TextEncoder().encode(JSON.stringify(side)) };
+		return { base: base.seg.buffer, sidecar: new TextEncoder().encode(JSON.stringify(side)) };
 	}
 
 	load(base: ArrayBuffer, sidecar?: Uint8Array): void {
-		this.setBase(new Segment(base));
+		this.reset();
+		const part = this.addPart(new Segment(base));
 		if (!sidecar?.byteLength) return;
 		const side = JSON.parse(new TextDecoder().decode(sidecar)) as {
 			dead: number[];
 			renamed: Array<[number, string]>;
 			pending: NoteInput[];
 		};
-		for (const id of side.dead) this.markDead(id);
+		for (const id of side.dead) this.markDead(part, id);
 		for (const [id, path] of side.renamed) {
-			const old = this.base?.paths[id];
-			if (old !== undefined) this.baseIds.delete(old);
-			this.baseIds.set(path, id);
-			this.renamed.set(id, path);
+			const old = part.seg.paths[id];
+			if (old !== undefined) this.ids.delete(old);
+			this.ids.set(path, { s: part, d: id });
+			part.renamed.set(id, path);
 		}
 		for (const p of side.pending) this.pending.set(p.path, p);
 		this.rebuildDelta();
 	}
 
-	private setBase(seg: Segment): void {
-		this.base = seg;
-		this.dead = new Uint8Array(seg.docCount);
-		this.deadCount = 0;
-		this.baseIds = new Map(seg.paths.map((p, i) => [p, i]));
-		this.renamed.clear();
+	/** The paths and modified times of every live note (to catch up with the vault by mtime). */
+	mtimes(): Array<[string, number]> {
+		const out: Array<[string, number]> = [];
+		for (const [path, at] of this.ids) out.push([path, at.s.seg.mtime[at.d] as number]);
+		for (const n of this.pending.values()) out.push([n.path, n.mtime]);
+		return out;
+	}
+
+	private reset(): void {
+		this.segs = [];
+		this.ids.clear();
 		this.pending.clear();
 		this.delta = null;
-		this.baseScratch = new Scratch(seg.docCount);
 		this.deltaScratch = null;
-		this.baseByName = null;
+		this.inboundByName = null;
+	}
+
+	private addPart(seg: Segment): SegPart {
+		const part: SegPart = {
+			seg,
+			dead: new Uint8Array(seg.docCount),
+			deadCount: 0,
+			renamed: new Map(),
+			scratch: new Scratch(seg.docCount),
+		};
+		this.segs.push(part);
+		seg.paths.forEach((p, d) => this.ids.set(p, { s: part, d }));
+		this.inboundByName = null;
+		return part;
 	}
 
 	private kill(path: string): void {
-		const id = this.baseIds.get(path);
-		if (id === undefined) return;
-		this.baseIds.delete(path);
-		this.markDead(id);
+		const at = this.ids.get(path);
+		if (!at) return;
+		this.ids.delete(path);
+		this.markDead(at.s, at.d);
 	}
 
-	private markDead(id: number): void {
-		if (this.dead[id]) return;
-		this.dead[id] = 1;
-		this.deadCount++;
+	private markDead(part: SegPart, d: number): void {
+		if (part.dead[d]) return;
+		part.dead[d] = 1;
+		part.deadCount++;
+	}
+
+	/** Inbound links by note name, from the frozen segments (for notes in the delta). */
+	private inbound(): (name: string) => number {
+		const byName = (this.inboundByName ??= (() => {
+			const m = new Map<string, number>();
+			for (const s of this.segs)
+				s.seg.paths.forEach((p, d) =>
+					m.set((p.split("/").pop() ?? p).replace(/\.md$/i, "").toLowerCase(), s.seg.inLinks[d] as number),
+				);
+			return m;
+		})());
+		return (name) => byName.get(name) ?? 0;
 	}
 
 	private rebuildDelta(): void {
@@ -345,41 +423,37 @@ export class JetEngine implements SearchEngine {
 			this.deltaScratch = null;
 			return;
 		}
-		// The delta scores with the base's statistics, so its notes compare fairly with the base's.
-		const base = this.base;
-		const byName = (this.baseByName ??= new Map(
-			(base?.paths ?? []).map((p, i) => [(p.split("/").pop() ?? p).replace(/\.md$/i, "").toLowerCase(), i]),
-		));
-		const inbound = (name: string): number => {
-			const id = byName.get(name);
-			return id === undefined ? 0 : (base?.inLinks[id] ?? 0);
-		};
-		this.delta = new Segment(buildSegment(notes, inbound, this.base?.averages));
+		// The delta scores with the first segment's statistics, so its notes compare fairly.
+		this.delta = new Segment(buildSegment(notes, this.inbound(), this.segs[0]?.seg.averages));
 		this.deltaScratch = new Scratch(this.delta.docCount);
 	}
 
 	private parts(): Part[] {
-		const out: Part[] = [];
-		const base = this.base;
-		if (base && this.baseScratch)
-			out.push({
-				seg: base,
-				dead: this.dead,
-				scratch: this.baseScratch,
-				path: (d) => this.renamed.get(d) ?? (base.paths[d] as string),
-			});
+		const out: Part[] = this.segs.map((s) => ({
+			seg: s.seg,
+			dead: s.dead,
+			scratch: s.scratch,
+			path: (d) => s.renamed.get(d) ?? (s.seg.paths[d] as string),
+		}));
 		const delta = this.delta;
 		if (delta && this.deltaScratch)
 			out.push({ seg: delta, dead: null, scratch: this.deltaScratch, path: (d) => delta.paths[d] as string });
 		return out;
 	}
 
-	/** The term's document frequency in the other segment (for one idf across base and delta). */
+	/** The term's document frequency in the other parts (for one idf across all of them). */
 	private otherDf(seg: Segment, term: string): number {
-		const other = seg === this.base ? this.delta : this.base;
-		if (!other) return 0;
-		const t = exactTerm(other, term);
-		return t < 0 ? 0 : (other.df[t] as number);
+		let n = 0;
+		for (const s of this.segs)
+			if (s.seg !== seg) {
+				const t = exactTerm(s.seg, term);
+				if (t >= 0) n += s.seg.df[t] as number;
+			}
+		if (this.delta && this.delta !== seg) {
+			const t = exactTerm(this.delta, term);
+			if (t >= 0) n += this.delta.df[t] as number;
+		}
+		return n;
 	}
 }
 
