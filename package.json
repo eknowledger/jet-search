@@ -7,11 +7,11 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"typecheck": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck",
-		"format": "oxfmt src test vitest.config.mts",
-		"format:check": "oxfmt --check src test vitest.config.mts",
-		"lint": "oxlint src test vitest.config.mts && eslint src package.json",
-		"lint:fix": "oxlint src test vitest.config.mts --fix && eslint src package.json --fix",
+		"typecheck": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck && node node_modules/typescript-7/bin/tsc -p bench -noEmit -skipLibCheck",
+		"format": "oxfmt src test bench vitest.config.mts",
+		"format:check": "oxfmt --check src test bench vitest.config.mts",
+		"lint": "oxlint src test bench vitest.config.mts && eslint src package.json",
+		"lint:fix": "oxlint src test bench vitest.config.mts --fix && eslint src package.json --fix",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"check": "npm run format:check && npm run lint && npm run typecheck && npm test"
