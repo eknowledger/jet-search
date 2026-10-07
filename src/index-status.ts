@@ -11,6 +11,57 @@ const ago = (t: number): string => {
 	return new Date(t).toLocaleDateString();
 };
 
+/** The last stats the worker gave, kept so the settings can show them without waiting (see `statusNow`). */
+let lastStats: { notes: number; bytes: number; savedAt: number | null; pending: number } | null = null;
+
+/**
+ * The index's status, at once, for the settings tab. It must not change the page after it is drawn:
+ * Obsidian 1.13+ re-renders a settings tab when its text changes, and an update that arrives a moment
+ * later starts that again, forever. So it shows what is known now, and refreshes the stats in the
+ * background for the next time.
+ */
+export const statusNow = (plugin: JetSearchPlugin): IndexStatus => {
+	const p = plugin.feeder.progress;
+	const total = plugin.app.vault.getMarkdownFiles().length;
+	if (p)
+		return {
+			state: `Building: ${p.done} of ${p.total} notes`,
+			ok: false,
+			notes: `${total} notes`,
+			size: "—",
+			updated: "now",
+		};
+	if (!plugin.client.running || !lastStats) {
+		if (plugin.client.running) void refreshStats(plugin);
+		return plugin.data.indexedAt === null
+			? { state: "Not built yet", ok: false, notes: `${total} notes`, size: "—", updated: "never" }
+			: {
+					state: "Saved; loads on the first search",
+					ok: true,
+					notes: `${total} notes`,
+					size: "—",
+					updated: ago(plugin.data.indexedAt),
+				};
+	}
+	void refreshStats(plugin);
+	const s = lastStats;
+	return {
+		state: s.pending ? "Up to date (changes saved apart)" : "Index up to date",
+		ok: true,
+		notes: `${s.notes} of ${total} notes`,
+		size: `${(s.bytes / 1e6).toFixed(1)} MB on this device`,
+		updated: s.savedAt ? ago(s.savedAt) : "not saved yet",
+	};
+};
+
+const refreshStats = async (plugin: JetSearchPlugin): Promise<void> => {
+	try {
+		lastStats = await plugin.client.call({ op: "stats" });
+	} catch {
+		// The worker stopped meanwhile: the next status says so.
+	}
+};
+
 export const indexStatus = async (plugin: JetSearchPlugin): Promise<IndexStatus> => {
 	const p = plugin.feeder.progress;
 	const total = plugin.app.vault.getMarkdownFiles().length;

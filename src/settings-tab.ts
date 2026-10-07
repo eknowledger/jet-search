@@ -1,7 +1,7 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { BUILD_ID } from "./build-id";
 import { STEM_LANGUAGES } from "./engine/stem";
-import { clearIndex, indexStatus, rebuild } from "./index-status";
+import { clearIndex, rebuild, statusNow } from "./index-status";
 import type JetSearchPlugin from "./main";
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -90,13 +90,14 @@ export class JetSettingTab extends PluginSettingTab {
 					save();
 				}),
 			);
-		const status = new Setting(el).setName("Index").setDesc("…");
-		void indexStatus(this.owner).then((x) =>
-			status.setDesc(`${x.state} · ${x.notes} · ${x.size} · updated ${x.updated}`),
-		);
+		// Drawn once, at once: a later change of the text would make Obsidian redraw this tab, forever.
+		const x = statusNow(this.owner);
+		const status = new Setting(el)
+			.setName("Index")
+			.setDesc(`${x.state} · ${x.notes} · ${x.size} · updated ${x.updated}`);
 		status.addButton((b) =>
 			b.setButtonText("Rebuild").onClick(() => {
-				status.setDesc("Rebuilding…");
+				b.setDisabled(true).setButtonText("Rebuilding…");
 				void rebuild(this.owner).then(
 					() => this.display(),
 					(e: unknown) => {

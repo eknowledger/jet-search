@@ -400,6 +400,10 @@ export class Control {
 	addOptions(): this {
 		return this;
 	}
+	setDisabled(on: boolean): this {
+		this.buttonEl.toggleAttribute("disabled", on);
+		return this;
+	}
 	setButtonText(t: string): this {
 		this.buttonEl.textContent = t;
 		return this;

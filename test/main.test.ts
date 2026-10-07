@@ -76,4 +76,16 @@ describe("settings tab", () => {
 		expect(text).toContain("0.0.1");
 		expect(text).toContain("dev");
 	});
+
+	it("draws the index status at once and never changes the tab afterwards", async () => {
+		// Obsidian 1.13+ redraws a settings tab whose text changes; a late update looped forever.
+		const { plugin } = make();
+		await plugin.onload();
+		const tab = plugin.settingTabs[0];
+		tab?.display();
+		const before = tab?.containerEl.textContent ?? "";
+		expect(before).toContain("Not built yet");
+		await new Promise((r) => setTimeout(r, 20));
+		expect(tab?.containerEl.textContent).toBe(before);
+	});
 });
