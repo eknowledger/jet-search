@@ -323,13 +323,35 @@ export class Plugin extends Component {
 	}
 }
 
+/** The app version the mock reports to `requireApiVersion` (tests may lower it). */
+export const mockApi = { version: "1.14.4" };
+
+const versionAtLeast = (have: string, want: string): boolean => {
+	const h = have.split(".").map(Number);
+	const w = want.split(".").map(Number);
+	for (let i = 0; i < 3; i++) if ((h[i] ?? 0) !== (w[i] ?? 0)) return (h[i] ?? 0) > (w[i] ?? 0);
+	return true;
+};
+
+export const requireApiVersion = (version: string): boolean => versionAtLeast(mockApi.version, version);
+
 export class PluginSettingTab {
 	readonly containerEl = document.createElement("div");
+	/** How many times `update()` was called (1.13+: Obsidian redraws the tab from its definitions). */
+	updates = 0;
 
 	constructor(
 		readonly app: App,
 		readonly plugin: Plugin,
 	) {}
+
+	getSettingDefinitions(): unknown[] {
+		return [];
+	}
+
+	update(): void {
+		this.updates++;
+	}
 
 	display(): void {}
 

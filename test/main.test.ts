@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { App } from "obsidian";
+import { App, Setting } from "obsidian";
+import type { JetSettingTab } from "../src/settings-tab";
 import JetSearchPlugin from "../src/main";
 
 const manifest = { id: "jet-search", name: "Jet Search", version: "0.0.1" };
@@ -87,5 +88,55 @@ describe("settings tab", () => {
 		expect(before).toContain("Not built yet");
 		await new Promise((r) => setTimeout(r, 20));
 		expect(tab?.containerEl.textContent).toBe(before);
+	});
+
+	type Def = { type?: string; heading?: string; name?: string; items?: Def[]; render?: (s: Setting) => void };
+	const defsOf = async (): Promise<{ tab: JetSettingTab; defs: Def[]; plugin: Mocked }> => {
+		const { plugin } = make();
+		await plugin.onload();
+		const tab = plugin.settingTabs[0] as unknown as JetSettingTab;
+		return { tab, defs: tab.getSettingDefinitions() as unknown as Def[], plugin };
+	};
+	const flat = (defs: Def[]): Def[] => defs.flatMap((d) => (d.type === "group" ? (d.items ?? []) : [d]));
+
+	it("declares every setting, so Obsidian 1.13+ draws them and finds them in its settings search", async () => {
+		const { defs } = await defsOf();
+		expect(defs.filter((d) => d.type === "group").map((d) => d.heading)).toEqual([
+			"Open",
+			"Results",
+			"Word forms",
+			"Index",
+		]);
+		const names = flat(defs).map((d) => d.name);
+		expect(names).toContain("Open with a double tap of ⇧");
+		expect(names).toContain("Folders to leave out");
+		expect(names).toContain("English");
+		expect(names.at(-1)).toBe("Version");
+	});
+
+	it("reads and writes Jet's own settings through the control keys", async () => {
+		const { tab, plugin } = await defsOf();
+		tab.setControlValue("shiftInterval", "500");
+		expect(plugin.data.settings.shiftInterval).toBe(500);
+		expect(tab.getControlValue("shiftInterval")).toBe("500");
+		tab.setControlValue("stem:fr", true);
+		expect(tab.getControlValue("stem:fr")).toBe(true);
+		tab.setControlValue("stem:fr", false);
+		expect(plugin.data.settings.stemming).not.toContain("fr");
+		tab.setControlValue("exclude", "Archive/\n\n  Templates ");
+		expect(plugin.data.settings.exclude).toEqual(["Archive", "Templates"]);
+		expect(tab.getControlValue("exclude")).toBe("Archive\nTemplates");
+	});
+
+	it("draws the declared index row at once and never changes it afterwards", async () => {
+		const { defs } = await defsOf();
+		const row = flat(defs).find((d) => d.name === "Index");
+		const el = document.createElement("div");
+		row?.render?.(new Setting(el));
+		const before = el.textContent ?? "";
+		expect(before).toContain("Not built yet");
+		expect(before).toContain("Rebuild");
+		await new Promise((r) => setTimeout(r, 20));
+		expect(el.textContent).toBe(before);
 	});
 });
