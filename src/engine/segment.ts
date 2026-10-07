@@ -7,7 +7,7 @@ import { ByteWriter, readVarint } from "./varint";
  *
  *   terms     sorted, one string (UTF-8 on disk) + code-unit offsets; df per term
  *   body      per term: (doc-id gap, count) as varints
- *   meta      per term, sparse: (doc id, precomputed field score) for name, aliases, headings, tags,
+ *   meta      per term, sparse: (doc id, precomputed field score, in-name flag) for name, aliases, headings, tags,
  *             folder and links (Jade's trick: the per-field BM25 is done at build time)
  *   docs      path, normalized name, modified time, body length, inbound links
  *   averages  field lengths, so a delta segment scores with its base's statistics
@@ -54,7 +54,7 @@ const pack = (strings: readonly string[]): { offsets: Uint32Array; bytes: Uint8A
 	return { offsets, bytes: encoder.encode(strings.join("")) };
 };
 
-type TermBuild = { docs: number[]; tf: number[]; metaDocs: number[]; meta: number[]; df: number };
+type TermBuild = { docs: number[]; tf: number[]; metaDocs: number[]; meta: number[]; inName: number[]; df: number };
 
 /**
  * Build a segment from notes. `averages`: the statistics to score field lengths against (a delta
@@ -68,7 +68,7 @@ export const buildSegment = (
 	const table = new Map<string, TermBuild>();
 	const entry = (t: string): TermBuild => {
 		let e = table.get(t);
-		if (!e) table.set(t, (e = { docs: [], tf: [], metaDocs: [], meta: [], df: 0 }));
+		if (!e) table.set(t, (e = { docs: [], tf: [], metaDocs: [], meta: [], inName: [], df: 0 }));
 		return e;
 	};
 	notes.forEach((n, d) => {
@@ -88,10 +88,12 @@ export const buildSegment = (
 			e.docs.push(d);
 			e.tf.push(c);
 		}
+		const name = new Set(n.fields.name);
 		for (const [t, s] of meta) {
 			const e = entry(t);
 			e.metaDocs.push(d);
 			e.meta.push(s);
+			e.inName.push(name.has(t) ? 1 : 0);
 		}
 		for (const t of new Set([...body.keys(), ...meta.keys()])) entry(t).df++;
 	});
@@ -107,6 +109,7 @@ export const buildSegment = (
 	for (const t of terms) metaCount += (table.get(t) as TermBuild).metaDocs.length;
 	const metaDocs = new Uint32Array(metaCount);
 	const metaScore = new Float32Array(metaCount);
+	const metaInName = new Uint8Array(metaCount);
 	let m = 0;
 	terms.forEach((t, i) => {
 		const e = table.get(t) as TermBuild;
@@ -122,6 +125,7 @@ export const buildSegment = (
 		metaOff[i] = m;
 		for (let k = 0; k < e.metaDocs.length; k++) {
 			metaDocs[m] = e.metaDocs[k] as number;
+			metaInName[m] = e.inName[k] as number;
 			metaScore[m++] = e.meta[k] as number;
 		}
 	});
@@ -150,6 +154,7 @@ export const buildSegment = (
 		names.offsets,
 		names.bytes,
 		averages,
+		metaInName,
 	];
 	let size = HEADER_WORDS * 4;
 	const offsets: number[] = [];
@@ -193,6 +198,8 @@ export class Segment {
 	readonly bodyLen: Uint32Array;
 	readonly inLinks: Uint32Array;
 	readonly averages: Float32Array;
+	/** Per meta posting: 1 when the term is in the note's name (for the title boost). */
+	readonly metaInName: Uint8Array;
 	private readonly termOffsets: Uint32Array;
 	private readonly termBytes: Uint8Array;
 	private readonly pathOffsets: Uint32Array;
@@ -234,6 +241,7 @@ export class Segment {
 		this.nameOffsets = new Uint32Array(buffer, o(13), (D as number) + 1);
 		this.nameBytes = new Uint8Array(buffer, o(14), nameBytes);
 		this.averages = new Float32Array(buffer, o(15), FIELDS.length + 1);
+		this.metaInName = new Uint8Array(buffer, o(16), M);
 	}
 
 	/** The sorted terms (decoded once). */

@@ -44,6 +44,9 @@ type Expansion = { t: number; w: number; e: number };
 class Scratch {
 	readonly total: Float32Array;
 	readonly matched: Uint32Array;
+	/** Bit per query word: the word (or one of its expansions) is in the note's name. */
+	readonly inName: Uint32Array;
+	readonly wInName: Uint8Array;
 	readonly edits: Uint16Array;
 	readonly qStamp: Uint32Array;
 	readonly best: Float32Array;
@@ -59,6 +62,8 @@ class Scratch {
 	constructor(n: number) {
 		this.total = new Float32Array(n);
 		this.matched = new Uint32Array(n);
+		this.inName = new Uint32Array(n);
+		this.wInName = new Uint8Array(n);
 		this.edits = new Uint16Array(n);
 		this.qStamp = new Uint32Array(n);
 		this.best = new Float32Array(n);
@@ -71,7 +76,7 @@ class Scratch {
 }
 
 type Part = { seg: Segment; dead: Uint8Array | null; scratch: Scratch; path: (d: number) => string };
-type Candidate = { part: Part; d: number; matched: number; edits: number; score: number };
+type Candidate = { part: Part; d: number; matched: number; edits: number; score: number; allInName: boolean };
 
 /** Ranking key: more words matched, then fewer typo edits, then higher score. */
 const byKey = (a: Candidate, b: Candidate): boolean =>
@@ -141,8 +146,6 @@ export class JetEngine implements SearchEngine {
 		if (!n || !parts.length) return { hits: [], terms: [] };
 		const N = Math.max(1, this.size);
 		const terms = new Set<string>();
-		/** Per query word, the index terms it expanded to: a corrected word in a title counts as in it. */
-		const wordTerms: Set<string>[] = q.words.map(() => new Set<string>());
 		const candidates: Candidate[] = [];
 		for (const part of parts) {
 			const { seg, dead, scratch: s } = part;
@@ -165,6 +168,16 @@ export class JetEngine implements SearchEngine {
 						s.eStamp[d] = s.e;
 						s.exp[d] = seg.metaScore[k] as number;
 						touchedE.push(d);
+						if (seg.metaInName[k]) {
+							// Name hits are noted per word, for the title boost: any expansion counts.
+							if (s.wStamp[d] !== s.w) {
+								s.wStamp[d] = s.w;
+								s.best[d] = 0;
+								s.bestEdits[d] = x.e;
+								touchedW.push(d);
+							}
+							s.wInName[d] = 1;
+						}
 					}
 					// Body postings, decoded inline: (doc gap, count) varint pairs.
 					const body = seg.body;
@@ -189,10 +202,7 @@ export class JetEngine implements SearchEngine {
 							touchedE.push(d);
 						}
 					}
-					if (touchedE.length) {
-						terms.add(term);
-						(wordTerms[i] as Set<string>).add(term);
-					}
+					if (touchedE.length) terms.add(term);
 					// Max over a word's expansions: forty "exp…" words do not add up.
 					for (const doc of touchedE) {
 						const c = x.w * idf * (s.exp[doc] as number);
@@ -200,6 +210,7 @@ export class JetEngine implements SearchEngine {
 							s.wStamp[doc] = s.w;
 							s.best[doc] = c;
 							s.bestEdits[doc] = x.e;
+							s.wInName[doc] = 0;
 							touchedW.push(doc);
 						} else if (c > (s.best[doc] as number)) {
 							s.best[doc] = c;
@@ -213,9 +224,11 @@ export class JetEngine implements SearchEngine {
 						s.qStamp[doc] = s.q;
 						s.total[doc] = 0;
 						s.matched[doc] = 0;
+						s.inName[doc] = 0;
 						s.edits[doc] = 0;
 						touchedQ.push(doc);
 					}
+					if (s.wInName[doc]) s.inName[doc] = (s.inName[doc] as number) | bit;
 					s.total[doc] = (s.total[doc] as number) + (s.best[doc] as number);
 					s.matched[doc] = (s.matched[doc] as number) | bit;
 					s.edits[doc] = (s.edits[doc] as number) + (s.bestEdits[doc] as number);
@@ -229,6 +242,7 @@ export class JetEngine implements SearchEngine {
 					s.xStamp[seg.metaDocs[k] as number] = s.q;
 				seg.forBody(t, (doc) => (s.xStamp[doc] = s.q));
 			}
+			const allBits = n >= 32 ? 0xffffffff : (1 << n) - 1;
 			for (const d of touchedQ) {
 				if (s.xStamp[d] === s.q) continue;
 				if (opts.allow && !opts.allow(part.path(d))) continue;
@@ -238,6 +252,7 @@ export class JetEngine implements SearchEngine {
 					matched: popcount(s.matched[d] as number),
 					edits: s.edits[d] as number,
 					score: s.total[d] as number,
+					allInName: s.inName[d] === allBits,
 				});
 			}
 		}
@@ -253,7 +268,7 @@ export class JetEngine implements SearchEngine {
 			const name = seg.names[c.d] as string;
 			if (name === typed) score *= 2;
 			else if (name.startsWith(q.lastIsPrefix ? typed : `${typed} `)) score *= 1.5;
-			else if (allWordsIn(name, wordTerms)) score *= 1.4;
+			else if (c.allInName) score *= 1.4;
 			const days = Math.max(0, (now - (seg.mtime[c.d] as number)) / DAY);
 			score *= 1 + 0.2 * Math.exp(-days / 45);
 			score *= 1 + 0.08 * Math.log2(1 + (seg.inLinks[c.d] as number));
@@ -378,12 +393,6 @@ const exactTerm = (seg: Segment, word: string): number => {
 	const terms = seg.terms;
 	const i = lowerBound(terms, word);
 	return terms[i] === word ? i : -1;
-};
-
-/** Whether every query word is in the note's name, as itself or one of its expansions (prefix, typo). */
-const allWordsIn = (name: string, wordTerms: readonly Set<string>[]): boolean => {
-	const tokens = name.split(" ");
-	return wordTerms.every((set) => tokens.some((t) => set.has(t)));
 };
 
 /** The index terms a typed word matches, with how much each counts. */
