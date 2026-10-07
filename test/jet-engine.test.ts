@@ -247,3 +247,34 @@ describe("Jet engine segments (first build in batches, merge)", () => {
 		expect(e.wantsMerge).toBe(false);
 	});
 });
+
+describe("Jet engine word forms and compounds", () => {
+	const notes = (): NoteInput[] => [
+		note("run.md", "We run every morning."),
+		note("running.md", "Running shoes and running water."),
+		note("meeting.md", "The weekly meeting."),
+		note("db.md", "Die Datenbankmigration der Datenbank lief gut."),
+		note("other.md", "Something else entirely: the migrants."),
+	];
+
+	it("finds other forms of a word below the exact word, in the chosen languages only", () => {
+		const e = engine(notes());
+		const hits = e.query(parseQuery("running ")).hits.map((h) => h.path);
+		expect(hits[0]).toBe("running.md");
+		expect(hits).toContain("run.md");
+		expect(paths(e, "meetings ")).toEqual(["meeting.md"]);
+		// "run" is four edits from "running": only its word form finds it.
+		e.configure({ stemming: [] });
+		expect(paths(e, "running ")).not.toContain("run.md");
+	});
+
+	it("finds a compound by its part only when a compounding language is on", () => {
+		const e = engine(notes());
+		expect(paths(e, "migration ")).toEqual([]);
+		e.configure({ stemming: ["en", "de"] });
+		expect(paths(e, "migration ")).toEqual(["db.md"]);
+		e.configure({ stemming: ["de"] });
+		e.warm();
+		expect(paths(e, "datenbank ")).toEqual(["db.md"]);
+	});
+});

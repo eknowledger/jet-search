@@ -50,20 +50,20 @@ describe("worker router", () => {
 	it("builds in batches, saves on the last one, and loads it next time", async () => {
 		const store = memoryStore();
 		const r = new Router(() => store, timers);
-		expect(await r.handle({ op: "open", vaultId: "v1" })).toEqual({ loaded: false, notes: 0 });
+		expect(await r.handle({ op: "open", vaultId: "v1", stemming: ["en"] })).toEqual({ loaded: false, notes: 0 });
 		await r.handle({ op: "batch", notes: [raw("a.md", "orchid garden")], last: false });
 		expect(await ask(r, "orchid ")).toEqual(["a.md"]);
 		expect(store.saved).toBeNull();
 		await r.handle({ op: "batch", notes: [raw("b.md", "orchid lantern")], last: true });
 		expect(store.saved?.version).toBe(INDEX_VERSION);
 		const next = new Router(() => store, timers);
-		expect(await next.handle({ op: "open", vaultId: "v1" })).toEqual({ loaded: true, notes: 2 });
+		expect(await next.handle({ op: "open", vaultId: "v1", stemming: ["en"] })).toEqual({ loaded: true, notes: 2 });
 		expect((await ask(next, "orchid ")).sort()).toEqual(["a.md", "b.md"]);
 	});
 
 	it("reads fields from what Obsidian gathered: headings, tags, aliases, links, body after frontmatter", async () => {
 		const r = new Router(() => memoryStore(), timers);
-		await r.handle({ op: "open", vaultId: "v" });
+		await r.handle({ op: "open", vaultId: "v", stemming: ["en"] });
 		const text = "---\nsecret: frontmatter\n---\nbody words here";
 		await r.handle({
 			op: "batch",
@@ -87,7 +87,7 @@ describe("worker router", () => {
 		const store = memoryStore();
 		const timers = manualTimers();
 		const r = new Router(() => store, timers);
-		await r.handle({ op: "open", vaultId: "v" });
+		await r.handle({ op: "open", vaultId: "v", stemming: ["en"] });
 		await r.handle({
 			op: "batch",
 			notes: Array.from({ length: 30 }, (_, i) => raw(`n${i}.md`, `note ${i} meadow`)),
@@ -100,7 +100,7 @@ describe("worker router", () => {
 		expect(store.saved?.base).toBe(base);
 		expect(new TextDecoder().decode(store.saved?.sidecar)).toContain("zebras");
 		const back = new Router(() => store, timers);
-		await back.handle({ op: "open", vaultId: "v" });
+		await back.handle({ op: "open", vaultId: "v", stemming: ["en"] });
 		expect(await ask(back, "zebras ")).toEqual(["n1.md"]);
 	});
 
@@ -108,14 +108,14 @@ describe("worker router", () => {
 		const store = memoryStore();
 		await store.save({ base: new ArrayBuffer(64), sidecar: new Uint8Array(0), savedAt: 1, version: INDEX_VERSION });
 		const r = new Router(() => store, timers);
-		expect(await r.handle({ op: "open", vaultId: "v" })).toEqual({ loaded: false, notes: 0 });
+		expect(await r.handle({ op: "open", vaultId: "v", stemming: ["en"] })).toEqual({ loaded: false, notes: 0 });
 		await store.save({
 			base: new ArrayBuffer(64),
 			sidecar: new Uint8Array(0),
 			savedAt: 1,
 			version: INDEX_VERSION + 1,
 		});
-		expect(await new Router(() => store, timers).handle({ op: "open", vaultId: "v" })).toEqual({
+		expect(await new Router(() => store, timers).handle({ op: "open", vaultId: "v", stemming: ["en"] })).toEqual({
 			loaded: false,
 			notes: 0,
 		});
@@ -124,7 +124,7 @@ describe("worker router", () => {
 	it("keeps answers to the allowed notes, and clears the index", async () => {
 		const store = memoryStore();
 		const r = new Router(() => store, timers);
-		await r.handle({ op: "open", vaultId: "v" });
+		await r.handle({ op: "open", vaultId: "v", stemming: ["en"] });
 		await r.handle({ op: "batch", notes: [raw("x/a.md", "maple"), raw("y/b.md", "maple")], last: true });
 		const q = (await r.handle({
 			op: "query",

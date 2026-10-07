@@ -7,7 +7,9 @@ import type { Hit } from "../engine/jet-engine";
  */
 export type Request =
 	/** Open the vault's saved index, if any. */
-	| { op: "open"; vaultId: string }
+	| { op: "open"; vaultId: string; stemming: string[] }
+	/** Settings changed: the stemming languages. */
+	| { op: "configure"; stemming: string[] }
 	/** A first build's batch (newest notes first); `last` closes the build: merge and save. */
 	| { op: "batch"; notes: RawNote[]; last: boolean }
 	| { op: "upsert"; notes: RawNote[] }

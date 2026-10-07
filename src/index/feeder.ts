@@ -36,6 +36,7 @@ export class Feeder {
 		private readonly client: JetClient,
 		private readonly vaultId: string,
 		private readonly excludedFolders: () => readonly string[],
+		private readonly stemming: () => readonly string[] = () => ["en"],
 	) {}
 
 	/** Open the saved index and catch up, or build it (once; again after a worker restart). */
@@ -61,7 +62,11 @@ export class Feeder {
 	}
 
 	private async start(): Promise<void> {
-		const { loaded } = await this.client.call({ op: "open", vaultId: this.vaultId });
+		const { loaded } = await this.client.call({
+			op: "open",
+			vaultId: this.vaultId,
+			stemming: [...this.stemming()],
+		});
 		if (loaded) await this.catchUp();
 		else await this.build();
 		this.live = true;

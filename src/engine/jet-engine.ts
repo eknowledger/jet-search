@@ -3,6 +3,7 @@ import type { NoteInput } from "./fields";
 import { FIELDS } from "./fields";
 import type { Query } from "./query";
 import { B_BODY, buildSegment, K1, type MergePart, mergeSegments, Segment } from "./segment";
+import { STEMMERS, type StemLanguage, stemmable } from "./stem";
 import { lowerBound, prefixRange, typoBudget, typoMatches } from "./typos";
 
 /** One result: the note, its score, how many query words it matched, and its typo edits in total. */
@@ -36,6 +37,79 @@ const TYPO1 = 0.55;
 const TYPO2 = 0.35;
 const FUZZY_PREFIX = 0.4;
 const FUZZY_LIMIT = 200;
+/** Word forms: a word's root group, below the exact word. */
+const STEM = 0.8;
+const STEM_LIMIT = 32;
+/** Compound parts: compounds that start or end with the word, below word forms. */
+const COMPOUND = 0.6;
+const COMPOUND_LIMIT = 32;
+const COMPOUND_LANGS: ReadonlySet<StemLanguage> = new Set(["de", "nl", "sv"]);
+/** Linking letters between the parts of a compound (Arbeit-s-zeit, Kirche-n-turm). */
+const LINKS = ["", "s", "es", "n", "en", "e"];
+
+/** What the engine expands words with: stemming languages (English by default). */
+export type EngineConfig = { stemming: readonly StemLanguage[] };
+
+/** Per segment, built on first need: root groups found so far, and its terms sorted by their reverse. */
+type Extras = { groups: Map<string, number[]>; reversed: { keys: string[]; ids: Int32Array } | null };
+const extras = new WeakMap<Segment, Extras>();
+const extrasOf = (seg: Segment): Extras => {
+	let x = extras.get(seg);
+	if (!x) extras.set(seg, (x = { groups: new Map(), reversed: null }));
+	return x;
+};
+
+/** Arabic prefixes a light stem drops: words in a group may start with any of them. */
+const AR_PREFIXES = [
+	"",
+	"\u0648",
+	"\u0627\u0644",
+	"\u0628\u0627\u0644",
+	"\u0643\u0627\u0644",
+	"\u0641\u0627\u0644",
+	"\u0644\u0644",
+	"\u0648\u0627\u0644",
+];
+
+/**
+ * The terms of a segment sharing a word's stem in a language (its root group), most frequent
+ * first. A stem is (nearly always) a prefix of its words, so only the terms starting with the stem's
+ * first letters are stemmed: no table is built ahead, and a group costs a few hundred stems once.
+ */
+export const rootGroup = (seg: Segment, lang: StemLanguage, stem: string): number[] => {
+	const x = extrasOf(seg);
+	const key = `${lang}:${stem}`;
+	const known = x.groups.get(key);
+	if (known) return known;
+	const terms = seg.terms;
+	const stemOf = STEMMERS[lang];
+	const head = stem.slice(0, Math.max(3, stem.length - 2));
+	const out: number[] = [];
+	for (const pre of lang === "ar" ? AR_PREFIXES : [""]) {
+		const [from, to] = prefixRange(terms, pre + head);
+		for (let t = from; t < to && t < from + 5000; t++) {
+			const term = terms[t] as string;
+			if (stemmable(lang, term) && stemOf(term) === stem) out.push(t);
+		}
+	}
+	out.sort((a, b) => (seg.df[b] as number) - (seg.df[a] as number));
+	if (x.groups.size > 2000) x.groups.clear();
+	x.groups.set(key, out);
+	return out;
+};
+
+const reverse = (s: string): string => [...s].reverse().join("");
+
+/** The segment's terms sorted by their reversed spelling (to find compounds ending with a word). */
+const reversedTerms = (seg: Segment): { keys: string[]; ids: Int32Array } => {
+	const x = extrasOf(seg);
+	if (x.reversed) return x.reversed;
+	const pairs = seg.terms
+		.map((t, i) => [reverse(t), i] as const)
+		.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+	x.reversed = { keys: pairs.map((p) => p[0]), ids: Int32Array.from(pairs.map((p) => p[1])) };
+	return x.reversed;
+};
 const DAY = 86_400_000;
 
 type Expansion = { t: number; w: number; e: number };
@@ -95,12 +169,24 @@ type SegPart = { seg: Segment; dead: Uint8Array; deadCount: number; renamed: Map
  * everything into one segment (when idle, or before saving). Pure: runs in the worker and in tests.
  */
 export class JetEngine implements SearchEngine {
+	private config: EngineConfig = { stemming: ["en"] };
 	private segs: SegPart[] = [];
 	private ids = new Map<string, { s: SegPart; d: number }>();
 	private pending = new Map<string, NoteInput>();
 	private delta: Segment | null = null;
 	private deltaScratch: Scratch | null = null;
 	private inboundByName: Map<string, number> | null = null;
+
+	/** Set the stemming languages (settings); root groups are built on first use per segment. */
+	configure(config: EngineConfig): void {
+		this.config = { stemming: [...config.stemming] };
+	}
+
+	/** Build what queries will need ahead of them (the reversed terms for compounds), e.g. when idle after a load. */
+	warm(): void {
+		if (!this.config.stemming.some((l) => COMPOUND_LANGS.has(l))) return;
+		for (const s of this.segs) reversedTerms(s.seg);
+	}
 
 	get size(): number {
 		let n = this.pending.size;
@@ -199,7 +285,7 @@ export class JetEngine implements SearchEngine {
 				const word = q.words[i] as string;
 				s.w++;
 				const touchedW: number[] = [];
-				for (const x of expand(seg, word, q.lastIsPrefix && i === n - 1)) {
+				for (const x of expand(seg, word, q.lastIsPrefix && i === n - 1, this.config)) {
 					const term = seg.terms[x.t] as string;
 					const df = (seg.df[x.t] as number) + this.otherDf(seg, term);
 					const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
@@ -470,7 +556,7 @@ const exactTerm = (seg: Segment, word: string): number => {
 };
 
 /** The index terms a typed word matches, with how much each counts. */
-const expand = (seg: Segment, word: string, isLast: boolean): Expansion[] => {
+const expand = (seg: Segment, word: string, isLast: boolean, config: EngineConfig): Expansion[] => {
 	const terms = seg.terms;
 	const best = new Map<number, Expansion>();
 	const put = (t: number, w: number, e: number): void => {
@@ -494,6 +580,43 @@ const expand = (seg: Segment, word: string, isLast: boolean): Expansion[] => {
 		for (const m of typoMatches(terms, word, budget, { fuzzyPrefix: fuzzy, prefixBudget: 1, limit: 500 })) {
 			if (!m.prefix) put(m.index, m.edits === 1 ? TYPO1 : TYPO2, m.edits);
 			else if (m.edits > 0 && fuzzyCount++ < FUZZY_LIMIT) put(m.index, FUZZY_PREFIX, m.edits);
+		}
+	}
+	// Word forms: the root group of the word in each stemming language.
+	for (const lang of config.stemming) {
+		if (!stemmable(lang, word)) continue;
+		const group = rootGroup(seg, lang, STEMMERS[lang](word));
+		let k = 0;
+		for (const t of group) {
+			if (t === exact) continue;
+			put(t, STEM, 0);
+			if (++k >= STEM_LIMIT) break;
+		}
+	}
+	// Compound parts, for compounding languages: compounds that start or end with the
+	// word, where the rest is itself a word of the index (no dictionary needed).
+	if (len >= 4 && !noTypos(word) && config.stemming.some((l) => COMPOUND_LANGS.has(l))) {
+		const isWord = (s: string): boolean => s.length >= 3 && exactTerm(seg, s) >= 0;
+		const rest = (r: string): boolean => LINKS.some((l) => r.startsWith(l) && isWord(r.slice(l.length)));
+		let k = 0;
+		const [from, to] = prefixRange(terms, word);
+		for (let t = from; t < to && t < from + 2000 && k < COMPOUND_LIMIT; t++)
+			if (t !== exact && rest((terms[t] as string).slice(len))) {
+				put(t, COMPOUND, 0);
+				k++;
+			}
+		const rev = reversedTerms(seg);
+		const key = reverse(word);
+		let lo = lowerBound(rev.keys, key);
+		for (; lo < rev.keys.length && k < COMPOUND_LIMIT * 2; lo++) {
+			const r = rev.keys[lo] as string;
+			if (!r.startsWith(key)) break;
+			const t = rev.ids[lo] as number;
+			const head = (terms[t] as string).slice(0, -len);
+			if (t !== exact && LINKS.some((l) => head.endsWith(l) && isWord(head.slice(0, head.length - l.length)))) {
+				put(t, COMPOUND, 0);
+				k++;
+			}
 		}
 	}
 	return [...best.values()];

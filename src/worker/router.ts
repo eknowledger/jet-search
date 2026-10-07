@@ -1,6 +1,7 @@
 import { fieldsFromRaw } from "../engine/fields";
 import { JetEngine } from "../engine/jet-engine";
 import { parseQuery } from "../engine/query";
+import { STEM_LANGUAGES, type StemLanguage } from "../engine/stem";
 import type { QueryReply, Request, Stats } from "./protocol";
 import type { Store } from "./store";
 
@@ -36,6 +37,7 @@ export class Router {
 	async handle(req: Request): Promise<unknown> {
 		switch (req.op) {
 			case "open": {
+				this.configure(req.stemming);
 				this.store = this.makeStore(req.vaultId);
 				let loaded = false;
 				try {
@@ -51,12 +53,19 @@ export class Router {
 					// A broken or unreadable index is rebuilt, never fatal.
 					console.warn("Jet Search: the saved index could not be read; rebuilding", e);
 				}
+				// Root groups for word forms are built while the worker waits for the first query.
+				this.timers.set(() => this.engine.warm(), 0);
 				return { loaded, notes: this.engine.size };
 			}
+			case "configure":
+				this.configure(req.stemming);
+				this.timers.set(() => this.engine.warm(), 0);
+				return { notes: this.engine.size };
 			case "batch":
 				this.engine.addBatch(req.notes.map(fieldsFromRaw));
 				if (req.last) {
 					this.engine.merge();
+					this.timers.set(() => this.engine.warm(), 0);
 					await this.save();
 				}
 				return { notes: this.engine.size };
@@ -99,6 +108,11 @@ export class Router {
 			allow: allow ? (p) => allow.has(p) : undefined,
 		});
 		return { seq: req.seq, hits: r.hits, terms: r.terms, ms: performance.now() - t0 };
+	}
+
+	private configure(langs: readonly string[]): void {
+		const known = new Set<string>(STEM_LANGUAGES);
+		this.engine.configure({ stemming: langs.filter((l): l is StemLanguage => known.has(l)) });
 	}
 
 	stats(): Stats {
