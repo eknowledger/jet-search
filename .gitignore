@@ -1,0 +1,10 @@
+# Build and tooling output
+node_modules/
+main.js
+*.js.map
+coverage/
+*.log
+
+# Editor and OS
+.DS_Store
+.vscode/
