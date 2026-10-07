@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { App, TFile } from "obsidian";
 import { normalizeData } from "../src/data";
 import type { Feeder } from "../src/index/feeder";
@@ -27,6 +27,8 @@ const setup = (building: boolean): Search => {
 	data.indexedAt = building ? null : 1;
 	return new Search(app, {} as JetClient, feeder, () => data);
 };
+
+const vaultOf = (s: Search): { calls: string[] } => (s as unknown as { app: { vault: { calls: string[] } } }).app.vault;
 
 const first = (s: Search, text: string): Item[] => {
 	let shown: Entry[] = [];
@@ -58,5 +60,23 @@ describe("search before the index is ready", () => {
 		const rows = first(s, "garden");
 		expect(rows.map((e) => e.path)).toEqual(["Projects/Garden.md"]);
 		expect(rows[0]?.excerpt).toBeUndefined();
+	});
+});
+
+describe("warming up when the modal opens", () => {
+	it("builds Tier 0 just after the modal's first paint, so the first letter only matches", () => {
+		vi.useFakeTimers();
+		try {
+			const s = setup(true);
+			s.warm();
+			expect(vaultOf(s).calls).toEqual([]);
+			vi.runAllTimers();
+			const built = vaultOf(s).calls.length;
+			expect(built).toBeGreaterThan(0);
+			expect(first(s, "watering").map((e) => e.path)).toEqual(["Projects/Garden.md"]);
+			expect(vaultOf(s).calls.length).toBe(built);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

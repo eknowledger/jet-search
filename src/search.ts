@@ -82,6 +82,17 @@ export class Search {
 		})().catch((e: unknown) => console.error("Jet Search: search failed", e));
 	}
 
+	/**
+	 * The modal opened (on its recents): build Tier 0 just after that paint, so the first letter only
+	 * matches. Building in the keystroke cost the first letter of a session ~30 ms during a first build.
+	 */
+	warm(): void {
+		window.setTimeout(() => {
+			this.nameIndex();
+			if (this.indexNotReady()) this.metaIndex();
+		}, 0);
+	}
+
 	/** The modal closed: nothing to keep live. */
 	idle(): void {
 		this.current = null;

@@ -83,6 +83,7 @@ export class JetHost implements ModalHost {
 	list(text: string, paint: (entries: Entry[], status?: string) => void): void {
 		if (!text.trim()) {
 			paint(this.recents());
+			this.search().warm();
 			return;
 		}
 		this.search().list(text, paint);
