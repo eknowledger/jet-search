@@ -20,8 +20,11 @@ export const WEIGHTS: Record<MetaField, number> = {
 
 export type NoteFields = Record<MetaField, string[]> & { body: string[] };
 
-/** What the engine indexes for one note. `links` are the names of the notes it links to (for inbound counts). */
-export type NoteInput = { path: string; mtime: number; fields: NoteFields; linkTargets: string[] };
+/**
+ * What the engine indexes for one note. `linkTargets` are the names of the notes it links to; `inLinks`,
+ * when known (Obsidian's resolved links), is how many notes link here, else it is counted from the batch.
+ */
+export type NoteInput = { path: string; mtime: number; fields: NoteFields; linkTargets: string[]; inLinks?: number };
 
 const terms = (s: string): string[] => tokenize(s, { parts: true });
 const basename = (path: string): string => (path.split("/").pop() ?? path).replace(/\.md$/i, "");
@@ -85,4 +88,44 @@ export const fieldsFromMarkdown = (path: string, text: string): { fields: NoteFi
 	// The body keeps links' visible words; Markdown link URLs are not words of the note.
 	fields.body = terms(body.replace(/\]\([^)\s]*\)/g, "]"));
 	return { fields, linkTargets };
+};
+
+/**
+ * A note as the main thread gathers it from Obsidian: its text and what the
+ * metadata cache already knows. The worker turns it into terms (`fieldsFromRaw`), so tokenizing never
+ * runs on the main thread.
+ */
+export type RawNote = {
+	path: string;
+	mtime: number;
+	text: string;
+	/** Where the body starts (after the frontmatter). */
+	bodyStart: number;
+	aliases: string[];
+	headings: Array<{ level: number; text: string }>;
+	/** Tags without "#", nested ones whole (`project/alpha`). */
+	tags: string[];
+	/** Names of the notes this one links to (resolved where possible). */
+	links: string[];
+	/** How many notes link to this one (from Obsidian's resolved links). */
+	inLinks: number;
+};
+
+/** A note's fields from what Obsidian gathered (the worker's side of `RawNote`). */
+export const fieldsFromRaw = (r: RawNote): NoteInput => {
+	const folders = r.path.split("/").slice(0, -1);
+	const fields: NoteFields = {
+		name: terms(basename(r.path)),
+		aliases: terms(r.aliases.join(" ")),
+		h1: [],
+		h2: [],
+		h3: [],
+		tags: terms(r.tags.join(" ")),
+		folder: terms(folders.join(" ")),
+		links: terms(r.links.join(" ")),
+		body: terms(r.text.slice(r.bodyStart).replace(/\]\([^)\s]*\)/g, "]")),
+	};
+	for (const h of r.headings)
+		(h.level === 1 ? fields.h1 : h.level === 2 ? fields.h2 : fields.h3).push(...terms(h.text));
+	return { path: r.path, mtime: r.mtime, fields, linkTargets: r.links, inLinks: r.inLinks };
 };

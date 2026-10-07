@@ -106,7 +106,7 @@ export const buildSegment = (
 		name: n.fields.name.join(" "),
 		mtime: n.mtime,
 		bodyLen: n.fields.body.length,
-		inLinks: inbound(nameOf(n.path)),
+		inLinks: n.inLinks ?? inbound(nameOf(n.path)),
 	}));
 	return writeSegment(table, docs, averages);
 };
