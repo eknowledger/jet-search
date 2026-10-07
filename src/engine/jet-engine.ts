@@ -12,7 +12,7 @@ export type QueryOptions = {
 	limit?: number;
 	now?: number;
 	allow?: (path: string) => boolean;
-	/** Rank fewer typo edits first (default), or let the typo weights alone decide. */
+	/** Rank fewer typo edits before score; by default the typo weights decide. */
 	editsFirst?: boolean;
 };
 
@@ -78,10 +78,10 @@ class Scratch {
 type Part = { seg: Segment; dead: Uint8Array | null; scratch: Scratch; path: (d: number) => string };
 type Candidate = { part: Part; d: number; matched: number; edits: number; score: number; allInName: boolean };
 
-/** Ranking key: more words matched, then fewer typo edits, then higher score. */
+/** The edits-first key: more words matched, then fewer typo edits, then higher score. */
 const byKey = (a: Candidate, b: Candidate): boolean =>
 	a.matched !== b.matched ? a.matched > b.matched : a.edits !== b.edits ? a.edits < b.edits : a.score > b.score;
-/** The weights-only order: words matched, then score (typos weigh in through their weights only). */
+/** Ranking key: more words matched, then score; typos weigh in through their weights. */
 const byScore = (a: Candidate, b: Candidate): boolean =>
 	a.matched !== b.matched ? a.matched > b.matched : a.score > b.score;
 
@@ -260,7 +260,7 @@ export class JetEngine implements SearchEngine {
 		const all = candidates.filter((c) => c.matched === n);
 		const pool = all.length ? all : candidates;
 		const typed = q.words.join(" ");
-		const top = new TopK(limit, opts.editsFirst === false ? byScore : byKey);
+		const top = new TopK(limit, opts.editsFirst ? byKey : byScore);
 		for (const c of pool) {
 			const { seg } = c.part;
 			let score = c.score;

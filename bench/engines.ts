@@ -7,7 +7,7 @@ import { jetEngine } from "./jet-engine";
 export const ENGINES: Record<string, () => BenchEngine> = {
 	jade: jadeEngine,
 	jet: jetEngine,
-	"jet-score": () => jetEngine(false),
+	"jet-edits": () => jetEngine(true),
 	fts5: () => fts5Engine({ detail: "column" }),
 	"fts5-none": () => fts5Engine({ detail: "none" }),
 };

@@ -6,12 +6,12 @@ import type { BenchEngine, BenchNote } from "./engine";
 const input = (n: BenchNote): NoteInput => ({ path: n.path, mtime: n.mtime, ...fieldsFromMarkdown(n.path, n.text) });
 
 /** Jet's engine (index v4, typo walk, ranking key), with fields read from the raw Markdown. */
-export const jetEngine = (editsFirst = true): BenchEngine => {
+export const jetEngine = (editsFirst = false): BenchEngine => {
 	let engine = new JetEngine();
 	let sidecar: Uint8Array | null = null;
 	const now = Date.now();
 	return {
-		name: editsFirst ? "jet" : "jet (score order)",
+		name: editsFirst ? "jet (edits first)" : "jet",
 		build(notes: BenchNote[]) {
 			engine = new JetEngine();
 			engine.build(notes.map(input));

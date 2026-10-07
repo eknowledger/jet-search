@@ -73,13 +73,23 @@ describe("Jet engine ranking", () => {
 		expect(paths(e, "nebual ")[0]).toBe("NebulaSDK.md");
 	});
 
-	it("puts exact matches above typo matches (fewer edits first)", () => {
+	it("puts exact matches above typo matches", () => {
 		const e = engine([note("a.md", "the speech model"), note("b.md", "the speach model")]);
 		const hits = e.query(parseQuery("speech ")).hits;
 		expect(hits.map((h) => [h.path, h.edits])).toEqual([
 			["a.md", 0],
 			["b.md", 1],
 		]);
+	});
+
+	it("lets a strong name match one typo away beat a weak exact match", () => {
+		const e = engine([
+			note("Lantern Atlas.md", "# Lantern Atlas\nThe lantern atlas reference."),
+			note("Daily.md", "Someone wrote lanern once in a long daily note about other things entirely."),
+		]);
+		expect(paths(e, "lanern ")[0]).toBe("Lantern Atlas.md");
+		const old = e.query(parseQuery("lanern "), { editsFirst: true }).hits.map((h) => h.path);
+		expect(old[0]).toBe("Daily.md");
 	});
 
 	it("puts a note named for the words above one that only mentions them often", () => {
