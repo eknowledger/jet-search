@@ -109,12 +109,10 @@ export class JetSettingTab extends PluginSettingTab {
 		new Setting(el)
 			.setName("Clear the index on this device")
 			.setDesc("It is kept outside the vault, one per vault; the next search builds it again.")
-			.addButton((b) =>
-				b
-					.setButtonText("Clear")
-					.then((x) => x.buttonEl.addClass("mod-warning"))
-					.onClick(() => void clearIndex(this.owner).then(() => this.display())),
-			);
+			.addButton((b) => {
+				b.setButtonText("Clear").onClick(() => void clearIndex(this.owner).then(() => this.display()));
+				b.buttonEl.addClass("mod-warning");
+			});
 
 		new Setting(el).setName("Version").setDesc(`${this.owner.manifest.version} (build ${BUILD_ID})`);
 	}

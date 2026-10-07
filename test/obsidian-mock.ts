@@ -412,10 +412,6 @@ export class Control {
 		this.handler = h;
 		return this;
 	}
-	then(f: (x: this) => unknown): this {
-		f(this);
-		return this;
-	}
 }
 
 export class Notice {
