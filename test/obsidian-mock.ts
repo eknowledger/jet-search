@@ -44,6 +44,25 @@ proto.removeClass = function (this: HTMLElement, ...c: string[]) {
 proto.setAttr = function (this: HTMLElement, k: string, v: string | number | boolean) {
 	this.setAttribute(k, String(v));
 };
+proto.toggleClass = function (this: HTMLElement, c: string, on: boolean) {
+	this.classList.toggle(c, on);
+};
+proto.hasClass = function (this: HTMLElement, c: string) {
+	return this.classList.contains(c);
+};
+Object.defineProperty(proto, "win", {
+	get(this: HTMLElement) {
+		return this.ownerDocument.defaultView;
+	},
+});
+
+// Obsidian's global createEl: an element not yet attached.
+(globalThis as unknown as Record<string, unknown>).createEl = (tag: string, o: DomInfo | string = {}): HTMLElement => {
+	const holder = document.createElement("div");
+	const el = make.call(holder, tag, o);
+	el.remove();
+	return el;
+};
 
 export const setIcon = (el: HTMLElement, icon: string): void => {
 	el.setAttribute("data-icon", icon);
@@ -80,6 +99,13 @@ export class Scope {
 		return false;
 	}
 }
+
+export const MarkdownRenderer = {
+	render: (_app: unknown, markdown: string, el: HTMLElement): Promise<void> => {
+		el.createEl("p", { text: markdown });
+		return Promise.resolve();
+	},
+};
 
 export class Modal {
 	readonly modalEl = document.createElement("div");
@@ -171,6 +197,14 @@ export class Workspace {
 		return this.lastOpen;
 	}
 
+	getActiveViewOfType(_t: unknown): null {
+		return null;
+	}
+
+	getActiveFile(): TFile | null {
+		return null;
+	}
+
 	getLeaf(how?: unknown): { openFile: (f: TFile) => Promise<void> } {
 		return { openFile: (f: TFile) => (this.opened.push({ path: f.path, how }), Promise.resolve()) };
 	}
@@ -210,6 +244,8 @@ export const parseFrontMatterAliases = (fm: { aliases?: string[] } | null | unde
 
 export class MarkdownView {}
 
+export const normalizePath = (p: string): string => p.replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+
 export class App {
 	readonly vault = new Vault();
 	readonly workspace = new Workspace();
@@ -222,6 +258,8 @@ export type Command = { id: string; name: string; callback?: () => unknown };
 
 export class Component {
 	private cleanups: (() => void)[] = [];
+
+	load(): void {}
 
 	register(cb: () => void): void {
 		this.cleanups.push(cb);

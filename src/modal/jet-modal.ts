@@ -1,4 +1,5 @@
 import { type App, Modal, setIcon } from "obsidian";
+import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
 export type Ranges = ReadonlyArray<readonly [number, number]>;
@@ -17,6 +18,8 @@ export type Entry =
 			/** Content rows show an excerpt line; title rows do not. */
 			excerpt?: { text: string; marks: Ranges; more: number } | null;
 			badge?: string;
+			/** What to mark in the preview, and where the excerpt's hit is. */
+			hit?: { terms: readonly string[]; offset?: number };
 	  }
 	| { type: "search"; query: string };
 
@@ -32,7 +35,21 @@ export type ModalHost = {
 	hints(text: string): Array<[key: string, label: string]>;
 	closed(text: string, opened: boolean): void;
 	placeholder: string;
+	/** The preview pane's setting (⌘. toggles it). */
+	previewOn(): boolean;
+	setPreviewOn(on: boolean): void;
+	/** Copy a link to the note (⌘L, the preview's link button). */
+	copyLink(path: string): void;
+	/** ⌥↵: put a link to the note where the cursor is in the note being edited. */
+	insertLink(path: string): void;
+	/** ⇧↵: create a note named after the text and open it. */
+	create(text: string): void;
 };
+
+/** The selection rests this long before the preview renders. */
+const PREVIEW_REST_MS = 80;
+/** Below this width the preview hides itself. */
+const NARROW_PX = 760;
 
 /**
  * Jet's search modal: our own list, not SuggestModal, so rows are
@@ -50,6 +67,9 @@ export class JetModal extends Modal {
 	private selectedKey: string | null = null;
 	private readonly pool: HTMLElement[] = [];
 	private opened = false;
+	private readonly preview: Preview;
+	private previewTimer: number | null = null;
+	private resize: ResizeObserver | null = null;
 
 	constructor(
 		app: App,
@@ -77,6 +97,8 @@ export class JetModal extends Modal {
 		this.statusEl = top.createSpan({ cls: "jet-status" });
 		const body = this.contentEl.createDiv({ cls: "jet-body" });
 		this.listEl = body.createDiv({ cls: "jet-list", attr: { id: "jet-list", role: "listbox" } });
+		this.preview = new Preview(app, body, (a, p) => this.act(a, p));
+		this.modalEl.toggleClass("is-preview-off", !host.previewOn());
 		this.footEl = this.contentEl.createDiv({ cls: "jet-ft" });
 
 		this.inputEl.addEventListener("input", () => this.refresh());
@@ -100,11 +122,53 @@ export class JetModal extends Modal {
 		this.inputEl.select();
 		this.refresh();
 		this.inputEl.focus();
+		// The modal's own window (it may be a popout): its ResizeObserver.
+		const win = this.modalEl.win as Window & { ResizeObserver: typeof ResizeObserver };
+		const ro = new win.ResizeObserver(() =>
+			this.modalEl.toggleClass("is-narrow", this.modalEl.clientWidth < NARROW_PX),
+		);
+		ro.observe(this.modalEl);
+		this.resize = ro;
 	}
 
 	onClose(): void {
+		this.resize?.disconnect();
+		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
+		this.preview.destroy();
 		this.host.closed(this.inputEl.value, this.opened);
 		this.contentEl.empty();
+	}
+
+	private previewShown(): boolean {
+		return this.host.previewOn() && !this.modalEl.hasClass("is-narrow");
+	}
+
+	/** The selection rested: render it in the preview (only when the pane is shown). */
+	private schedulePreview(): void {
+		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
+		this.previewTimer = window.setTimeout(() => {
+			this.previewTimer = null;
+			if (!this.previewShown()) return;
+			const e = this.entries[this.selected];
+			if (e?.type !== "item") {
+				this.preview.clear();
+				return;
+			}
+			const file = this.app.vault.getFileByPath(e.path);
+			if (!file) return;
+			if (this.preview.path === e.path) return;
+			void this.preview.show(file, e.hit?.terms ?? [], e.hit?.offset);
+		}, PREVIEW_REST_MS);
+	}
+
+	private act(a: PreviewAction, path: string): void {
+		if (a === "link") {
+			this.host.copyLink(path);
+			return;
+		}
+		this.opened = true;
+		this.host.open(path, a === "split" ? "split" : "default");
+		this.close();
 	}
 
 	/** Paint a list (called by the host, maybe several times per keystroke as tiers answer). */
@@ -164,6 +228,7 @@ export class JetModal extends Modal {
 			return;
 		}
 		this.selectedKey = keyOf(e);
+		this.schedulePreview();
 		el.addClass("is-selected");
 		el.setAttr("aria-selected", "true");
 		this.inputEl.setAttr("aria-activedescendant", el.id);
@@ -236,6 +301,51 @@ export class JetModal extends Modal {
 		});
 		this.scope.register(["Mod", "Alt"], "Enter", () => {
 			this.choose("split");
+			return false;
+		});
+		this.scope.register(["Mod"], "g", () => {
+			this.preview.step(1);
+			return false;
+		});
+		this.scope.register(["Mod", "Shift"], "g", () => {
+			this.preview.step(-1);
+			return false;
+		});
+		this.scope.register(["Alt"], "ArrowDown", () => {
+			this.preview.scroll(1);
+			return false;
+		});
+		this.scope.register(["Alt"], "ArrowUp", () => {
+			this.preview.scroll(-1);
+			return false;
+		});
+		this.scope.register(["Mod"], ".", () => {
+			const on = !this.host.previewOn();
+			this.host.setPreviewOn(on);
+			this.modalEl.toggleClass("is-preview-off", !on);
+			this.preview.path = null;
+			if (on) this.schedulePreview();
+			return false;
+		});
+		this.scope.register(["Mod"], "l", () => {
+			const e = this.entries[this.selected];
+			if (e?.type === "item") this.host.copyLink(e.path);
+			return false;
+		});
+		this.scope.register(["Alt"], "Enter", () => {
+			const e = this.entries[this.selected];
+			if (e?.type !== "item") return false;
+			this.opened = true;
+			this.host.insertLink(e.path);
+			this.close();
+			return false;
+		});
+		this.scope.register(["Shift"], "Enter", () => {
+			const text = this.inputEl.value.trim();
+			if (!text) return false;
+			this.opened = true;
+			this.host.create(text);
+			this.close();
 			return false;
 		});
 	}

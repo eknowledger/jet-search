@@ -1,7 +1,8 @@
-import { type App, type TFile } from "obsidian";
+import { type App, MarkdownView, normalizePath, Notice, type TFile } from "obsidian";
 import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Entry, ModalHost, OpenHow } from "./modal/jet-modal";
+import type { Search } from "./search";
 
 /** The icon for a note, by its `type` property: email, project, otherwise a page. */
 export const iconOf = (app: App, file: TFile): string => {
@@ -13,10 +14,7 @@ export const iconOf = (app: App, file: TFile): string => {
 	return "file-text";
 };
 
-/**
- * What the modal shows: recents and recent searches when the text is empty. Typing is served
- * by the name matcher and the worker from later slices; until then, names that contain the text.
- */
+/** What the modal shows: recents and recent searches with no text, else the search's answers. */
 export class JetHost implements ModalHost {
 	readonly placeholder = "Search notes…";
 
@@ -25,6 +23,7 @@ export class JetHost implements ModalHost {
 		private readonly data: () => JetData,
 		private readonly save: () => void,
 		private readonly newTab: () => boolean,
+		private readonly search: () => Search,
 	) {}
 
 	list(text: string, paint: (entries: Entry[], status?: string) => void): void {
@@ -32,15 +31,7 @@ export class JetHost implements ModalHost {
 			paint(this.recents());
 			return;
 		}
-		const t = text.trim().toLowerCase();
-		const now = Date.now();
-		const entries: Entry[] = this.app.vault
-			.getMarkdownFiles()
-			.filter((f) => f.basename.toLowerCase().includes(t))
-			.sort((a, b) => b.stat.mtime - a.stat.mtime)
-			.slice(0, 50)
-			.map((f) => this.item(f, now));
-		paint(entries.length ? [{ type: "header", label: "Titles", count: entries.length }, ...entries] : []);
+		this.search().list(text, paint);
 	}
 
 	recents(): Entry[] {
@@ -97,22 +88,72 @@ export class JetHost implements ModalHost {
 
 	hints(text: string): Array<[string, string]> {
 		const t = text.trim();
+		const short = t.length > 18 ? `${t.slice(0, 17)}…` : t;
 		return t
 			? [
 					["↵", "Open"],
 					["⌘↵", this.newTab() ? "Same tab" : "New tab"],
-					["⌘⌥↵", "Split"],
-					["Esc", "Clear"],
+					["⌥↵", "Insert link"],
+					["⇧↵", `Create “${short}”`],
+					["⌘.", "Preview"],
 				]
 			: [
 					["↵", "Open"],
 					["↑↓", "Choose"],
+					["⌘L", "Copy link"],
 					["Esc", "Close"],
 				];
 	}
 
+	previewOn(): boolean {
+		return this.data().settings.preview;
+	}
+
+	setPreviewOn(on: boolean): void {
+		this.data().settings.preview = on;
+		this.save();
+	}
+
+	copyLink(path: string): void {
+		const file = this.app.vault.getFileByPath(path);
+		if (!file) return;
+		const link = this.app.fileManager.generateMarkdownLink(file, this.app.workspace.getActiveFile()?.path ?? "");
+		void navigator.clipboard.writeText(link).then(() => new Notice("Link copied"));
+	}
+
+	insertLink(path: string): void {
+		const file = this.app.vault.getFileByPath(path);
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!file || !view?.file) {
+			new Notice("Open a note to insert a link into");
+			return;
+		}
+		view.editor.replaceSelection(this.app.fileManager.generateMarkdownLink(file, view.file.path));
+	}
+
+	create(text: string): void {
+		const name = text
+			.replace(/[\\/:*?"<>|#^[\]]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim()
+			.slice(0, 120);
+		if (!name) return;
+		const active = this.app.workspace.getActiveFile()?.path ?? "";
+		const folder = this.app.fileManager.getNewFileParent(active).path;
+		const path = normalizePath(`${folder === "/" ? "" : `${folder}/`}${name}.md`);
+		const existing = this.app.vault.getFileByPath(path);
+		void (async () => {
+			const file = existing ?? (await this.app.vault.create(path, ""));
+			await this.app.workspace.getLeaf(this.newTab() ? "tab" : false).openFile(file);
+		})().catch((e: unknown) => {
+			console.error("Jet Search: could not create the note", e);
+			new Notice("Jet Search: could not create the note");
+		});
+	}
+
 	closed(text: string, opened: boolean): void {
 		if (opened) rememberSearch(this.data(), text);
+		this.search().idle();
 		this.save();
 	}
 }

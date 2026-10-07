@@ -25,6 +25,11 @@ const fakeHost = (lists: Record<string, Entry[]>) => {
 		open: (p, how) => opened.push([p, how]),
 		hints: () => [["↵", "Open"]],
 		closed: (t, o) => closed.push([t, o]),
+		previewOn: () => false,
+		setPreviewOn: () => {},
+		copyLink: () => {},
+		insertLink: (p) => opened.push([p, "link" as OpenHow]),
+		create: (t) => opened.push([t, "create" as OpenHow]),
 	};
 	return { host, opened, closed, painters };
 };
@@ -113,6 +118,19 @@ describe("Jet modal", () => {
 		expect(row?.getAttribute("role")).toBe("option");
 		expect(row?.getAttribute("aria-selected")).toBe("true");
 		expect(m.inputEl.getAttribute("aria-activedescendant")).toBe(row?.id);
+	});
+
+	it("inserts a link with Alt+Enter and creates a note named after the text with Shift+Enter", () => {
+		const { host, opened } = fakeHost({ "": [item("a.md")], "new idea": [item("x.md")] });
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		press(m, "Enter", ["Alt"]);
+		expect(opened).toEqual([["a.md", "link"]]);
+		const n = new JetModal(new App() as never, host);
+		n.open();
+		type(n, "new idea");
+		press(n, "Enter", ["Shift"]);
+		expect(opened[1]).toEqual(["new idea", "create"]);
 	});
 
 	it("runs a recent search when it is chosen", () => {

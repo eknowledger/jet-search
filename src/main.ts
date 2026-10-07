@@ -1,11 +1,19 @@
-import { debounce, Plugin, TFile } from "obsidian";
+import { debounce, MarkdownView, Plugin, TFile } from "obsidian";
 import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
-import { addCommandAs, hasCommand, removeCommand, shiftOwnedElsewhere } from "./internals";
+import { Feeder } from "./index/feeder";
+import { addCommandAs, hasCommand, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
 import { JetModal } from "./modal/jet-modal";
+import { Search } from "./search";
 import { JetSettingTab } from "./settings-tab";
 import { DoubleTap } from "./shift";
+import { JetClient } from "./worker/jet-client";
+
+/** The first build starts this long after the layout is ready, the first time (within 5 s). */
+const FIRST_BUILD_DELAY_MS = 3000;
+/** The worker stops after this long without a search; the next search reloads it. */
+const SLEEP_AFTER_MS = 10 * 60_000;
 
 /** Omnisearch's command ids, which Jet answers while Omnisearch is off. */
 const STAND_INS = { open: "omnisearch:show-modal", inNote: "omnisearch:show-modal-infile" } as const;
@@ -20,16 +28,40 @@ export default class JetSearchPlugin extends Plugin {
 	data!: JetData;
 	private host!: JetHost;
 	private modal: JetModal | null = null;
+	readonly client = new JetClient();
+	feeder!: Feeder;
+	search!: Search;
+	private sleepTimer: number | null = null;
 	private readonly standIns: string[] = [];
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
 
 	async onload(): Promise<void> {
 		this.data = normalizeData(await this.loadData());
+		this.feeder = new Feeder(
+			this.app,
+			this.client,
+			vaultId(this.app),
+			() => this.data.settings.exclude,
+			() => this.data.settings.stemming,
+		);
+		this.search = new Search(this.app, this.client, this.feeder, () => this.data);
+		this.feeder.onReady = () => {
+			if (this.data.indexedAt === null) {
+				this.data.indexedAt = Date.now();
+				this.save();
+			}
+		};
+		this.client.onCrash = () => this.feeder.reset();
+		this.feeder.onChanged = () => this.search.refresh();
 		this.host = new JetHost(
 			this.app,
 			() => this.data,
 			() => this.save(),
 			() => this.data.settings.newTab,
+			() => {
+				this.wake();
+				return this.search;
+			},
 		);
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addSettingTab(new JetSettingTab(this.app, this));
@@ -39,14 +71,38 @@ export default class JetSearchPlugin extends Plugin {
 	onunload(): void {
 		for (const id of this.standIns) removeCommand(this.app, id);
 		this.modal?.close();
+		this.feeder.stop();
+		if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
+		this.client.stop();
 	}
 
-	/** Open Jet (from the command, Shift-Shift or a stand-in id). */
-	open(text = ""): void {
+	/** A search is coming: keep the worker awake, and let it sleep after a quiet while. */
+	private wake(): void {
+		if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
+		this.sleepTimer = window.setTimeout(() => {
+			this.sleepTimer = null;
+			if (!this.client.running) return;
+			void this.client
+				.call({ op: "save" })
+				.catch(() => {})
+				.finally(() => {
+					this.client.stop();
+					this.feeder.reset();
+				});
+		}, SLEEP_AFTER_MS);
+	}
+
+	/** Open Jet (from the command, Shift-Shift or a stand-in id); a short selection in the editor prefills it. */
+	open(text = this.selection()): void {
 		this.modal?.close();
 		const modal = new JetModal(this.app, this.host, text);
 		this.modal = modal;
 		modal.open();
+	}
+
+	private selection(): string {
+		const sel = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor.getSelection() ?? "";
+		return sel.length <= 100 && !sel.includes("\n") ? sel.trim() : "";
 	}
 
 	private listen(): void {
@@ -85,17 +141,45 @@ export default class JetSearchPlugin extends Plugin {
 				this.save();
 			}),
 		);
+		// The index follows the vault: names in the same frame, text within 100 ms, the
+		// note being typed in 300 ms after typing pauses.
+		const vault = this.app.vault;
 		this.registerEvent(
-			this.app.vault.on("rename", (f, old) => {
+			vault.on("create", (f) => {
+				if (f instanceof TFile) this.search.nameChanged(f);
+				this.feeder.touch(f, "upsert");
+			}),
+		);
+		this.registerEvent(vault.on("modify", (f) => this.feeder.touch(f, "upsert")));
+		this.registerEvent(
+			vault.on("rename", (f, old) => {
 				movePath(this.data, old, f.path);
 				this.save();
+				if (f instanceof TFile) this.search.nameRenamed(f, old);
+				this.feeder.rename(f, old);
 			}),
 		);
 		this.registerEvent(
-			this.app.vault.on("delete", (f) => {
+			vault.on("delete", (f) => {
 				movePath(this.data, f.path, null);
 				this.save();
+				this.search.nameDeleted(f.path);
+				this.feeder.touch(f, "delete");
 			}),
 		);
+		this.registerEvent(
+			this.app.metadataCache.on("changed", (f) => {
+				this.search.nameChanged(f);
+				this.feeder.touch(f, "upsert");
+			}),
+		);
+		this.registerEvent(this.app.workspace.on("editor-change", () => this.feeder.typing()));
+		// The first time Jet is enabled the index is built without waiting for a search.
+		if (this.data.indexedAt === null)
+			window.setTimeout(() => {
+				if (this.data.indexedAt !== null) return;
+				this.wake();
+				void this.feeder.ensure().catch((e: unknown) => console.error("Jet Search: the first build failed", e));
+			}, FIRST_BUILD_DELAY_MS);
 	}
 }

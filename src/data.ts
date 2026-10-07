@@ -34,6 +34,8 @@ export type JetData = {
 	settings: JetSettings;
 	opened: Record<string, Opened>;
 	searches: string[];
+	/** When this vault's index was first built (null: never; the first build then starts on its own). */
+	indexedAt: number | null;
 };
 
 const HALF_LIFE = 30 * 86_400_000;
@@ -59,7 +61,8 @@ export const normalizeData = (raw: unknown): JetData => {
 		for (const [p, v] of Object.entries(r.opened))
 			if (Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "number") opened[p] = [v[0], v[1]];
 	const searches = Array.isArray(r.searches) ? r.searches.filter((x): x is string => typeof x === "string") : [];
-	return { settings, opened, searches: searches.slice(0, MAX_SEARCHES) };
+	const indexedAt = typeof r.indexedAt === "number" ? r.indexedAt : null;
+	return { settings, opened, searches: searches.slice(0, MAX_SEARCHES), indexedAt };
 };
 
 /** A note was opened: its frecency decays to now and gains one (30-day half-life). */
