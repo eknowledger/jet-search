@@ -185,10 +185,30 @@ export class Workspace {
 }
 
 export class MetadataCache {
-	getFileCache(_f: TFile): { frontmatter?: Record<string, unknown> } | null {
-		return null;
+	readonly caches = new Map<string, Record<string, unknown>>();
+	resolvedLinks: Record<string, Record<string, number>> = {};
+
+	getFileCache(f: TFile): Record<string, unknown> | null {
+		return this.caches.get(f.path) ?? null;
+	}
+
+	getFirstLinkpathDest(link: string, _from: string): TFile | null {
+		const target = Object.keys(this.resolvedLinks)
+			.concat(...Object.values(this.resolvedLinks).map((t) => Object.keys(t)))
+			.find((p) => p.endsWith(`${link}.md`));
+		return target ? new TFile(target) : null;
 	}
 }
+
+export const getAllTags = (cache: { tags?: Array<{ tag: string }>; frontmatter?: { tags?: string[] } }): string[] => [
+	...(cache.frontmatter?.tags ?? []).map((t) => `#${t}`),
+	...(cache.tags ?? []).map((t) => t.tag),
+];
+
+export const parseFrontMatterAliases = (fm: { aliases?: string[] } | null | undefined): string[] | null =>
+	fm?.aliases ?? null;
+
+export class MarkdownView {}
 
 export class App {
 	readonly vault = new Vault();
