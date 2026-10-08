@@ -299,13 +299,22 @@ export const generate = (snap: Snapshot): Generated => {
 		}
 	}
 
-	// 3b. Container folders: ≥ 2 children of ≥ 5 notes holding ≥ 50% of the folder's notes.
+	// 3b. Container folders: ≥ 2 children of ≥ 5 notes holding ≥ 50% of the folder's notes. Children
+	// named by dates (meetings, drafts by day) never count: a folder of notes and dated logs is a topic.
+	const dated = (c: string): { n: number; of: number } => {
+		const members = membersUnder(c);
+		return { n: [...members].filter((p) => DATED.test(basename(p))).length, of: members.size };
+	};
+	const isDated = (c: string): boolean => {
+		const d = dated(c);
+		return d.of > 0 && d.n / d.of >= 0.8;
+	};
 	const containers: string[] = [];
 	for (const f of folders.values()) {
 		if (masked(f.path) || jdHandled.has(f.path) || f.path === inbox || f.path === daily || seeThroughAll(f.path))
 			continue;
 		const kids = kidsOf(f.path);
-		const qualifying = kids.filter((c) => (folders.get(c)?.sub ?? 0) >= 5);
+		const qualifying = kids.filter((c) => (folders.get(c)?.sub ?? 0) >= 5 && !isDated(c));
 		const inKids = qualifying.reduce((s, c) => s + (folders.get(c)?.sub ?? 0), 0);
 		if (qualifying.length < 2 || !f.sub || inKids / f.sub < 0.5) continue;
 		containers.push(f.path);
@@ -319,17 +328,17 @@ export const generate = (snap: Snapshot): Generated => {
 		for (const c of kids) {
 			const members = membersUnder(c);
 			if (!members.size) continue;
-			const dated = [...members].filter((p) => DATED.test(basename(p))).length;
-			if (dated / members.size >= 0.8) {
+			if (isDated(c)) {
 				notProposed.push({
 					what: c,
-					why: `date-named: ${dated} of its ${members.size} notes are named by a date; dates are not topics`,
+					why: `date-named: ${dated(c).n} of its ${members.size} notes are named by a date; dates are not topics`,
 				});
 				continue;
 			}
 			const s = stripName(basename(c), scheme);
 			const untick: string[] = [];
 			if (archive) untick.push("in an archive");
+			else if (ARCHIVE.has(fold(s.name))) untick.push("an archive");
 			if (c === inbox) untick.push("the inbox");
 			if (c === daily) untick.push("the daily notes");
 			groups.push({
@@ -628,14 +637,6 @@ export const generate = (snap: Snapshot): Generated => {
 		for (const g of gs) for (const p of g.members) count.set(p, (count.get(p) ?? 0) + 1);
 		const single = [...count.values()].filter((c) => c === 1).length;
 		if (single / keyNotes.size < 0.9) continue;
-		if (gs.length === 2) {
-			for (const g of gs) kinds.add(g);
-			notProposed.push({
-				what: id.replace(/^property:/, "values of ").replace(/^tag:/, "children of #"),
-				why: "two values that split notes in two: a state, not a topic",
-			});
-			continue;
-		}
 		// Values that agree with folders (same names, or links to notes in them) are the topics themselves.
 		const agreeing = gs.filter(
 			(g) =>
@@ -643,13 +644,25 @@ export const generate = (snap: Snapshot): Generated => {
 				(g.target !== undefined && folderPaths.some((f) => under(g.target as string, f))),
 		).length;
 		if (agreeing / gs.length >= 0.5) continue;
+		// Two plain values (yes/no, open/done) are a state. Two links name two notes: two topics.
+		if (gs.length === 2) {
+			if (gs.some((g) => g.signal === "link-property")) continue;
+			for (const g of gs) kinds.add(g);
+			notProposed.push({
+				what: id.replace(/^property:/, "values of ").replace(/^tag:/, "children of #"),
+				why: "two values that split notes in two: a state, not a topic",
+			});
+			continue;
+		}
 		// Judged within one set of sibling topics at a time (a container's children, one link key's
 		// targets, one tag root's children): big parent folders and tiny nested ones must not blur it.
-		const isKind = topicSets.some((set) => {
+		// A kind needs at least half the sets that can judge: four big top folders alone are not enough
+		// (any topic tag turns up in all of them).
+		const verdicts = topicSets.map((set): boolean | null => {
 			const others = set.filter((t) => !gs.includes(t));
 			const touching = others.filter((t) => [...t.members].some((p) => keyNotes.has(p)));
 			const covered = new Set(touching.flatMap((t) => [...t.members].filter((p) => keyNotes.has(p)))).size;
-			if (touching.length < 3 || covered / keyNotes.size < 0.3) return false;
+			if (touching.length < 3 || covered / keyNotes.size < 0.3) return null;
 			// Breadth: a kind turns up in most of these topics (meetings in every project); a topic that
 			// cuts across them (#topic/consensus in three courses of eleven) sits in a few. Weighted by notes.
 			const totalNotes = gs.reduce((n, g) => n + g.members.size, 0);
@@ -669,7 +682,8 @@ export const generate = (snap: Snapshot): Generated => {
 			const median = per[Math.floor(per.length / 2)] ?? 0;
 			return breadth >= 0.3 || median >= 5;
 		});
-		if (!isKind) continue;
+		const judged = verdicts.filter((v) => v !== null);
+		if (!judged.length || judged.filter(Boolean).length * 2 < judged.length) continue;
 		for (const g of gs) kinds.add(g);
 		notProposed.push({
 			what: id.replace(/^property:/, "values of ").replace(/^tag:/, "children of #"),
@@ -748,7 +762,8 @@ export const generate = (snap: Snapshot): Generated => {
 		const inside = [...a.members].filter((p) => b.members.has(p)).length;
 		if (inside / a.members.size >= 0.5) join(i, closest);
 	});
-	// The same group under two names: ≥ 80% of the smaller set shared, sizes within 2× (#course/cs110 and its course).
+	// The same group under two names: ≥ 80% of the smaller set shared and Jaccard ≥ 0.5 (#course/cs110
+	// and its course). A topic tag mostly inside one course but on other notes too stays its own scope.
 	for (let x = 0; x < candidates.length; x++) {
 		const a = candidates[x] as Group;
 		if (a.members.size < LIST) continue;
@@ -759,7 +774,7 @@ export const generate = (snap: Snapshot): Generated => {
 			if (big.size > 2 * small.size) continue;
 			let shared = 0;
 			for (const p of small) if (big.has(p)) shared++;
-			if (shared / small.size >= 0.8) join(x, y);
+			if (shared / small.size >= 0.8 && shared / (small.size + big.size - shared) >= 0.5) join(x, y);
 		}
 	}
 	const merged = new Map<number, Group[]>();
@@ -798,7 +813,51 @@ export const generate = (snap: Snapshot): Generated => {
 		primaryOf.set(c, result);
 		return result;
 	};
-	const primary = (c: string): boolean => decide(c);
+	// A folder is on its branch's level when its container is primary, or when no container on its
+	// branch is: none above, none at or below it (Clippings beside a Readwise split into Articles and
+	// Books). Off a primary container, a folder holding the notes other scopes link to (Efforts/Ongoing
+	// beside Efforts/On) is above them. At the vault root, when most of the vault sits in split
+	// folders (Projects/…, Areas/…), a top-level leaf is a bucket (Resources, Inbox) unless another
+	// signal agrees with it; otherwise top-level folders are topics in their own right.
+	const primaryAbove = (c: string): boolean => {
+		for (let a = containerParent(c); a !== null; a = containerParent(a)) if (decide(a)) return true;
+		return false;
+	};
+	const primaryWithin = (f: string): boolean => containers.some((c) => (c === f || under(c, f)) && decide(c));
+	// Agreement that lifts a top-level leaf: a property or tag hierarchy agrees, and with a same-named
+	// flat tag it covers most of the folder. Four notes linking to a note kept in 0.System do not make
+	// the system folder a topic; #thesis on most of Thesis/ with a project link does.
+	const agreesAlone = (g: Group): boolean => {
+		const others = (merged.get(find(candidates.indexOf(g))) ?? []).filter((x) => x.family !== "folder");
+		if (!others.some((x) => x.signal !== "flat-tag")) return false;
+		const covered = [...g.members].filter((p) => others.some((x) => x.members.has(p))).length;
+		return g.members.size > 0 && covered / g.members.size >= 0.5;
+	};
+	const holdsTargets = (f: string): boolean =>
+		candidates.filter(
+			(x) =>
+				x.signal === "link-property" &&
+				x.target !== undefined &&
+				under(x.target, f) &&
+				x.target !== folderNote.get(f),
+		).length >= 2;
+	// The share of the vault inside top-level folders split into topics (Projects/…, Areas/…).
+	const splitShare =
+		live.length === 0
+			? 0
+			: candidates
+					.filter(
+						(g) => g.signal === "container-folder" && g.container === "" && primaryWithin(g.folder ?? ""),
+					)
+					.reduce((n, g) => n + g.members.size, 0) / live.length;
+	const onLevel = (g: Group): boolean => {
+		const f = g.folder ?? "";
+		if (g.container === undefined) return false;
+		if (decide(g.container)) return true;
+		if (primaryAbove(g.container) || primaryWithin(f)) return false;
+		if (g.container !== "") return !holdsTargets(f);
+		return agreesAlone(g) || splitShare < 0.5;
+	};
 
 	// Name, count, default.
 	const proposals: Proposal[] = [];
@@ -828,7 +887,7 @@ export const generate = (snap: Snapshot): Generated => {
 		if (!members) continue;
 		const untick = [...new Set(gs.flatMap((g) => g.untick))];
 		if (members < TICK) untick.push(`only ${members} note${members === 1 ? "" : "s"}`);
-		if (folderG?.signal === "container-folder" && folderG.container !== undefined && !primary(folderG.container))
+		if (folderG?.signal === "container-folder" && !onLevel(folderG))
 			untick.push("a level below or above the main one");
 		if (/^[\p{N}\p{P}\p{S}\s]+$/u.test(name)) untick.push("the name is only a number or a symbol");
 		if (name.length > 60) untick.push("a long name");
