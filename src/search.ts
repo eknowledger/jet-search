@@ -12,6 +12,9 @@ import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
 
 type Item = Extract<Entry, { type: "item" }>;
+
+/** Scope members for a scoped search (the ScopeKeeper). */
+export type ScopeMembers = { ensure(): void; membersOf(id: string): ReadonlySet<string> };
 type Shown = NonNullable<Item["excerpt"]> & { offset: number };
 
 /** Titles shown above the text hits for a name-like query. */
@@ -36,20 +39,34 @@ export class Search {
 	private readonly pathOf = new Map<number, string>();
 	private nextId = 1;
 	/** The open modal's current text and painter, to re-run when the index changes. */
-	private current: { text: string; paint: (entries: Entry[], status?: string) => void } | null = null;
+	private current: { text: string; paint: (entries: Entry[], status?: string) => void; scope?: string } | null = null;
 
 	constructor(
 		private readonly app: App,
 		private readonly client: JetClient,
 		private readonly feeder: Feeder,
 		private readonly data: () => JetData,
+		private readonly scopes?: ScopeMembers,
 	) {}
 
-	list(text: string, paint: (entries: Entry[], status?: string) => void): void {
-		this.current = { text, paint };
+	/**
+	 * Results for `text`, inside the scope `scope` when given: its members filter Tier 0 and the
+	 * worker, which holds the same set (sent before this query: messages arrive in order).
+	 */
+	list(text: string, paint: (entries: Entry[], status?: string) => void, scope?: string): void {
+		this.current = { text, paint, scope };
+		let inScope: ReadonlySet<string> | null = null;
+		if (scope !== undefined && this.scopes) {
+			this.scopes.ensure();
+			inScope = this.scopes.membersOf(scope);
+		}
 		const names = this.nameIndex();
-		const tier0 = names.match(text, { limit: 40 });
-		const meta = this.metaHits(text);
+		const allowed = inScope;
+		const tier0 = names.match(text, {
+			limit: 40,
+			allow: allowed ? (id) => allowed.has(this.pathOf.get(id) ?? "") : undefined,
+		});
+		const meta = this.metaHits(text, allowed);
 		const now = Date.now();
 		paint(this.compose(tier0, null, now, new Map(), meta), this.status());
 		void (async () => {
@@ -62,7 +79,7 @@ export class Search {
 			}
 			// Quoted phrases: more candidates from the worker, kept if their text has the phrase.
 			const phrases = quotedPhrases(text);
-			let reply = await this.client.query(text, { limit: phrases.length ? PHRASE_CHECK_LIMIT : 50 });
+			let reply = await this.client.query(text, { limit: phrases.length ? PHRASE_CHECK_LIMIT : 50, scope });
 			if (!reply) return;
 			if (phrases.length) {
 				const hits = await filterPhrases(reply.hits, phrases, (p) => this.read(p));
@@ -101,7 +118,7 @@ export class Search {
 	/** Notes changed while the modal is open: run its text again (the selection stays). */
 	refresh(): void {
 		const c = this.current;
-		if (c?.text.trim()) this.list(c.text, c.paint);
+		if (c?.text.trim()) this.list(c.text, c.paint, c.scope);
 	}
 
 	private status(): string {
@@ -225,13 +242,13 @@ export class Search {
 	}
 
 	/** Headings, tags and properties matching `text` while the index is not ready; nothing after. */
-	private metaHits(text: string): MetaHit[] {
+	private metaHits(text: string, allowed: ReadonlySet<string> | null = null): MetaHit[] {
 		if (!this.indexNotReady()) {
 			this.meta = null;
 			return [];
 		}
 		if (!text.trim()) return [];
-		return this.metaIndex().match(text, { limit: MAX_META });
+		return this.metaIndex().match(text, { limit: MAX_META, allow: allowed ? (p) => allowed.has(p) : undefined });
 	}
 
 	private metaIndex(): MetaIndex {

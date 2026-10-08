@@ -31,7 +31,10 @@ export class JetClient {
 	}
 
 	/** Ask a query; resolves with its answer, or null if a newer query was asked meanwhile. */
-	async query(text: string, opts: { limit?: number; allow?: string[] } = {}): Promise<QueryReply | null> {
+	async query(
+		text: string,
+		opts: { limit?: number; allow?: string[]; scope?: string } = {},
+	): Promise<QueryReply | null> {
 		const seq = ++this.seq;
 		const r = await this.call({
 			op: "query",
@@ -40,6 +43,7 @@ export class JetClient {
 			limit: opts.limit ?? 50,
 			now: Date.now(),
 			allow: opts.allow,
+			scope: opts.scope,
 		});
 		return r.stale || r.seq !== this.seq ? null : r;
 	}

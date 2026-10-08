@@ -56,8 +56,8 @@ export default class JetSearchPlugin extends Plugin {
 			() => this.data.settings.exclude,
 			() => this.data.settings.stemming,
 		);
-		this.search = new Search(this.app, this.client, this.feeder, () => this.data);
 		this.scopes = new ScopeKeeper(this.app, this.client, () => this.data.scopes);
+		this.search = new Search(this.app, this.client, this.feeder, () => this.data, this.scopes);
 		this.watcher = new ScopeWatcher({
 			mode: () => this.data.settings.scopesWhenNew,
 			scopes: () => this.data.scopes,
