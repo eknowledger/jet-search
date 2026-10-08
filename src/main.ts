@@ -145,6 +145,10 @@ export default class JetSearchPlugin extends Plugin {
 			},
 			this.filterSets,
 		);
+		this.host.manageScopes = () => {
+			this.modal?.close();
+			openSettingsAt(this.app, this.manifest.id, ["Scopes"]);
+		};
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
 		this.settingTab = new JetSettingTab(this.app, this);

@@ -32,7 +32,10 @@ export type Entry =
 			mtime?: number;
 			ctime?: number;
 	  }
-	| { type: "search"; query: string; detail?: string }
+	/** A recent search; `parts` shows its scope and filters as chips. */
+	| { type: "search"; query: string; detail?: string; parts?: Array<{ chip: [string, string] } | { text: string }> }
+	/** The empty state's scopes: the open note's first, with ⇥; then the most used. */
+	| { type: "scopes"; label: string; chips: Array<{ scope: ScopeView; here?: boolean }>; more: number }
 	/** A message line (no results), not selectable. */
 	| { type: "notice"; title: string; detail?: string }
 	/** Create a note named after the text (no-results screen). */
@@ -147,6 +150,8 @@ export type ModalHost = {
 	insertLink(path: string): void;
 	/** ⇧↵: create a note named after the text and open it, in the chip's scope if any. */
 	create(text: string, scope?: string): void;
+	/** The last scope and filters to reopen with, or null. */
+	restore?(): { scope?: ScopeView; filters: Filter[] } | null;
 	/** The footer's settings popover, if this host has one. */
 	renderSettings?(el: HTMLElement): void;
 	/** Scopes typed in the box; absent when there are none. */
@@ -242,6 +247,8 @@ export class JetModal extends Modal {
 	private listSeq = 0;
 	/** Result order for this search. */
 	private sort: Sort = "best";
+	/** The chips as restored: marked pinned while they stay so. */
+	private pinnedKey: string | null = null;
 	// Autocomplete and fix-it.
 	private ac: Completion | null = null;
 	private acIndex = 0;
@@ -342,9 +349,16 @@ export class JetModal extends Modal {
 		this.listEl.addEventListener("mousedown", (e) => e.preventDefault());
 		this.listEl.addEventListener("click", (e) => {
 			const s = (e.target as HTMLElement).closest<HTMLElement>(".jet-sort");
-			if (!s) return;
-			e.stopPropagation();
-			this.sortMenu(s);
+			if (s) {
+				e.stopPropagation();
+				this.sortMenu(s);
+				return;
+			}
+			const c = (e.target as HTMLElement).closest<HTMLElement>(".jet-schip");
+			if (c) {
+				e.stopPropagation();
+				this.scopeChipClicked(c);
+			}
 		});
 		this.listEl.addEventListener("click", (e) => {
 			const row = (e.target as HTMLElement).closest<HTMLElement>(".jet-row");
@@ -364,6 +378,14 @@ export class JetModal extends Modal {
 		this.shown = true;
 		this.inputEl.value = this.initial;
 		this.inputEl.select();
+		// Persisted filters: the last scope and filters, pinned.
+		const r = this.initial ? null : (this.host.restore?.() ?? null);
+		if (r && (r.scope || r.filters.length)) {
+			this.chip = r.scope ?? null;
+			this.choices = r.scope ? [r.scope] : [];
+			this.filters = [...r.filters];
+			this.pinnedKey = this.chipsKey();
+		}
 		this.refresh(true);
 		this.inputEl.focus();
 		// The modal's own window (it may be a popout): its ResizeObserver.
@@ -644,12 +666,45 @@ export class JetModal extends Modal {
 
 	// ── Filters ────────────────────────────────────
 
+	private chipsKey(): string {
+		return JSON.stringify([this.chip?.id ?? null, this.filters]);
+	}
+
+	private pinned(): boolean {
+		return this.pinnedKey !== null && this.pinnedKey === this.chipsKey();
+	}
+
+	/** A chip in the empty state's scopes row: that scope; "All" lists every one. */
+	private scopeChipClicked(el: HTMLElement): void {
+		const row = this.entries.find((e) => e.type === "scopes");
+		if (row?.type !== "scopes") return;
+		if (el.hasClass("is-all")) {
+			const all = this.host.filters?.scopes() ?? row.chips.map((c) => c.scope);
+			const m = new Menu();
+			for (const v of all)
+				m.addItem((i) =>
+					i
+						.setTitle(`${v.name}${v.kind ? ` · ${v.kind}` : ""} · ${v.members}`)
+						.onClick(() => this.applyChip(v, "")),
+				);
+			const r = el.getBoundingClientRect();
+			m.showAtPosition({ x: r.left, y: r.bottom + 4 });
+			return;
+		}
+		const c = row.chips[Number(el.dataset.i)];
+		if (c) this.applyChip(c.scope, this.inputEl.value);
+		this.inputEl.focus();
+	}
+
 	private drawFilters(): void {
 		this.fchipsEl.empty();
+		const pinned = this.pinned();
 		this.filters.forEach((f, i) => {
 			const [head, value] = filterLabel(f);
 			const last = i === this.filters.length - 1;
-			const c = this.fchipsEl.createSpan({ cls: `jet-fchip${last && this.filterSel ? " is-selected" : ""}` });
+			const c = this.fchipsEl.createSpan({
+				cls: `jet-fchip${last && this.filterSel ? " is-selected" : ""}${pinned ? " is-pinned" : ""}`,
+			});
 			if (head) c.createSpan({ cls: "jet-fh", text: head });
 			c.createSpan({ cls: "jet-fv", text: value });
 			const x = c.createSpan({ cls: "jet-chx", attr: { "aria-label": "Remove filter", role: "button" } });
@@ -855,6 +910,7 @@ export class JetModal extends Modal {
 		const chip = this.chip;
 		this.chipEl.toggleClass("is-hidden", !chip);
 		this.chipEl.toggleClass("is-selected", !!chip && this.chipSelected);
+		this.chipEl.toggleClass("is-pinned", !!chip && this.pinned());
 		this.chipLabel.setText(
 			chip ? (this.choices.length > 1 && chip.kind ? `${chip.name} · ${chip.kind}` : chip.name) : "",
 		);
@@ -1206,6 +1262,15 @@ export class JetModal extends Modal {
 				this.cycle(1);
 				return false;
 			}
+			// Nothing typed: the open note's scope (the empty state's first chip).
+			if (!this.inputEl.value.trim()) {
+				const row = this.entries.find((x) => x.type === "scopes");
+				const here = row?.type === "scopes" ? row.chips.find((c) => c.here) : undefined;
+				if (here) {
+					this.applyChip(here.scope, "");
+					return false;
+				}
+			}
 			const s = this.typing.suggest;
 			if (s) {
 				this.applyChip(s.scope, s.rest, [s.scope, ...s.others]);
@@ -1360,7 +1425,7 @@ export class JetModal extends Modal {
 /** Keys the chip handles itself; any other key unselects it. */
 const CHIP_KEYS = new Set(["Backspace", "ArrowLeft", "Escape", "Tab", "Shift", "Meta", "Alt", "Control"]);
 
-const selectable = (e: Entry): boolean => e.type !== "header" && e.type !== "notice";
+const selectable = (e: Entry): boolean => e.type !== "header" && e.type !== "notice" && e.type !== "scopes";
 const keyOf = (e: Entry): string | null =>
 	e.type === "item"
 		? `n:${e.path}${e.at ? `:${e.at.line}` : ""}`
@@ -1391,6 +1456,27 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		if (e.count !== undefined) el.createSpan({ cls: "jet-hs", text: String(e.count) });
 		return;
 	}
+	if (e.type === "scopes") {
+		el.className = "jet-scrow";
+		el.removeAttribute("role");
+		el.createSpan({ cls: "jet-scl", text: e.label });
+		const row = el.createDiv({ cls: "jet-schips" });
+		e.chips.forEach((c, i) => {
+			const chip = row.createSpan({
+				cls: `jet-schip${c.here ? " is-here" : ""}`,
+				attr: { "data-i": String(i), role: "button" },
+			});
+			chip.appendText(c.scope.name);
+			if (c.here) chip.createEl("kbd", { text: "⇥" });
+		});
+		if (e.more > 0)
+			row.createSpan({
+				cls: "jet-schip is-all",
+				text: `All ${e.chips.length + e.more}`,
+				attr: { role: "button" },
+			});
+		return;
+	}
 	if (e.type === "notice") {
 		el.className = "jet-notice";
 		el.removeAttribute("role");
@@ -1415,7 +1501,16 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		setIcon(el.createSpan({ cls: "jet-ic" }), e.type === "create" ? "file-plus" : e.detail ? "search" : "history");
 		const b = el.createDiv({ cls: "jet-rb" });
 		const label = e.type === "create" ? `Create “${e.text}”` : e.detail ? `Search for “${e.query}”` : e.query;
-		b.createDiv({ cls: "jet-l1" }).createSpan({ cls: "jet-rt", text: label });
+		const l1 = b.createDiv({ cls: "jet-l1" });
+		if (e.type === "search" && e.parts?.length && !e.detail) {
+			const t = l1.createSpan({ cls: "jet-rt" });
+			for (const p of e.parts)
+				if ("chip" in p) {
+					const c = t.createSpan({ cls: "jet-mchip" });
+					if (p.chip[0]) c.createSpan({ cls: "jet-fh", text: p.chip[0] });
+					c.createSpan({ cls: "jet-fv", text: p.chip[1] });
+				} else t.appendText(` ${p.text}`);
+		} else l1.createSpan({ cls: "jet-rt", text: label });
 		if (e.detail) b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: e.detail });
 		return;
 	}

@@ -3,7 +3,7 @@ import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Completion, Entry, HintState, ModalHost, OpenHow, ScopeCard, ScopeView, Typed } from "./modal/jet-modal";
 import { findFix, pieceAt, wantOf } from "./filters/complete";
-import { type Filter, filterText, findFilters } from "./filters/filter";
+import { type Filter, filterLabel, filterText, findFilters, withoutPieces } from "./filters/filter";
 import type { FilterSets } from "./filters/sets";
 import type { Rule, Scope } from "./scopes/model";
 import { autoApplies } from "./scopes/auto";
@@ -258,6 +258,9 @@ export class JetHost implements ModalHost {
 		return [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, MENU_ITEMS);
 	}
 
+	/** Open the Scopes settings page (the popover's Manage). */
+	manageScopes?: () => void;
+
 	/** Rule counts for the chip's card, kept while the modal is open (each is a pass over the vault). */
 	private readonly ruleCounts = new Map<string, number>();
 
@@ -361,6 +364,17 @@ export class JetHost implements ModalHost {
 			t.createDiv({ cls: "jet-sids", text: desc });
 			return r;
 		};
+		const persist = row(
+			"Persist filters across sessions",
+			"Keep chips when Search reopens; kept chips show a pin dot",
+		);
+		const ptog = persist.createDiv({ cls: `checkbox-container${s.persistFilters ? " is-enabled" : ""}` });
+		ptog.addEventListener("click", () => {
+			s.persistFilters = !s.persistFilters;
+			if (!s.persistFilters) this.data().last = null;
+			ptog.toggleClass("is-enabled", s.persistFilters);
+			this.save();
+		});
 		const ex = row("Show excerpts", "A line around the best hit");
 		const tog = ex.createDiv({ cls: `checkbox-container${s.excerpts ? " is-enabled" : ""}` });
 		tog.addEventListener("click", () => {
@@ -376,6 +390,17 @@ export class JetHost implements ModalHost {
 			s.shiftInterval = Number(sel.value);
 			this.save();
 		});
+		const a = this.scopeAccess;
+		if (a) {
+			const all = a.all();
+			const auto = all.filter((x) => x.mode === "auto").length;
+			const sc = row(
+				"Scopes",
+				all.length ? `${all.length} scopes${auto ? ` · ${auto} on Auto` : ""}` : "None yet",
+			);
+			const manage = sc.createSpan({ cls: "jet-manage", text: "Manage ↗", attr: { role: "button" } });
+			manage.addEventListener("click", () => this.manageScopes?.());
+		}
 		if (!this.index) return;
 		const card = el.createDiv({ cls: "jet-idx" });
 		const head = card.createDiv({ cls: "jet-ir" });
@@ -417,14 +442,74 @@ export class JetHost implements ModalHost {
 		this.search().list(text, paint, scope, filters);
 	}
 
+	/** The last scope and filters, when "Persist filters" is on. */
+	restore(): { scope?: ScopeView; filters: Filter[] } | null {
+		const d = this.data();
+		if (!d.settings.persistFilters || !d.last) return null;
+		const s = d.last.scope !== undefined ? this.scopeAccess?.all().find((x) => x.id === d.last?.scope) : undefined;
+		const scope = s
+			? { id: s.id, name: s.name, kind: s.kind, members: this.scopeAccess?.count(s.id) ?? 0 }
+			: undefined;
+		return { scope, filters: d.last.filters };
+	}
+
+	/**
+	 * The empty state's scopes: the open note's scope first (the smallest one
+	 * holding it by its folder, else by any rule), then the most used, then the biggest.
+	 */
+	private scopeRow(): Entry | null {
+		const a = this.scopeAccess;
+		const all = a?.all() ?? [];
+		if (!a || !all.length) return null;
+		a.ensure();
+		const uses = this.data().scopeUses;
+		const view = (s: Scope): ScopeView => ({ id: s.id, name: s.name, kind: s.kind, members: a.count(s.id) });
+		const active = this.app.workspace.getActiveFile()?.path;
+		const holding = active ? all.filter((s) => a.membersOf(s.id).has(active)) : [];
+		const byFolder = holding.filter((s) =>
+			s.rules.some((r) => r.kind === "folder" && active?.startsWith(`${r.path}/`)),
+		);
+		const here = [...(byFolder.length ? byFolder : holding)].sort((x, y) => a.count(x.id) - a.count(y.id))[0];
+		const rest = all
+			.filter((s) => s !== here && s.mode !== "in-only")
+			.sort((x, y) => (uses[y.id] ?? 0) - (uses[x.id] ?? 0) || a.count(y.id) - a.count(x.id));
+		const chips = [
+			...(here ? [{ scope: view(here), here: true }] : []),
+			...rest.slice(0, here ? 3 : 4).map((s) => ({ scope: view(s) })),
+		];
+		return { type: "scopes", label: "Search in", chips, more: all.length - chips.length };
+	}
+
+	/** A remembered search's scope and filters as chips, the rest as text. */
+	private parts(q: string): Array<{ chip: [string, string] } | { text: string }> | undefined {
+		const f = this.filterSets;
+		const found = f ? findFilters(q, (k) => f.known(k)).filter((x) => x.complete || x.to === q.length) : [];
+		let rest = found.length ? withoutPieces(q, found) : q;
+		const p = this.scopeAccess ? parseScope(rest, this.scopeAccess.all()) : { text: rest };
+		const out: Array<{ chip: [string, string] } | { text: string }> = [];
+		if (p.applied) {
+			out.push({ chip: ["", p.applied.name] });
+			rest = p.text;
+		}
+		for (const x of found) out.push({ chip: filterLabel(x.filter) });
+		if (!out.length) return undefined;
+		if (rest.trim()) out.push({ text: rest.trim() });
+		return out;
+	}
+
 	recents(): Entry[] {
 		const now = Date.now();
 		const vault = this.app.vault;
 		const out: Entry[] = [];
+		const row = this.scopeRow();
+		if (row) out.push(row);
 		const searches = this.data().searches.slice(0, 3);
 		if (searches.length) {
 			out.push({ type: "header", label: "Recent searches" });
-			for (const q of searches) out.push({ type: "search", query: q });
+			for (const q of searches) {
+				const parts = this.parts(q);
+				out.push(parts ? { type: "search", query: q, parts } : { type: "search", query: q });
+			}
 		}
 		const groups = groupRecents(
 			this.data(),
@@ -600,6 +685,10 @@ export class JetHost implements ModalHost {
 
 	closed(text: string, opened: boolean, scope?: ScopeView, filters: readonly Filter[] = []): void {
 		this.ruleCounts.clear();
+		const d = this.data();
+		if (opened && scope) d.scopeUses[scope.id] = (d.scopeUses[scope.id] ?? 0) + 1;
+		d.last =
+			d.settings.persistFilters && (scope || filters.length) ? { scope: scope?.id, filters: [...filters] } : null;
 		// Remembered as typed, scope and filters included, so choosing it again applies them again.
 		const parts = [...filters.map(filterText).filter(Boolean), text.trim()].filter(Boolean).join(" ");
 		if (opened) rememberSearch(this.data(), scope ? scopedSearch(scope.name, parts) : parts);

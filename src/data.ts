@@ -1,3 +1,4 @@
+import type { Filter } from "./filters/filter";
 import { normalizeScopes, type Scope } from "./scopes/model";
 
 /**
@@ -22,6 +23,8 @@ export type JetSettings = {
 	stemming: string[];
 	/** What happens when Jet notices new scopes. */
 	scopesWhenNew: "tell" | "add" | "nothing";
+	/** Reopen with the last scope and filters (off by default). */
+	persistFilters: boolean;
 };
 
 export const DEFAULT_SETTINGS: JetSettings = {
@@ -33,6 +36,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	exclude: [],
 	stemming: ["en"],
 	scopesWhenNew: "tell",
+	persistFilters: false,
 };
 
 /** Per note: a frecency score (decays with a 30-day half-life) and when it was last opened. */
@@ -46,6 +50,10 @@ export type JetData = {
 	indexedAt: number | null;
 	/** Scopes. */
 	scopes: Scope[];
+	/** How often each scope was searched in and a note opened (the empty state's order). */
+	scopeUses: Record<string, number>;
+	/** The last scope and filters, kept when "Persist filters" is on. */
+	last: { scope?: string; filters: Filter[] } | null;
 };
 
 const HALF_LIFE = 30 * 86_400_000;
@@ -67,7 +75,24 @@ export const normalizeData = (raw: unknown): JetData => {
 		exclude: Array.isArray(s.exclude) ? s.exclude.filter((x): x is string => typeof x === "string") : [],
 		stemming: Array.isArray(s.stemming) ? s.stemming.filter((x): x is string => typeof x === "string") : ["en"],
 		scopesWhenNew: s.scopesWhenNew === "add" || s.scopesWhenNew === "nothing" ? s.scopesWhenNew : "tell",
+		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
 	};
+	const scopeUses: Record<string, number> = {};
+	if (r.scopeUses && typeof r.scopeUses === "object")
+		for (const [k, v] of Object.entries(r.scopeUses)) if (typeof v === "number" && v > 0) scopeUses[k] = v;
+	const lastRaw = r.last as { scope?: unknown; filters?: unknown } | null | undefined;
+	const last =
+		lastRaw && typeof lastRaw === "object"
+			? {
+					scope: typeof lastRaw.scope === "string" ? lastRaw.scope : undefined,
+					filters: Array.isArray(lastRaw.filters)
+						? (lastRaw.filters.filter(
+								(f) =>
+									!!f && typeof f === "object" && typeof (f as { kind?: unknown }).kind === "string",
+							) as Filter[])
+						: [],
+				}
+			: null;
 	const opened: Record<string, Opened> = {};
 	if (r.opened && typeof r.opened === "object")
 		for (const [p, v] of Object.entries(r.opened))
@@ -80,6 +105,8 @@ export const normalizeData = (raw: unknown): JetData => {
 		searches: searches.slice(0, MAX_SEARCHES),
 		indexedAt,
 		scopes: normalizeScopes(r.scopes),
+		scopeUses,
+		last,
 	};
 };
 

@@ -93,6 +93,12 @@ export class JetSettingTab extends PluginSettingTab {
 						desc: "The selected note, shown next to the results.",
 						control: { type: "toggle", key: "preview" },
 					},
+					{
+						name: "Persist filters across sessions",
+						desc: "Search reopens with your last scope and filters; kept chips show a pin dot.",
+						aliases: ["remember", "pin", "chips"],
+						control: { type: "toggle", key: "persistFilters" },
+					},
 				],
 			},
 			{
@@ -145,6 +151,8 @@ export class JetSettingTab extends PluginSettingTab {
 				return s.excerpts;
 			case "preview":
 				return s.preview;
+			case "persistFilters":
+				return s.persistFilters;
 			case "exclude":
 				return s.exclude.join("\n");
 			default:
@@ -193,6 +201,10 @@ export class JetSettingTab extends PluginSettingTab {
 				break;
 			case "preview":
 				s.preview = value === true;
+				break;
+			case "persistFilters":
+				s.persistFilters = value === true;
+				if (!s.persistFilters) this.owner.data.last = null;
 				break;
 			case "exclude":
 				s.exclude = String(value)

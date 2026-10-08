@@ -1090,3 +1090,104 @@
 	width: 13px;
 	height: 13px;
 }
+
+/* Empty state with scopes; pinned chips */
+.jet-scrow {
+	padding: 6px 10px 8px;
+}
+
+.jet-scl {
+	display: block;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-muted);
+	margin-bottom: 6px;
+}
+
+.jet-schips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.jet-schip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 26px;
+	padding: 0 10px;
+	border-radius: 13px;
+	font-size: 13px;
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+}
+
+.jet-schip:hover {
+	border-color: var(--interactive-accent);
+}
+
+.jet-schip.is-here {
+	border-style: dashed;
+	border-color: var(--interactive-accent);
+}
+
+.jet-schip.is-all {
+	color: var(--text-muted);
+}
+
+.jet-schip kbd {
+	font-size: 10px;
+	line-height: 1;
+	padding: 1px 4px;
+	border-radius: 3px;
+	background: var(--background-modifier-hover);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.jet-mchip {
+	display: inline-flex;
+	gap: 4px;
+	padding: 0 7px;
+	margin-right: 4px;
+	border-radius: 10px;
+	font-size: 12px;
+	font-weight: 400;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+}
+
+.jet-mchip .jet-fh {
+	color: var(--text-muted);
+}
+
+.jet-mchip .jet-fv {
+	color: var(--text-accent);
+}
+
+.jet-chip.is-pinned,
+.jet-fchip.is-pinned {
+	position: relative;
+}
+
+.jet-chip.is-pinned::after,
+.jet-fchip.is-pinned::after {
+	content: "";
+	position: absolute;
+	top: -2px;
+	right: -2px;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	border: 1px solid var(--background-primary);
+}
+
+.jet-manage {
+	color: var(--text-accent);
+	cursor: pointer;
+	font-size: 12px;
+	white-space: nowrap;
+}

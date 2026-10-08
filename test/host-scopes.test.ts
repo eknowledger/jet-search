@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { App, TFile } from "obsidian";
 import { normalizeData } from "../src/data";
+import { FilterSets } from "../src/filters/sets";
 import { type HostScopes, JetHost } from "../src/host";
 import type { Entry } from "../src/modal/jet-modal";
 import type { Rule, Scope } from "../src/scopes/model";
@@ -63,6 +64,7 @@ const setup = (scopes: Scope[] = [COBALT, STUDIO]) => {
 		() => search,
 		undefined,
 		access,
+		new FilterSets(app as never),
 	);
 	return { host, app, data, searched, edited, measured, amb, ensured: () => ensured };
 };
@@ -194,5 +196,35 @@ describe("the host's filters", () => {
 			{ kind: "title" },
 		]);
 		expect(data.searches[0]).toBe("in:Cobalt status:draft edited:7d world");
+	});
+});
+
+describe("the empty state and persisted filters", () => {
+	it("lists the open note's scope first, then the most used; remembers and restores scope and filters", () => {
+		const { host, app, data } = setup();
+		(app.workspace as unknown as { getActiveFile: () => TFile }).getActiveFile = () =>
+			new TFile("2.Projects/Cobalt/Plan.md");
+		data.scopeUses.amb = 5;
+		data.searches = ["in:Cobalt edited:7d world"];
+		const rec = host.recents();
+		const row = rec[0];
+		expect(row?.type).toBe("scopes");
+		expect(row?.type === "scopes" && row.chips.map((c) => [c.scope.id, !!c.here])).toEqual([
+			["cobalt", true],
+			["amb", false],
+		]);
+		const search = rec.find((e) => e.type === "search");
+		expect(search?.type === "search" && search.parts).toEqual([
+			{ chip: ["", "Cobalt"] },
+			{ chip: ["edited", "past 7 days"] },
+			{ text: "world" },
+		]);
+		const view = { id: "cobalt", name: "Cobalt", kind: "Projects", members: 3 };
+		host.closed("x", true, view, [{ kind: "edited", days: 7 }]);
+		expect(data.scopeUses.cobalt).toBe(1);
+		expect(host.restore()).toBeNull();
+		data.settings.persistFilters = true;
+		host.closed("x", false, view, [{ kind: "edited", days: 7 }]);
+		expect(host.restore()).toEqual({ scope: view, filters: [{ kind: "edited", days: 7 }] });
 	});
 });
