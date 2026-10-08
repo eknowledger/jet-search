@@ -8,6 +8,8 @@ import { addCommandAs, hasCommand, removeCommand, shiftOwnedElsewhere, vaultId }
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
 import { ScopeKeeper } from "./scopes/keeper";
+import { obsidianSnapshot } from "./scopes/snapshot-obsidian";
+import { ScopeWatcher } from "./scopes/watcher";
 import { Search } from "./search";
 import { JetSettingTab } from "./settings-tab";
 import { DoubleTap } from "./shift";
@@ -35,6 +37,10 @@ export default class JetSearchPlugin extends Plugin {
 	feeder!: Feeder;
 	search!: Search;
 	scopes!: ScopeKeeper;
+	/** "When new ones appear": generates again when idle after structural changes. */
+	watcher!: ScopeWatcher;
+	/** A note's frontmatter and tags as last seen, so only real changes wake the watcher. */
+	private readonly shapes = new Map<string, string>();
 	/** Obsidian keeps the tab's definitions from its last update(): call it when settings change elsewhere. */
 	settingTab!: JetSettingTab;
 	private sleepTimer: number | null = null;
@@ -52,6 +58,19 @@ export default class JetSearchPlugin extends Plugin {
 		);
 		this.search = new Search(this.app, this.client, this.feeder, () => this.data);
 		this.scopes = new ScopeKeeper(this.app, this.client, () => this.data.scopes);
+		this.watcher = new ScopeWatcher({
+			mode: () => this.data.settings.scopesWhenNew,
+			scopes: () => this.data.scopes,
+			setScopes: (scopes) => {
+				this.data.scopes = scopes;
+				this.scopes.reset();
+			},
+			save: () => this.save(),
+			snapshot: () => obsidianSnapshot(this.app, this.data.settings.exclude),
+			noticed: () => this.settingTab.refresh(),
+			timers: { set: (fn, ms) => window.setTimeout(fn, ms), clear: (h) => window.clearTimeout(h as number) },
+			now: () => Date.now(),
+		});
 		this.feeder.onReady = () => {
 			// The worker (re)opened: it has no scope sets yet.
 			this.scopes.resend();
@@ -84,6 +103,7 @@ export default class JetSearchPlugin extends Plugin {
 		for (const id of this.standIns) removeCommand(this.app, id);
 		this.modal?.close();
 		this.feeder.stop();
+		this.watcher.stop();
 		if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
 		this.client.stop();
 	}
@@ -184,6 +204,7 @@ export default class JetSearchPlugin extends Plugin {
 			vault.on("create", (f) => {
 				if (f instanceof TFile) this.search.nameChanged(f);
 				this.feeder.touch(f, "upsert");
+				this.watcher.changed();
 			}),
 		);
 		this.registerEvent(vault.on("modify", (f) => this.feeder.touch(f, "upsert")));
@@ -196,6 +217,7 @@ export default class JetSearchPlugin extends Plugin {
 					this.scopes.renamed(f, old);
 				}
 				this.feeder.rename(f, old);
+				this.watcher.changed();
 			}),
 		);
 		this.registerEvent(
@@ -205,6 +227,8 @@ export default class JetSearchPlugin extends Plugin {
 				this.search.nameDeleted(f.path);
 				this.scopes.deleted(f.path);
 				this.feeder.touch(f, "delete");
+				this.shapes.delete(f.path);
+				this.watcher.changed();
 			}),
 		);
 		this.registerEvent(
@@ -212,6 +236,14 @@ export default class JetSearchPlugin extends Plugin {
 				this.search.nameChanged(f);
 				this.scopes.changed(f);
 				this.feeder.touch(f, "upsert");
+				// Only a change to frontmatter or tags can make a new scope (typing text does not).
+				const cache = this.app.metadataCache.getFileCache(f);
+				const shape = JSON.stringify([cache?.frontmatter ?? null, (cache?.tags ?? []).map((t) => t.tag)]);
+				if (this.shapes.get(f.path) !== shape) {
+					const seen = this.shapes.has(f.path);
+					this.shapes.set(f.path, shape);
+					if (seen) this.watcher.changed();
+				}
 			}),
 		);
 		this.registerEvent(this.app.workspace.on("editor-change", () => this.feeder.typing()));

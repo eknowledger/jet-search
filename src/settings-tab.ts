@@ -350,7 +350,7 @@ export class JetSettingTab extends PluginSettingTab {
 			},
 			generatePage: () => this.generatePage() as SettingPage,
 			canOpenPages: () => !!(this.app as unknown as { setting?: { openPage?: unknown } }).setting?.openPage,
-			newCount: () => 0,
+			newCount: () => this.owner.watcher.fresh,
 		};
 	}
 
@@ -364,13 +364,18 @@ export class JetSettingTab extends PluginSettingTab {
 			save: () => this.owner.save(),
 			changed: () => {
 				this.owner.scopes.reset();
+				this.owner.watcher.fresh = 0;
 				this.redraw();
 			},
 			snapshot: () => obsidianSnapshot(this.app, this.owner.data.settings.exclude),
 		});
 	}
 
-	/** Draw the tab again with fresh values (after a rebuild or a clear). */
+	/** Draw the tab again with fresh values (after a rebuild or a clear, or a change made elsewhere). */
+	refresh(): void {
+		this.redraw();
+	}
+
 	private redraw(): void {
 		// Before 1.13 there is no update(): draw by hand.
 		if (requireApiVersion("1.13.0")) this.update();
