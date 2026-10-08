@@ -205,7 +205,8 @@ describe("fixture vaults", () => {
 				.filter((p) => p.endsWith(".md"))
 				.reduce((sum, p) => sum + statSync(join(dir, p)).size, 0);
 			expect(bytes).toBeLessThan(10e6);
-			expect(ms).toBeLessThan(1000);
+			// About 0.3 s alone; the whole suite runs files in parallel, so the bound leaves room for that.
+			expect(ms).toBeLessThan(3000);
 		});
 	});
 
