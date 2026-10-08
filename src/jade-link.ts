@@ -40,13 +40,9 @@ export class JadeLink {
 	start(): void {
 		this.join();
 		const ws = this.app.workspace as unknown as { on(name: string, cb: () => void): import("obsidian").EventRef };
+		// One listener: when Jade goes, its partner object turns inactive by itself (Jade undoes what Jet
+		// added), so `jade:unload` needs no handler here; `jade:ready` joins again.
 		this.plugin.registerEvent(ws.on("jade:ready", () => this.join()));
-		this.plugin.registerEvent(
-			ws.on("jade:unload", () => {
-				this.partner = null;
-				this.taps = false;
-			}),
-		);
 	}
 
 	get joined(): boolean {

@@ -2,6 +2,7 @@ import { type App, MarkdownView, TFile, type TAbstractFile } from "obsidian";
 import type { RawNote } from "../engine/fields";
 import type { JetClient } from "../worker/jet-client";
 import { excluder, gather, inboundCounts } from "./gather";
+import { sliced } from "./slice";
 
 const BATCH = 100;
 /** The note being typed in: its text goes to the index this long after typing pauses. */
@@ -106,10 +107,10 @@ export class Feeder {
 			await this.client.call({ op: "upsert", notes: await this.read(stale.slice(i, i + BATCH), inbound) });
 	}
 
+	/** The batch's text (read in parallel), then each note gathered in slices of ≤ 8 ms. */
 	private async read(files: readonly TFile[], inbound: Map<string, number>): Promise<RawNote[]> {
-		return Promise.all(
-			files.map(async (f) => gather(this.app, f, await this.app.vault.cachedRead(f), inbound.get(f.path) ?? 0)),
-		);
+		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
+		return sliced(files, (f, i) => gather(this.app, f, texts[i] ?? "", inbound.get(f.path) ?? 0));
 	}
 
 	// ── Freshness ──────────────────────────────────────────────
