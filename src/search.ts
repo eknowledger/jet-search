@@ -31,6 +31,16 @@ export type FilterNotes = {
 	reason?(f: Filter, path: string): string | null;
 };
 
+/**
+ * Obsidian Search's own operators: `line:`, `section:`, `block:`, `task:` (and its
+ * forms) and a /regex/. Jet does not answer them; it offers core Search with the same query.
+ */
+const CORE_ONLY =
+	/(^|\s)-?(?:line|section|block|task|task-todo|task-done|match-case|ignore-case):|(^|\s)\/[^/\s][^/]*\//u;
+
+/** Whether the text uses an operator only Obsidian's Search understands. */
+export const wantsCoreSearch = (text: string): boolean => CORE_ONLY.test(text);
+
 /** Notes listed for filters with no text, most recently changed first. */
 const FILTERED_LIST = 50;
 type Shown = NonNullable<Item["excerpt"]> & { offset: number; reason?: string };
@@ -193,6 +203,26 @@ export class Search {
 	}
 
 	private compose(
+		tier0: NameHit[],
+		reply: QueryReply | null,
+		now: number,
+		excerpts: Map<string, Shown>,
+		meta: readonly MetaHit[] = [],
+	): Entry[] {
+		const core: Entry[] =
+			this.current && wantsCoreSearch(this.current.text)
+				? [
+						{
+							type: "core",
+							query: this.current.text.trim(),
+							detail: `“${this.current.text.trim()}” in Obsidian's Search`,
+						},
+					]
+				: [];
+		return [...core, ...this.composeHits(tier0, reply, now, excerpts, meta)];
+	}
+
+	private composeHits(
 		tier0: NameHit[],
 		reply: QueryReply | null,
 		now: number,

@@ -232,3 +232,29 @@ describe("match reasons", () => {
 		expect(row?.excerpt?.text).toBe("The garden plan of the system");
 	});
 });
+
+describe("handing structural queries to Obsidian Search", () => {
+	it("line:, section:, block:, task: and a /regex/ offer core Search first; plain words do not", async () => {
+		const { wantsCoreSearch } = await import("../src/search");
+		for (const q of [
+			"line:(alpha beta)",
+			"notes section:intro",
+			"block:quote",
+			"task:call",
+			"-task-todo:x",
+			"/foo.*bar/ note",
+		])
+			expect(wantsCoreSearch(q), q).toBe(true);
+		for (const q of ["status:draft", "path:a", "a/b/c", "http://x/y", "plain words"])
+			expect(wantsCoreSearch(q), q).toBe(false);
+		const s = setup(true);
+		const rows = (() => {
+			let shown: Entry[] = [];
+			s.list("line:(garden)", (e) => {
+				if (!shown.length) shown = e;
+			});
+			return shown;
+		})();
+		expect(rows[0]).toMatchObject({ type: "core", query: "line:(garden)" });
+	});
+});

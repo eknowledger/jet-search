@@ -258,6 +258,19 @@ export class JetHost implements ModalHost {
 		return [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, MENU_ITEMS);
 	}
 
+	/** Obsidian's core Search with this query. */
+	coreSearch(query: string): void {
+		const gs = (
+			this.app as unknown as {
+				internalPlugins?: {
+					getPluginById(id: string): { instance?: { openGlobalSearch?(q: string): void } } | null;
+				};
+			}
+		).internalPlugins?.getPluginById("global-search")?.instance;
+		if (gs?.openGlobalSearch) gs.openGlobalSearch(query);
+		else new Notice("Obsidian's search plugin is off.");
+	}
+
 	/** Open the Scopes settings page (the popover's Manage). */
 	manageScopes?: () => void;
 

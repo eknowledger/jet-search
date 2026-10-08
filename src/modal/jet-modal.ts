@@ -41,7 +41,9 @@ export type Entry =
 	/** Create a note named after the text (no-results screen). */
 	| { type: "create"; text: string; detail?: string }
 	/** Search the same text everywhere (nothing in the scope). */
-	| { type: "widen"; label: string; detail?: string };
+	| { type: "widen"; label: string; detail?: string }
+	/** Hand a structural query to Obsidian's own search. */
+	| { type: "core"; query: string; detail?: string };
 
 /** A scope as the modal shows it: its chip, banner and hints. */
 export type ScopeView = { id: string; name: string; kind: string; members: number };
@@ -150,6 +152,8 @@ export type ModalHost = {
 	insertLink(path: string): void;
 	/** ⇧↵: create a note named after the text and open it, in the chip's scope if any. */
 	create(text: string, scope?: string): void;
+	/** Open Obsidian's core Search with this query. */
+	coreSearch?(query: string): void;
 	/** The last scope and filters to reopen with, or null. */
 	restore?(): { scope?: ScopeView; filters: Filter[] } | null;
 	/** The footer's settings popover, if this host has one. */
@@ -1205,6 +1209,12 @@ export class JetModal extends Modal {
 			this.widen();
 			return;
 		}
+		if (e.type === "core") {
+			this.opened = true;
+			this.host.coreSearch?.(e.query);
+			this.close();
+			return;
+		}
 		if (e.type !== "item") return;
 		this.opened = true;
 		this.host.open(e.path, how, e.at);
@@ -1435,7 +1445,9 @@ const keyOf = (e: Entry): string | null =>
 				? `c:${e.text}`
 				: e.type === "widen"
 					? `w:${e.label}`
-					: null;
+					: e.type === "core"
+						? `o:${e.query}`
+						: null;
 
 /** Fill a pooled row element for an entry (rebuilt each time: rows are few and small). */
 const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
@@ -1488,6 +1500,14 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 	}
 	el.setAttr("role", "option");
 	el.setAttr("aria-selected", "false");
+	if (e.type === "core") {
+		el.className = "jet-row jet-rowt";
+		setIcon(el.createSpan({ cls: "jet-ic" }), "search-code");
+		const b = el.createDiv({ cls: "jet-rb" });
+		b.createDiv({ cls: "jet-l1" }).createSpan({ cls: "jet-rt", text: "Search with Obsidian Search" });
+		b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: e.detail ?? e.query });
+		return;
+	}
 	if (e.type === "widen") {
 		el.className = "jet-row jet-rowt";
 		setIcon(el.createSpan({ cls: "jet-ic" }), "globe");
