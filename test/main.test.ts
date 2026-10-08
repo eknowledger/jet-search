@@ -110,7 +110,7 @@ describe("settings tab", () => {
 		]);
 		const names = flat(defs).map((d) => d.name);
 		expect(names).toContain("Open with a double tap of ⇧");
-		expect(names).toContain("Folders to leave out");
+		expect(flat(defs).some((d) => d.name === "Folders to leave out" && d.type === "page")).toBe(true);
 		expect(names).toContain("English");
 		expect(names.at(-1)).toBe("Version");
 	});

@@ -92,3 +92,20 @@ describe("the Scopes page in settings (option C)", () => {
 		expect(calls).toEqual([]);
 	});
 });
+
+describe("folders to leave out as a page", () => {
+	it("is a row with the folder count that opens a list; a folder can be removed from it", async () => {
+		const { tab, plugin } = await make();
+		plugin.data.settings.exclude = ["Archive", "Templates"];
+		const find = (): Def =>
+			(tab.getSettingDefinitions() as unknown as Def[])
+				.flatMap((d) => d.items ?? [])
+				.find((d) => d.name === "Folders to leave out") as Def;
+		expect(find().type).toBe("page");
+		expect(find().displayValue?.()).toBe("2 folders");
+		const list = find().items?.[0];
+		expect(list?.items?.map((d) => d.name)).toEqual(["Archive", "Templates"]);
+		list?.onDelete?.(0);
+		expect(plugin.data.settings.exclude).toEqual(["Templates"]);
+	});
+});

@@ -6,10 +6,12 @@ import {
 	Setting,
 	type SettingDefinition,
 	type SettingDefinitionItem,
+	type SettingDefinitionPage,
 } from "obsidian";
 import { BUILD_ID } from "./build-id";
 import { STEM_LANGUAGES } from "./engine/stem";
 import { clearIndex, rebuild, statusNow } from "./index-status";
+import { pickFolder } from "./settings/rule-pickers";
 import { type ScopesHost, scopesPage } from "./settings/scopes-page";
 import type JetSearchPlugin from "./main";
 
@@ -103,12 +105,7 @@ export class JetSettingTab extends PluginSettingTab {
 				type: "group",
 				heading: "Index",
 				items: [
-					{
-						name: "Folders to leave out",
-						desc: "One folder per line. Obsidian's excluded files are left out too. Rebuild after changing.",
-						aliases: ["exclude", "ignore"],
-						control: { type: "textarea", key: "exclude", rows: 3 },
-					},
+					this.excludedPage(),
 					{
 						name: "Index",
 						desc: "Notes indexed, size and last update.",
@@ -216,9 +213,23 @@ export class JetSettingTab extends PluginSettingTab {
 		for (const item of this.getSettingDefinitions()) {
 			if ("type" in item && item.type === "group") {
 				if (item.heading) new Setting(el).setName(item.heading).setHeading();
-				for (const d of item.items ?? []) if (!("type" in d)) this.drawClassic(el, d);
+				for (const d of item.items ?? []) {
+					if (!("type" in d)) this.drawClassic(el, d);
+					else if (d.name === "Folders to leave out") this.drawExcludedClassic(el);
+				}
 			} else if (!("type" in item)) this.drawClassic(el, item);
 		}
+	}
+
+	/** Before 1.13 (no settings pages): the folders to leave out as a text box, one per line. */
+	private drawExcludedClassic(el: HTMLElement): void {
+		const s = this.owner.data.settings;
+		new Setting(el)
+			.setName("Folders to leave out")
+			.setDesc("One folder per line. Obsidian's excluded files are left out too. Rebuild after changing.")
+			.addTextArea((t) =>
+				t.setValue(s.exclude.join("\n")).onChange((v) => void this.setControlValue("exclude", v)),
+			);
 	}
 
 	private drawClassic(el: HTMLElement, d: SettingDefinition): void {
@@ -263,6 +274,42 @@ export class JetSettingTab extends PluginSettingTab {
 			b.setButtonText("Clear").onClick(() => void clearIndex(this.owner).then(() => this.redraw()));
 			b.buttonEl.addClass("mod-warning");
 		});
+	}
+
+	/** Folders to leave out: a page with a list, like Obsidian's own "Excluded files". */
+	private excludedPage(): SettingDefinitionPage {
+		const s = this.owner.data.settings;
+		const changed = (): void => {
+			this.owner.save();
+			this.redraw();
+		};
+		return {
+			type: "page",
+			name: "Folders to leave out",
+			desc: "Never searched. Obsidian's excluded files are left out too. Rebuild the index after changing.",
+			displayValue: () =>
+				s.exclude.length ? `${s.exclude.length} folder${s.exclude.length === 1 ? "" : "s"}` : "None",
+			items: [
+				{
+					type: "list",
+					items: s.exclude.map((path) => ({ name: path })),
+					emptyState: "No folders left out.",
+					onDelete: (i) => {
+						s.exclude.splice(i, 1);
+						changed();
+					},
+					addItem: {
+						name: "Add folder",
+						action: () =>
+							pickFolder(this.app, (r) => {
+								if (r?.kind !== "folder" || s.exclude.includes(r.path)) return;
+								s.exclude.push(r.path);
+								changed();
+							}),
+					},
+				},
+			],
+		};
 	}
 
 	/** `scope:<id>:mode` and `scope:<id>:combine` control keys. */
