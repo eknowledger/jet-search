@@ -82,6 +82,18 @@ describe("Jet engine ranking", () => {
 		]);
 	});
 
+	it("leaves typos out for a word the vault has: world never brings would or words", () => {
+		const e = engine([
+			...["a", "b", "c"].map((x) => note(`World ${x}.md`, `Notes on the garden plan ${x}.`)),
+			...["d", "e", "f", "g"].map((x) => note(`Other ${x}.md`, `It would take more words, a workday ${x}.`)),
+		]);
+		const world = ["World a.md", "World b.md", "World c.md"];
+		expect(paths(e, "world").sort()).toEqual(world);
+		expect(paths(e, "world ").sort()).toEqual(world);
+		// A misspelling the vault does not have still finds it.
+		expect(paths(e, "wrold ").sort()).toEqual(world);
+	});
+
 	it("lets a strong name match one typo away beat a weak exact match", () => {
 		const e = engine([
 			note("Lantern Atlas.md", "# Lantern Atlas\nThe lantern atlas reference."),

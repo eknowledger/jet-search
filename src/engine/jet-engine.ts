@@ -36,6 +36,11 @@ const PREFIX_LIMIT = 64;
 const TYPO1 = 0.55;
 const TYPO2 = 0.35;
 const FUZZY_PREFIX = 0.4;
+/**
+ * Typos and fuzzy prefixes only rescue a word the vault barely has: when its own matches (exactly, as
+ * a prefix, as a word form) are in fewer notes than this. "world" never brings "would" and "words".
+ */
+const TYPOS_BELOW = 3;
 const FUZZY_LIMIT = 200;
 /** Word forms: a word's root group, below the exact word. */
 const STEM = 0.8;
@@ -276,7 +281,18 @@ export class JetEngine implements SearchEngine {
 		const N = Math.max(1, this.size);
 		const terms = new Set<string>();
 		const candidates: Candidate[] = [];
-		for (const part of parts) {
+		// Each word's own expansions in every part, and in how many notes they occur (for TYPOS_BELOW).
+		const isLast = (i: number): boolean => q.lastIsPrefix && i === n - 1;
+		const own = parts.map((part) => q.words.map((w, i) => expand(part.seg, w, isLast(i), this.config, false)));
+		const typos = q.words.map(
+			(_, i) =>
+				own.reduce(
+					(sum, exps, p) =>
+						sum + (exps[i] ?? []).reduce((m, x) => m + ((parts[p] as Part).seg.df[x.t] as number), 0),
+					0,
+				) < TYPOS_BELOW,
+		);
+		for (const [p, part] of parts.entries()) {
 			const { seg, dead, scratch: s } = part;
 			s.q++;
 			const touchedQ: number[] = [];
@@ -285,7 +301,8 @@ export class JetEngine implements SearchEngine {
 				const word = q.words[i] as string;
 				s.w++;
 				const touchedW: number[] = [];
-				for (const x of expand(seg, word, q.lastIsPrefix && i === n - 1, this.config)) {
+				const exps = typos[i] ? expand(seg, word, isLast(i), this.config, true) : (own[p]?.[i] ?? []);
+				for (const x of exps) {
 					const term = seg.terms[x.t] as string;
 					const df = (seg.df[x.t] as number) + this.otherDf(seg, term);
 					const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
@@ -622,8 +639,8 @@ const exactTerm = (seg: Segment, word: string): number => {
 	return terms[i] === word ? i : -1;
 };
 
-/** The index terms a typed word matches, with how much each counts. */
-const expand = (seg: Segment, word: string, isLast: boolean, config: EngineConfig): Expansion[] => {
+/** The index terms a typed word matches, with how much each counts; typos only when asked. */
+const expand = (seg: Segment, word: string, isLast: boolean, config: EngineConfig, typos: boolean): Expansion[] => {
 	const terms = seg.terms;
 	const best = new Map<number, Expansion>();
 	const put = (t: number, w: number, e: number): void => {
@@ -640,7 +657,7 @@ const expand = (seg: Segment, word: string, isLast: boolean, config: EngineConfi
 			range = range.sort((a, b) => (seg.df[b] as number) - (seg.df[a] as number)).slice(0, PREFIX_LIMIT);
 		for (const t of range) put(t, PREFIX * Math.sqrt(len / (terms[t] as string).length), 0);
 	}
-	const budget = noTypos(word) ? 0 : typoBudget(word);
+	const budget = !typos || noTypos(word) ? 0 : typoBudget(word);
 	if (budget > 0) {
 		const fuzzy = isLast && len >= 4;
 		let fuzzyCount = 0;
