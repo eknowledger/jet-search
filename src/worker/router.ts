@@ -102,6 +102,11 @@ export class Router {
 				this.scopes.set(req.id, set);
 				return { notes: set.size };
 			}
+			case "mentions": {
+				const paths = this.engine.mentions(parseQuery(req.text).words);
+				const set = req.scope !== undefined ? this.scopes.get(req.scope) : undefined;
+				return { notes: paths.length, inside: set ? paths.filter((p) => set.has(p)).length : 0 };
+			}
 			case "scope:clear":
 				for (const id of req.ids ?? [...this.scopes.keys()]) this.scopes.delete(id);
 				return { notes: this.scopes.size };

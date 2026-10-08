@@ -169,3 +169,18 @@ describe("scope sets in the worker", () => {
 		expect(await askIn(r, "orchid ", "s1")).toEqual([]);
 	});
 });
+
+describe("mentions in the worker", () => {
+	it("counts a name's mentions in all notes and inside a scope", async () => {
+		const r = new Router(() => memoryStore(), timers);
+		await r.handle({ op: "open", vaultId: "v", stemming: [] });
+		await r.handle({
+			op: "batch",
+			notes: [raw("a.md", "garden beds"), raw("b.md", "garden tools"), raw("c.md", "kitchen")],
+			last: true,
+		});
+		await r.handle({ op: "scope:set", id: "g", paths: ["a.md"] });
+		expect(await r.handle({ op: "mentions", text: "Garden", scope: "g" })).toEqual({ notes: 2, inside: 1 });
+		expect(await r.handle({ op: "mentions", text: "garden tools" })).toEqual({ notes: 1, inside: 0 });
+	});
+});

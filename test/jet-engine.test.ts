@@ -291,3 +291,26 @@ describe("Jet engine spelling suggestion", () => {
 		expect(e.suggest(parseQuery("zzzzqqq"))).toEqual({ text: null, notes: 0 });
 	});
 });
+
+describe("mentions of a name", () => {
+	it("counts notes with every word exactly: no prefixes, typos or word forms", () => {
+		const e = engine([
+			note("a.md", "Cobalt plans for the spring."),
+			note("b.md", "The cobalt mine report."),
+			note("c.md", "Cobalts and cobolt are not the word."),
+			note("Cobalt/d.md", "Inside the folder, never naming it."),
+			note("e.md", "Cobalt runtime notes."),
+		]);
+		expect(e.mentions(["cobalt"]).sort()).toEqual(["Cobalt/d.md", "a.md", "b.md", "e.md"]);
+		expect(e.mentions(["cobalt", "runtime"])).toEqual(["e.md"]);
+		expect(e.mentions(["missing"])).toEqual([]);
+		expect(e.mentions([])).toEqual([]);
+	});
+
+	it("follows updates: a replaced note counts once, a deleted one not at all", () => {
+		const e = engine([note("a.md", "Cobalt plans."), note("b.md", "Cobalt again.")]);
+		e.upsert(note("a.md", "Still Cobalt, edited."));
+		e.delete("b.md");
+		expect(e.mentions(["cobalt"])).toEqual(["a.md"]);
+	});
+});

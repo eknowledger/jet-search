@@ -473,6 +473,45 @@ export class JetEngine implements SearchEngine {
 		return { text: notes ? text : null, notes };
 	}
 
+	/**
+	 * The notes whose text has every word exactly (no prefix, typo or word form), anywhere: body, name,
+	 * headings, tags or folder. A scope's name mentioned outside the scope tells how ambiguous it is.
+	 */
+	mentions(words: readonly string[]): string[] {
+		const out: string[] = [];
+		if (!words.length) return out;
+		for (const part of this.parts()) {
+			const { seg, dead } = part;
+			let docs: Set<number> | null = null;
+			for (const w of words) {
+				const t = exactTerm(seg, w);
+				const has = new Set<number>();
+				if (t >= 0) {
+					for (let k = seg.metaOff[t] as number, end = seg.metaOff[t + 1] as number; k < end; k++)
+						has.add(seg.metaDocs[k] as number);
+					const body = seg.body;
+					let pos = seg.bodyOff[t] as number;
+					const end = seg.bodyOff[t + 1] as number;
+					let d = -1;
+					while (pos < end) {
+						let b = body[pos++] as number;
+						let gap = b & 0x7f;
+						for (let sh = 7; b & 0x80; sh += 7) gap |= ((b = body[pos++] as number) & 0x7f) << sh;
+						// The count that follows is not needed: skip its varint.
+						while ((body[pos++] as number) & 0x80);
+						d += gap + 1;
+						has.add(d);
+					}
+				}
+				const prev: Set<number> | null = docs;
+				docs = prev ? new Set<number>([...prev].filter((x: number) => has.has(x))) : has;
+				if (!docs.size) break;
+			}
+			for (const d of docs ?? []) if (!dead?.[d]) out.push(part.path(d));
+		}
+		return out;
+	}
+
 	/** The paths and modified times of every live note (to catch up with the vault by mtime). */
 	mtimes(): Array<[string, number]> {
 		const out: Array<[string, number]> = [];

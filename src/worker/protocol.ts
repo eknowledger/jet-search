@@ -27,6 +27,8 @@ export type Request =
 	| { op: "scope:delta"; id: string; add: string[]; remove: string[] }
 	/** Drop these scopes' sets (all of them without `ids`). */
 	| { op: "scope:clear"; ids?: string[] }
+	/** How many notes mention a name (its words exactly), and how many of them are in a scope. */
+	| { op: "mentions"; text: string; scope?: string }
 	/** Forget this vault's index (settings: Clear index). */
 	| { op: "clear" };
 
@@ -45,7 +47,9 @@ export type Reply<R extends Request> = R extends { op: "open" }
 				? { text: string | null; notes: number }
 				: R extends { op: "stats" }
 					? Stats
-					: { notes: number };
+					: R extends { op: "mentions" }
+						? { notes: number; inside: number }
+						: { notes: number };
 
 export type Envelope = { id: number; req: Request };
 export type Answer = { id: number; result?: unknown; error?: string };
