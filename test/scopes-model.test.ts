@@ -17,7 +17,7 @@ describe("stored scopes", () => {
 			combine: "any",
 			mode: "suggest",
 			source: "generated",
-			origin: { kind: "container", at: "Projects" },
+			origins: [{ signal: "container-folder", at: "Projects", key: "Projects/Garden", v: 1 }],
 			generated: [{ kind: "folder", path: "Projects/Garden" }],
 		};
 		expect(normalizeScopes([s])).toEqual([s]);

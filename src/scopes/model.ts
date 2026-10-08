@@ -17,6 +17,9 @@ export type Rule =
 
 export type Mode = "suggest" | "auto" | "in-only";
 
+/** Where generation found a scope: the signal, the pattern, the member in it. */
+export type Origin = { signal: string; at: string; key: string; v: number };
+
 export type Scope = {
 	id: string;
 	name: string;
@@ -27,8 +30,8 @@ export type Scope = {
 	combine: "any" | "all";
 	mode: Mode;
 	source: "generated" | "manual";
-	/** Where generation found it ("Projects" container, "category" property, "#client" tag root). */
-	origin?: { kind: string; at: string };
+	/** Where generation found it: the first is the main one. Finding new scopes compares by these. */
+	origins?: Origin[];
 	/** The rules generation gave it, to tell its own rules from your edits when generated again. */
 	generated?: Rule[];
 };
@@ -98,8 +101,16 @@ export const normalizeScopes = (raw: unknown): Scope[] => {
 			mode: MODES.includes(r.mode as Mode) ? (r.mode as Mode) : "suggest",
 			source: r.source === "generated" ? "generated" : "manual",
 		};
-		const o = r.origin as Record<string, unknown> | undefined;
-		if (o && str(o.kind) && str(o.at)) s.origin = { kind: str(o.kind) as string, at: str(o.at) as string };
+		if (Array.isArray(r.origins)) {
+			const origins: Origin[] = [];
+			for (const o of r.origins as unknown[]) {
+				const x = (o ?? {}) as Record<string, unknown>;
+				const signal = str(x.signal);
+				if (signal && typeof x.at === "string" && typeof x.key === "string")
+					origins.push({ signal, at: x.at, key: x.key, v: typeof x.v === "number" ? x.v : 1 });
+			}
+			if (origins.length) s.origins = origins;
+		}
 		if (Array.isArray(r.generated)) s.generated = rules(r.generated);
 		out.push(s);
 	}
