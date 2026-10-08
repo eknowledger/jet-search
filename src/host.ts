@@ -1,7 +1,17 @@
-import { type App, getAllTags, MarkdownView, normalizePath, Notice, type TFile } from "obsidian";
+import { type App, FuzzySuggestModal, getAllTags, MarkdownView, normalizePath, Notice, TFile, TFolder } from "obsidian";
 import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
-import type { Completion, Entry, HintState, ModalHost, OpenHow, ScopeCard, ScopeView, Typed } from "./modal/jet-modal";
+import type {
+	Completion,
+	Entry,
+	NoteAction,
+	HintState,
+	ModalHost,
+	OpenHow,
+	ScopeCard,
+	ScopeView,
+	Typed,
+} from "./modal/jet-modal";
 import { findFix, pieceAt, wantOf } from "./filters/complete";
 import { type Filter, filterLabel, filterText, findFilters, withoutPieces } from "./filters/filter";
 import type { FilterSets } from "./filters/sets";
@@ -256,6 +266,103 @@ export class JetHost implements ModalHost {
 				counts.set(t, (counts.get(t) ?? 0) + 1);
 		}
 		return [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, MENU_ITEMS);
+	}
+
+	/** Search inside a note (the ⌘K panel's last action): the plugin opens its in-note search. */
+	inNote?: (file: TFile) => void;
+
+	/** The ⌘K panel's actions on a note, with their keys. */
+	actions(path: string): NoteAction[] {
+		const file = this.app.vault.getFileByPath(path);
+		if (!file) return [];
+		const backlinks = Object.values(this.app.metadataCache.resolvedLinks ?? {}).filter((t) => path in t).length;
+		const tab = this.newTab();
+		return [
+			{ id: "open", label: "Open", icon: "file", key: "↵", group: 0 },
+			{
+				id: "other",
+				label: tab ? "Open in the same tab" : "Open in new tab",
+				icon: "app-window",
+				key: "⌘↵",
+				group: 0,
+			},
+			{ id: "split", label: "Open to the right", icon: "columns-2", key: "⌘⌥↵", group: 0 },
+			{ id: "insert", label: "Insert link at cursor", icon: "text-cursor-input", key: "⌥↵", group: 0 },
+			{ id: "copy-link", label: "Copy wikilink", icon: "link", key: "⌘L", group: 1 },
+			{ id: "copy-url", label: "Copy obsidian:// URL", icon: "link-2", key: "⌘⇧L", group: 1 },
+			{ id: "reveal", label: "Reveal in file explorer", icon: "folder-open", group: 2 },
+			{ id: "move", label: "Move to scope or folder…", icon: "folder-input", group: 2 },
+			{ id: "bookmark", label: "Bookmark", icon: "bookmark", group: 2 },
+			{ id: "backlinks", label: "Show backlinks", icon: "links-coming-in", detail: String(backlinks), group: 2 },
+			{ id: "in-note", label: "Search in this note", icon: "file-search", group: 2 },
+		];
+	}
+
+	/** Run a ⌘K action; true when Jet should close. */
+	act(id: string, path: string): boolean {
+		const file = this.app.vault.getFileByPath(path);
+		if (!file) return false;
+		const internal = (pid: string): Record<string, unknown> | undefined =>
+			(
+				this.app as unknown as {
+					internalPlugins?: { getPluginById(id: string): { instance?: Record<string, unknown> } | null };
+				}
+			).internalPlugins?.getPluginById(pid)?.instance;
+		switch (id) {
+			case "open":
+			case "other":
+			case "split":
+				this.open(path, id === "open" ? "default" : id);
+				return true;
+			case "insert":
+				this.insertLink(path);
+				return true;
+			case "copy-link":
+				this.copyLink(path);
+				return false;
+			case "copy-url": {
+				const url = `obsidian://open?vault=${encodeURIComponent(this.app.vault.getName())}&file=${encodeURIComponent(path)}`;
+				void navigator.clipboard.writeText(url).then(() => new Notice("URL copied"));
+				return false;
+			}
+			case "reveal": {
+				const fe = internal("file-explorer") as { revealInFolder?(f: TFile): void } | undefined;
+				if (fe?.revealInFolder) fe.revealInFolder(file);
+				else new Notice("The file explorer is off.");
+				return true;
+			}
+			case "bookmark": {
+				const bm = internal("bookmarks") as
+					| { addItem?(i: { type: "file"; path: string; title: string }): void }
+					| undefined;
+				if (bm?.addItem) {
+					bm.addItem({ type: "file", path, title: "" });
+					new Notice("Bookmarked");
+				} else new Notice("Bookmarks are off.");
+				return false;
+			}
+			case "backlinks":
+				void this.app.workspace
+					.getLeaf(this.newTab() ? "tab" : false)
+					.openFile(file)
+					.then(() =>
+						(
+							this.app as unknown as { commands?: { executeCommandById(id: string): boolean } }
+						).commands?.executeCommandById("backlink:open-backlinks"),
+					);
+				return true;
+			case "in-note":
+				void this.app.workspace
+					.getLeaf(false)
+					.openFile(file)
+					.then(() => this.inNote?.(file));
+				return true;
+			case "move":
+				new MoveModal(this.app, file, this.scopeAccess?.all() ?? []).open();
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	/** Obsidian's core Search with this query. */
@@ -707,5 +814,50 @@ export class JetHost implements ModalHost {
 		if (opened) rememberSearch(this.data(), scope ? scopedSearch(scope.name, parts) : parts);
 		this.search().idle();
 		this.save();
+	}
+}
+
+type MoveTarget = { label: string; folder: string; scope?: Scope };
+
+/** "Move to scope or folder…" (⌘K): a scope moves the note to its folder and fills in its property. */
+class MoveModal extends FuzzySuggestModal<MoveTarget> {
+	constructor(
+		app: App,
+		private readonly file: TFile,
+		private readonly scopes: readonly Scope[],
+	) {
+		super(app);
+		this.setPlaceholder(`Move “${file.basename}” to…`);
+	}
+
+	getItems(): MoveTarget[] {
+		const out: MoveTarget[] = [];
+		for (const s of this.scopes) {
+			const t = createTarget(s);
+			if (t.folder) out.push({ label: `${s.name}${s.kind ? ` · ${s.kind}` : ""}`, folder: t.folder, scope: s });
+		}
+		for (const f of this.app.vault.getAllLoadedFiles())
+			if (f instanceof TFolder && f.path !== "/") out.push({ label: f.path, folder: f.path });
+		return out;
+	}
+
+	getItemText(t: MoveTarget): string {
+		return t.label;
+	}
+
+	onChooseItem(t: MoveTarget): void {
+		const to = normalizePath(`${t.folder}/${this.file.name}`);
+		void (async () => {
+			if (to !== this.file.path) await this.app.fileManager.renameFile(this.file, to);
+			const target = t.scope ? createTarget(t.scope) : null;
+			if (target?.prop)
+				await this.app.fileManager.processFrontMatter(this.file, (fm: Record<string, unknown>) => {
+					if (target.prop) fm[target.prop[0]] = target.prop[1];
+				});
+			new Notice(`Moved to ${t.folder}`);
+		})().catch((e: unknown) => {
+			console.error("Jet Search: could not move the note", e);
+			new Notice("The note could not be moved.");
+		});
 	}
 }

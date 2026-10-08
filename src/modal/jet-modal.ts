@@ -152,6 +152,10 @@ export type ModalHost = {
 	insertLink(path: string): void;
 	/** ⇧↵: create a note named after the text and open it, in the chip's scope if any. */
 	create(text: string, scope?: string): void;
+	/** The actions on a note (⌘K), each with its key. */
+	actions?(path: string): NoteAction[];
+	/** Run one; true when the modal should close. */
+	act?(id: string, path: string): boolean;
 	/** Open Obsidian's core Search with this query. */
 	coreSearch?(query: string): void;
 	/** The last scope and filters to reopen with, or null. */
@@ -198,6 +202,9 @@ export type Completion = {
 	/** The same values across the vault, when a scope or filters narrow the counts. */
 	vault?: string;
 };
+
+/** An action in the ⌘K panel. */
+export type NoteAction = { id: string; label: string; icon: string; key?: string; detail?: string; group?: number };
 
 /** A fix for an unknown key. */
 export type FixView = { from: number; to: number; wrong: string; key: string; value: string; notes: number };
@@ -253,6 +260,15 @@ export class JetModal extends Modal {
 	private sort: Sort = "best";
 	/** The chips as restored: marked pinned while they stay so. */
 	private pinnedKey: string | null = null;
+	// The ⌘K panel: its element, actions, query and selection.
+	private actPanel: {
+		el: HTMLElement;
+		input: HTMLInputElement;
+		path: string;
+		all: NoteAction[];
+		shown: NoteAction[];
+		i: number;
+	} | null = null;
 	// Autocomplete and fix-it.
 	private ac: Completion | null = null;
 	private acIndex = 0;
@@ -1227,6 +1243,10 @@ export class JetModal extends Modal {
 		const escapes = (scope.keys ?? []).filter((k) => k.key === "Escape");
 		for (const k of escapes) scope.unregister(k);
 		this.scope.register([], "Escape", () => {
+			if (this.actPanel) {
+				this.closeActions();
+				return false;
+			}
 			if (this.ac) {
 				this.acClosedFor = this.inputEl.value.slice(this.ac.from, this.ac.to);
 				this.closeAC();
@@ -1334,6 +1354,10 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register([], "ArrowDown", () => {
+			if (this.actPanel) {
+				this.moveAction(1);
+				return false;
+			}
 			if (this.ac) {
 				this.acIndex = (this.acIndex + 1) % this.ac.items.length;
 				this.drawAC();
@@ -1341,6 +1365,10 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register([], "ArrowUp", () => {
+			if (this.actPanel) {
+				this.moveAction(-1);
+				return false;
+			}
 			if (this.ac) {
 				this.acIndex = (this.acIndex - 1 + this.ac.items.length) % this.ac.items.length;
 				this.drawAC();
@@ -1357,7 +1385,8 @@ export class JetModal extends Modal {
 		});
 		this.scope.register([], "Enter", (e) => {
 			if (e.isComposing) return false;
-			if (this.ac) this.acceptAC();
+			if (this.actPanel) this.runAction();
+			else if (this.ac) this.acceptAC();
 			else this.choose("default");
 			return false;
 		});
@@ -1373,6 +1402,18 @@ export class JetModal extends Modal {
 		this.scope.register(["Mod", "Shift"], "s", () => {
 			const i = SORTS.findIndex(([k]) => k === this.sort);
 			this.setSort((SORTS[(i + 1) % SORTS.length] as [Sort, string])[0]);
+			return false;
+		});
+		// ⌘K: the selected note's actions.
+		this.scope.register(["Mod"], "k", () => {
+			if (this.actPanel) this.closeActions();
+			else this.openActions();
+			return false;
+		});
+		// ⌘⇧L: copy the note's obsidian:// URL.
+		this.scope.register(["Mod", "Shift"], "l", () => {
+			const e = this.entries[this.selected];
+			if (e?.type === "item") this.host.act?.("copy-url", e.path);
 			return false;
 		});
 		this.scope.register(["Mod"], "f", () => {
@@ -1425,6 +1466,111 @@ export class JetModal extends Modal {
 			this.close();
 			return false;
 		});
+	}
+
+	// ── The ⌘K panel ──────────────────────────────────
+
+	private openActions(): void {
+		const e = this.entries[this.selected];
+		if (e?.type !== "item" || !this.host.actions) return;
+		const all = this.host.actions(e.path);
+		if (!all.length) return;
+		const el = this.contentEl.createDiv({ cls: "jet-act" });
+		el.createDiv({ cls: "jet-acth" }).appendText(`Actions for ${e.title}`);
+		const row = el.createDiv({ cls: "jet-actin" });
+		setIcon(row.createSpan({ cls: "jet-actsi" }), "search");
+		const input = row.createEl("input", {
+			cls: "jet-actq",
+			attr: { type: "text", placeholder: "Search actions…" },
+		});
+		el.createDiv({ cls: "jet-actl" });
+		input.addEventListener("input", () => this.filterActions());
+		el.addEventListener("mousedown", (ev) => {
+			if (ev.target !== input) ev.preventDefault();
+		});
+		this.actPanel = { el, input, path: e.path, all, shown: all, i: 0 };
+		this.drawActions();
+		this.footerActions();
+		input.focus();
+	}
+
+	private closeActions(): void {
+		this.actPanel?.el.remove();
+		this.actPanel = null;
+		this.inputEl.focus();
+		this.footer(this.inputEl.value);
+	}
+
+	private filterActions(): void {
+		const a = this.actPanel;
+		if (!a) return;
+		const q = a.input.value.trim().toLowerCase();
+		a.shown = q ? a.all.filter((x) => x.label.toLowerCase().includes(q)) : a.all;
+		a.i = 0;
+		this.drawActions();
+	}
+
+	private moveAction(step: number): void {
+		const a = this.actPanel;
+		if (!a || !a.shown.length) return;
+		a.i = (a.i + step + a.shown.length) % a.shown.length;
+		this.drawActions();
+	}
+
+	private runAction(): void {
+		const a = this.actPanel;
+		const x = a?.shown[a.i];
+		if (!a || !x) return;
+		const close = this.host.act?.(x.id, a.path) ?? false;
+		this.closeActions();
+		if (close) {
+			this.opened = true;
+			this.close();
+		}
+	}
+
+	private drawActions(): void {
+		const a = this.actPanel;
+		if (!a) return;
+		const list = a.el.querySelector<HTMLElement>(".jet-actl");
+		if (!list) return;
+		list.empty();
+		let group = a.shown[0]?.group ?? 0;
+		a.shown.forEach((x, i) => {
+			if ((x.group ?? 0) !== group) {
+				list.createDiv({ cls: "jet-actsep" });
+				group = x.group ?? 0;
+			}
+			const r = list.createDiv({ cls: `jet-actr${i === a.i ? " is-selected" : ""}` });
+			setIcon(r.createSpan({ cls: "jet-acti" }), x.icon);
+			r.createSpan({ cls: "jet-actn", text: x.label });
+			if (x.detail) r.createSpan({ cls: "jet-actd", text: x.detail });
+			if (x.key) r.createEl("kbd", { text: x.key });
+			r.addEventListener("mousemove", () => {
+				if (a.i === i) return;
+				a.i = i;
+				this.drawActions();
+			});
+			r.addEventListener("click", () => {
+				a.i = i;
+				this.runAction();
+			});
+		});
+		if (!a.shown.length) list.createDiv({ cls: "jet-actnone", text: "No such action" });
+	}
+
+	private footerActions(): void {
+		this.footEl.empty();
+		const keys: Array<[string, string]> = [
+			["↵", "Run"],
+			["↑↓", "Choose"],
+			["Esc", "Back to results"],
+		];
+		for (const [key, label] of keys) {
+			const h = this.footEl.createSpan({ cls: "jet-ht" });
+			h.createEl("kbd", { text: key });
+			h.appendText(label);
+		}
 	}
 
 	private atStart(): boolean {

@@ -145,6 +145,7 @@ export default class JetSearchPlugin extends Plugin {
 			},
 			this.filterSets,
 		);
+		this.host.inNote = () => this.openInNote("");
 		this.host.manageScopes = () => {
 			this.modal?.close();
 			openSettingsAt(this.app, this.manifest.id, ["Scopes"]);
