@@ -7,6 +7,7 @@ import { indexStatus, rebuild } from "./index-status";
 import { addCommandAs, hasCommand, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
+import { ScopeKeeper } from "./scopes/keeper";
 import { Search } from "./search";
 import { JetSettingTab } from "./settings-tab";
 import { DoubleTap } from "./shift";
@@ -33,6 +34,7 @@ export default class JetSearchPlugin extends Plugin {
 	readonly client = new JetClient();
 	feeder!: Feeder;
 	search!: Search;
+	scopes!: ScopeKeeper;
 	private sleepTimer: number | null = null;
 	private readonly standIns: string[] = [];
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
@@ -47,7 +49,10 @@ export default class JetSearchPlugin extends Plugin {
 			() => this.data.settings.stemming,
 		);
 		this.search = new Search(this.app, this.client, this.feeder, () => this.data);
+		this.scopes = new ScopeKeeper(this.app, this.client, () => this.data.scopes);
 		this.feeder.onReady = () => {
+			// The worker (re)opened: it has no scope sets yet.
+			this.scopes.resend();
 			if (this.data.indexedAt === null) {
 				this.data.indexedAt = Date.now();
 				this.save();
@@ -102,6 +107,8 @@ export default class JetSearchPlugin extends Plugin {
 		const modal = new JetModal(this.app, this.host, text);
 		this.modal = modal;
 		modal.open();
+		// Scope members, one tick after the modal is painted (a few ms, once a session).
+		if (this.data.scopes.length) window.setTimeout(() => this.scopes.ensure(), 0);
 	}
 
 	/** Search in the open note; without a note, the vault search. */
@@ -181,7 +188,10 @@ export default class JetSearchPlugin extends Plugin {
 			vault.on("rename", (f, old) => {
 				movePath(this.data, old, f.path);
 				this.save();
-				if (f instanceof TFile) this.search.nameRenamed(f, old);
+				if (f instanceof TFile) {
+					this.search.nameRenamed(f, old);
+					this.scopes.renamed(f, old);
+				}
 				this.feeder.rename(f, old);
 			}),
 		);
@@ -190,12 +200,14 @@ export default class JetSearchPlugin extends Plugin {
 				movePath(this.data, f.path, null);
 				this.save();
 				this.search.nameDeleted(f.path);
+				this.scopes.deleted(f.path);
 				this.feeder.touch(f, "delete");
 			}),
 		);
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (f) => {
 				this.search.nameChanged(f);
+				this.scopes.changed(f);
 				this.feeder.touch(f, "upsert");
 			}),
 		);
