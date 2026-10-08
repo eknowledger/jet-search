@@ -2,6 +2,7 @@ import { debounce, MarkdownView, Plugin, TFile } from "obsidian";
 import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
+import { JadeLink } from "./jade-link";
 import { Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
 import { addCommandAs, hasCommand, openSettingsAt, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
@@ -51,6 +52,8 @@ export default class JetSearchPlugin extends Plugin {
 	/** Obsidian keeps the tab's definitions from its last update(): call it when settings change elsewhere. */
 	settingTab!: JetSettingTab;
 	private sleepTimer: number | null = null;
+	/** Jade, when it is there. */
+	jade: JadeLink | null = null;
 	/** Each scope's ambiguity, measured on demand; forgotten when scopes change. */
 	private readonly ambiguities = new Map<string, { name: string; value: number; outside: number }>();
 	private readonly measuring = new Set<string>();
@@ -162,6 +165,7 @@ export default class JetSearchPlugin extends Plugin {
 		this.modal?.close();
 		this.feeder.stop();
 		this.watcher.stop();
+		this.jade?.stop();
 		if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
 		this.client.stop();
 	}
@@ -247,6 +251,32 @@ export default class JetSearchPlugin extends Plugin {
 	}
 
 	private listen(): void {
+		// Jade's partner API: its J panel and floating bar, whichever loads first.
+		this.jade = new JadeLink(this.app, this, {
+			open: (text) => this.open(text),
+			status: () => {
+				const p = this.feeder.progress;
+				if (p) return `Indexing ${p.done} of ${p.total}…`;
+				return this.data.indexedAt === null ? "Not built yet" : "Ready · it follows your edits";
+			},
+			rebuild: () => void rebuild(this),
+			excerpts: {
+				get: () => this.data.settings.excerpts,
+				set: (v) => {
+					this.data.settings.excerpts = v;
+					this.save();
+				},
+			},
+			persist: {
+				get: () => this.data.settings.persistFilters,
+				set: (v) => {
+					this.data.settings.persistFilters = v;
+					if (!v) this.data.last = null;
+					this.save();
+				},
+			},
+		});
+		this.jade.start();
 		// Stand-ins for Omnisearch's ids, so its hotkeys and double-Shift bindings open Jet.
 		if (!hasCommand(this.app, STAND_INS.open))
 			if (
