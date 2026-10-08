@@ -1,8 +1,8 @@
 /**
- * Typing a scope, pure. A scope's name or alias at the
- * start, then a space and more text, is a suggestion: the results stay unscoped until Tab. The name
- * alone is a normal search with a hint. `in:name` and `@name` anywhere apply the scope, whatever its
- * mode. Names match folded (case, accents, `-` `_` `.` as spaces), longest first; a quoted word never.
+ * Typing a scope, pure. A scope's name or alias anywhere
+ * in the text, with other words around it, is a suggestion: the results stay unscoped until Tab. The
+ * name alone is a normal search with a hint. `in:name` and `@name` anywhere apply the scope, whatever
+ * its mode. Names match folded (case, accents, `-` `_` `.` as spaces), longest first; quoted words never.
  */
 import type { Scope } from "./model";
 import { compact, fold } from "./names";
@@ -17,8 +17,11 @@ export type Parsed = {
 	 * it may already name a scope by an alias; the modal waits for the space.
 	 */
 	complete?: boolean;
-	/** The scopes whose name starts the text, the name as typed, and the text after it. */
-	suggest?: { scopes: Scope[]; name: string; rest: string };
+	/**
+	 * The scopes whose name is in the text (whole words, anywhere outside quotes), the name as typed,
+	 * where it starts, and the text without it.
+	 */
+	suggest?: { scopes: Scope[]; name: string; rest: string; at: number };
 	/** The text is a scope's name alone. */
 	hint?: Scope;
 };
@@ -63,18 +66,44 @@ export const parseScope = (input: string, scopes: readonly Scope[]): Parsed => {
 		}
 	}
 	const byName = namesOf(scopes);
-	const lead = /^\s*/u.exec(input)?.[0].length ?? 0;
-	if (input[lead] === '"') return { text: input };
-	const words = [...input.slice(lead).matchAll(/\S+/gu)];
-	for (let k = Math.min(words.length, MAX_NAME_WORDS); k >= 1; k--) {
-		const last = words[k - 1];
-		if (!last) continue;
-		const end = lead + (last.index ?? 0) + last[0].length;
-		const name = input.slice(lead, end);
-		const found = byName.get(fold(name));
-		if (!found) continue;
-		const rest = input.slice(end).trim();
-		return rest ? { text: input, suggest: { scopes: found, name, rest } } : { text: input, hint: found[0] };
+	// Words outside quotes, with where each starts and ends: a name is a run of whole words, anywhere.
+	const words: Array<{ from: number; to: number }> = [];
+	let quoted = false;
+	for (const m of input.matchAll(/"|[^\s"]+/gu)) {
+		if (m[0] === '"') quoted = !quoted;
+		else if (!quoted) words.push({ from: m.index ?? 0, to: (m.index ?? 0) + m[0].length });
+		// A quote ends the run: `"Cobalt" text` never joins `Cobalt` to what follows.
+		else words.push({ from: -1, to: -1 });
+	}
+	let best: { from: number; to: number; scopes: Scope[] } | null = null;
+	for (let i = 0; i < words.length; i++) {
+		for (let k = Math.min(words.length - i, MAX_NAME_WORDS); k >= 1; k--) {
+			const a = words[i];
+			const b = words[i + k - 1];
+			if (!a || !b || a.from < 0 || words.slice(i, i + k).some((w) => w.from < 0)) continue;
+			// Only whitespace between the words of a name.
+			if (
+				/[^\s]/u.test(
+					words
+						.slice(i, i + k - 1)
+						.map((w, j) => input.slice(w.to, (words[i + j + 1] as { from: number }).from))
+						.join(""),
+				)
+			)
+				continue;
+			const found = byName.get(fold(input.slice(a.from, b.to)));
+			if (!found) continue;
+			// The longest name wins; between equals, the first.
+			if (!best || b.to - a.from > best.to - best.from) best = { from: a.from, to: b.to, scopes: found };
+			break;
+		}
+	}
+	if (best) {
+		const name = input.slice(best.from, best.to);
+		const rest = `${input.slice(0, best.from)} ${input.slice(best.to)}`.replace(/\s+/g, " ").trim();
+		return rest
+			? { text: input, suggest: { scopes: best.scopes, name, rest, at: best.from } }
+			: { text: input, hint: best.scopes[0] };
 	}
 	return { text: input };
 };

@@ -85,7 +85,7 @@ export class JetHost implements ModalHost {
 					others: others.map(view),
 					name: p.suggest.name,
 					rest: p.suggest.rest,
-					at: text.length - text.trimStart().length,
+					at: p.suggest.at,
 				},
 			};
 		}

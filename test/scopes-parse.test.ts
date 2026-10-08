@@ -31,6 +31,7 @@ describe("typing a scope", () => {
 		expect(ids(p.suggest?.scopes)).toEqual(["cobalt"]);
 		expect(p.suggest?.name).toBe("Cobalt");
 		expect(p.suggest?.rest).toBe("garden plan");
+		expect(p.suggest?.at).toBe(0);
 		expect(p.applied).toBeUndefined();
 		expect(p.text).toBe("Cobalt garden plan");
 	});
@@ -58,8 +59,25 @@ describe("typing a scope", () => {
 
 	it("a quoted word is never a scope; nor is a name inside a longer word", () => {
 		expect(parseScope('"Cobalt" world', SCOPES).suggest).toBeUndefined();
+		expect(parseScope('world "two Cobalt" state', SCOPES).suggest).toBeUndefined();
 		expect(parseScope("Cobalts world", SCOPES).suggest).toBeUndefined();
-		expect(parseScope("world Cobalt state", SCOPES).suggest).toBeUndefined();
+	});
+
+	it("a name anywhere in the text: in the middle or at the end, the rest without it", () => {
+		const mid = parseScope("sandbox cobalt mustard", SCOPES);
+		expect(ids(mid.suggest?.scopes)).toEqual(["cobalt"]);
+		expect(mid.suggest).toMatchObject({ name: "cobalt", rest: "sandbox mustard", at: 8 });
+		const end = parseScope("sandbox mustard Cobalt", SCOPES);
+		expect(end.suggest).toMatchObject({ name: "Cobalt", rest: "sandbox mustard", at: 16 });
+		expect(parseScope("plugin for Amber Studio", SCOPES).suggest).toMatchObject({
+			name: "Amber Studio",
+			rest: "plugin for",
+		});
+	});
+
+	it("the longest name in the text wins, then the first", () => {
+		expect(parseScope("cobalt notes Amber Studio", SCOPES).suggest?.name).toBe("Amber Studio");
+		expect(parseScope("cobalt notes amb", SCOPES).suggest?.name).toBe("cobalt");
 	});
 
 	it("in: only scopes are never suggested; Auto behaves as Suggest in the parser", () => {
