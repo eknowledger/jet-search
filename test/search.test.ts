@@ -143,3 +143,65 @@ describe("searching inside a scope", () => {
 		);
 	});
 });
+
+describe("searching with filters", () => {
+	const filtered = () => {
+		const app = new App();
+		const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
+		const paths = ["a/Draft one.md", "a/Draft two.md", "b/Done.md"];
+		paths.forEach((p, i) => {
+			const f = new TFile(p);
+			f.stat.mtime = (i + 1) * 1000;
+			files.set(p, f);
+		});
+		const queries: Array<{ text: string; allow?: string[] }> = [];
+		const client = {
+			query: (text: string, opts: { allow?: string[] }) => {
+				queries.push({ text, allow: opts.allow });
+				return Promise.resolve({
+					seq: 1,
+					terms: [],
+					hits: (opts.allow ?? paths).map((path) => ({ path, score: 1, matched: 1 })),
+				});
+			},
+		} as unknown as JetClient;
+		const feeder = { progress: null, ensure: () => Promise.resolve() } as unknown as Feeder;
+		const data = normalizeData(null);
+		data.indexedAt = 1;
+		data.settings.excerpts = false;
+		const drafts = new Set(["a/Draft one.md", "a/Draft two.md"]);
+		const s = new Search(app, client, feeder, () => data, undefined, { notes: () => drafts });
+		return { s, queries };
+	};
+	const settle = () => new Promise((r) => setTimeout(r, 0));
+	const items = (e: Entry[] | undefined) => (e ?? []).filter((x): x is Item => x.type === "item").map((x) => x.path);
+	const DRAFT = { kind: "prop", key: "status", value: "draft" } as const;
+
+	it("the worker is asked for the filters' notes only; names too", async () => {
+		const { s, queries } = filtered();
+		const paints: Entry[][] = [];
+		s.list("do", (e) => paints.push(e), undefined, [DRAFT]);
+		expect(items(paints[0])).toEqual([]);
+		await settle();
+		await settle();
+		expect(queries[0]?.allow?.sort()).toEqual(["a/Draft one.md", "a/Draft two.md"]);
+		expect(items(paints.at(-1)).sort()).toEqual(["a/Draft one.md", "a/Draft two.md"]);
+	});
+
+	it("filters and no text: their notes, most recently changed first", () => {
+		const { s, queries } = filtered();
+		let shown: Entry[] = [];
+		s.list("", (e) => (shown = e), undefined, [DRAFT]);
+		expect(items(shown)).toEqual(["a/Draft two.md", "a/Draft one.md"]);
+		expect(queries).toEqual([]);
+	});
+
+	it("Title only: names alone, no full text", async () => {
+		const { s, queries } = filtered();
+		let shown: Entry[] = [];
+		s.list("draft", (e) => (shown = e), undefined, [{ kind: "title" }]);
+		await settle();
+		expect(queries).toEqual([]);
+		expect(items(shown).sort()).toEqual(["a/Draft one.md", "a/Draft two.md"]);
+	});
+});

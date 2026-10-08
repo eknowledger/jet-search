@@ -7,6 +7,7 @@ import { indexStatus, rebuild } from "./index-status";
 import { addCommandAs, hasCommand, openSettingsAt, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
+import { FilterSets } from "./filters/sets";
 import { ambiguity } from "./scopes/auto";
 import { createDetail, createTarget } from "./scopes/create";
 import { ScopeKeeper } from "./scopes/keeper";
@@ -39,6 +40,8 @@ export default class JetSearchPlugin extends Plugin {
 	feeder!: Feeder;
 	search!: Search;
 	scopes!: ScopeKeeper;
+	/** The notes each filter keeps, from the metadata cache. */
+	readonly filterSets = new FilterSets(this.app);
 	/** "When new ones appear": generates again when idle after structural changes. */
 	watcher!: ScopeWatcher;
 	/** A note's frontmatter and tags as last seen, so only real changes wake the watcher. */
@@ -62,14 +65,21 @@ export default class JetSearchPlugin extends Plugin {
 			() => this.data.settings.stemming,
 		);
 		this.scopes = new ScopeKeeper(this.app, this.client, () => this.data.scopes);
-		this.search = new Search(this.app, this.client, this.feeder, () => this.data, {
-			ensure: () => this.scopes.ensure(),
-			membersOf: (id) => this.scopes.membersOf(id),
-			describe: (id) => {
-				const s = this.data.scopes.find((x) => x.id === id);
-				return s ? { name: s.name, create: createDetail(createTarget(s)) } : null;
+		this.search = new Search(
+			this.app,
+			this.client,
+			this.feeder,
+			() => this.data,
+			{
+				ensure: () => this.scopes.ensure(),
+				membersOf: (id) => this.scopes.membersOf(id),
+				describe: (id) => {
+					const s = this.data.scopes.find((x) => x.id === id);
+					return s ? { name: s.name, create: createDetail(createTarget(s)) } : null;
+				},
 			},
-		});
+			this.filterSets,
+		);
 		this.watcher = new ScopeWatcher({
 			mode: () => this.data.settings.scopesWhenNew,
 			scopes: () => this.data.scopes,
@@ -116,6 +126,7 @@ export default class JetSearchPlugin extends Plugin {
 				ambiguity: (id) => this.ambiguityOf(id),
 				measure: (id) => void this.measure(id),
 			},
+			this.filterSets,
 		);
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
@@ -263,6 +274,7 @@ export default class JetSearchPlugin extends Plugin {
 		const vault = this.app.vault;
 		this.registerEvent(
 			vault.on("create", (f) => {
+				this.filterSets.invalidate();
 				if (f instanceof TFile) this.search.nameChanged(f);
 				this.feeder.touch(f, "upsert");
 				this.watcher.changed();
@@ -271,6 +283,7 @@ export default class JetSearchPlugin extends Plugin {
 		this.registerEvent(vault.on("modify", (f) => this.feeder.touch(f, "upsert")));
 		this.registerEvent(
 			vault.on("rename", (f, old) => {
+				this.filterSets.invalidate();
 				movePath(this.data, old, f.path);
 				this.save();
 				if (f instanceof TFile) {
@@ -283,6 +296,7 @@ export default class JetSearchPlugin extends Plugin {
 		);
 		this.registerEvent(
 			vault.on("delete", (f) => {
+				this.filterSets.invalidate();
 				movePath(this.data, f.path, null);
 				this.save();
 				this.search.nameDeleted(f.path);
@@ -294,6 +308,7 @@ export default class JetSearchPlugin extends Plugin {
 		);
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (f) => {
+				this.filterSets.invalidate();
 				this.search.nameChanged(f);
 				this.scopes.changed(f);
 				this.feeder.touch(f, "upsert");

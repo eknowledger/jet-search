@@ -5,6 +5,7 @@ import { filterPhrases, PHRASE_CHECK_LIMIT, quotedPhrases } from "./rank";
 import { iconOf } from "./host";
 import type { Feeder } from "./index/feeder";
 import { age, crumb, titleOf } from "./modal/format";
+import type { Filter } from "./filters/filter";
 import type { Entry } from "./modal/jet-modal";
 import { type MetaField, type MetaHit, MetaIndex, type MetaNote } from "./tier0/meta";
 import { type NameHit, NameIndex } from "./tier0/names";
@@ -20,6 +21,12 @@ export type ScopeMembers = {
 	/** Its name, and where a note created in it goes (the no-results screen). */
 	describe?(id: string): { name: string; create: string } | null;
 };
+
+/** The notes a filter keeps (FilterSets). */
+export type FilterNotes = { notes(f: Filter): ReadonlySet<string> };
+
+/** Notes listed for filters with no text, most recently changed first. */
+const FILTERED_LIST = 50;
 type Shown = NonNullable<Item["excerpt"]> & { offset: number };
 
 /** Titles shown above the text hits for a name-like query. */
@@ -44,7 +51,12 @@ export class Search {
 	private readonly pathOf = new Map<number, string>();
 	private nextId = 1;
 	/** The open modal's current text and painter, to re-run when the index changes. */
-	private current: { text: string; paint: (entries: Entry[], status?: string) => void; scope?: string } | null = null;
+	private current: {
+		text: string;
+		paint: (entries: Entry[], status?: string) => void;
+		scope?: string;
+		filters?: readonly Filter[];
+	} | null = null;
 
 	constructor(
 		private readonly app: App,
@@ -52,21 +64,42 @@ export class Search {
 		private readonly feeder: Feeder,
 		private readonly data: () => JetData,
 		private readonly scopes?: ScopeMembers,
+		private readonly filterNotes?: FilterNotes,
 	) {}
 
 	/**
 	 * Results for `text`, inside the scope `scope` when given: its members filter Tier 0 and the
 	 * worker, which holds the same set (sent before this query: messages arrive in order).
 	 */
-	list(text: string, paint: (entries: Entry[], status?: string) => void, scope?: string): void {
-		this.current = { text, paint, scope };
+	list(
+		text: string,
+		paint: (entries: Entry[], status?: string) => void,
+		scope?: string,
+		filters: readonly Filter[] = [],
+	): void {
+		this.current = { text, paint, scope, filters };
 		let inScope: ReadonlySet<string> | null = null;
 		if (scope !== undefined && this.scopes) {
 			this.scopes.ensure();
 			inScope = this.scopes.membersOf(scope);
 		}
+		// Filters: their notes, intersected with the scope's; "Title only" searches names alone.
+		const sets = filters.filter((f) => f.kind !== "title");
+		const titleOnly = filters.some((f) => f.kind === "title");
+		let narrowed: Set<string> | null = null;
+		if (sets.length && this.filterNotes) {
+			const fn = this.filterNotes;
+			const [first, ...rest] = sets.map((f) => fn.notes(f));
+			narrowed = new Set(
+				[...(first ?? [])].filter((p) => (!inScope || inScope.has(p)) && rest.every((r) => r.has(p))),
+			);
+		}
 		const names = this.nameIndex();
-		const allowed = inScope;
+		const allowed: ReadonlySet<string> | null = narrowed ?? inScope;
+		if (!text.trim()) {
+			paint(this.listed(allowed ?? new Set<string>()), this.status());
+			return;
+		}
 		const tier0 = names.match(text, {
 			limit: 40,
 			allow: allowed ? (id) => allowed.has(this.pathOf.get(id) ?? "") : undefined,
@@ -74,6 +107,7 @@ export class Search {
 		const meta = this.metaHits(text, allowed);
 		const now = Date.now();
 		paint(this.compose(tier0, null, now, new Map(), meta), this.status());
+		if (titleOnly) return;
 		void (async () => {
 			try {
 				await this.feeder.ensure();
@@ -84,7 +118,11 @@ export class Search {
 			}
 			// Quoted phrases: more candidates from the worker, kept if their text has the phrase.
 			const phrases = quotedPhrases(text);
-			let reply = await this.client.query(text, { limit: phrases.length ? PHRASE_CHECK_LIMIT : 50, scope });
+			let reply = await this.client.query(text, {
+				limit: phrases.length ? PHRASE_CHECK_LIMIT : 50,
+				scope: narrowed ? undefined : scope,
+				allow: narrowed ? [...narrowed] : undefined,
+			});
 			if (!reply) return;
 			if (phrases.length) {
 				const hits = await filterPhrases(reply.hits, phrases, (p) => this.read(p));
@@ -123,7 +161,21 @@ export class Search {
 	/** Notes changed while the modal is open: run its text again (the selection stays). */
 	refresh(): void {
 		const c = this.current;
-		if (c?.text.trim()) this.list(c.text, c.paint, c.scope);
+		if (c?.text.trim() || c?.filters?.length) this.list(c.text, c.paint, c.scope, c.filters);
+	}
+
+	/** Filters with no text: the notes they keep, most recently changed first. */
+	private listed(allowed: ReadonlySet<string>): Entry[] {
+		const now = Date.now();
+		const files = [...allowed]
+			.map((p) => this.app.vault.getFileByPath(p))
+			.filter((f): f is TFile => !!f)
+			.sort((a, b) => b.stat.mtime - a.stat.mtime);
+		if (!files.length) return [{ type: "notice", title: "No notes match these filters" }];
+		return [
+			{ type: "header", label: "Results", count: files.length },
+			...files.slice(0, FILTERED_LIST).map((f) => this.item(f, now, {})),
+		];
 	}
 
 	private status(): string {

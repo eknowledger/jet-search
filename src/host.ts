@@ -1,7 +1,9 @@
-import { type App, MarkdownView, normalizePath, Notice, type TFile } from "obsidian";
+import { type App, getAllTags, MarkdownView, normalizePath, Notice, type TFile } from "obsidian";
 import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Entry, HintState, ModalHost, OpenHow, ScopeCard, ScopeView, Typed } from "./modal/jet-modal";
+import { type Filter, filterText, findFilters } from "./filters/filter";
+import type { FilterSets } from "./filters/sets";
 import type { Rule, Scope } from "./scopes/model";
 import { autoApplies } from "./scopes/auto";
 import { createTarget } from "./scopes/create";
@@ -37,6 +39,9 @@ export type HostScopes = {
 	measure(id: string): void;
 };
 
+/** Items in each of the filters bar's menus. */
+const MENU_ITEMS = 30;
+
 /** Notes listed for a scope with nothing typed. */
 const SCOPE_RECENTS = 50;
 
@@ -65,7 +70,88 @@ export class JetHost implements ModalHost {
 		private readonly search: () => Search,
 		private readonly index?: { status: () => Promise<IndexStatus>; rebuild: () => Promise<void> },
 		private readonly scopeAccess?: HostScopes,
+		private readonly filterSets?: FilterSets,
 	) {}
+
+	/** Filters for the modal. */
+	get filters(): ModalHost["filters"] {
+		const f = this.filterSets;
+		if (!f) return undefined;
+		const a = this.scopeAccess;
+		return {
+			find: (text) => findFilters(text, (k) => f.known(k)).map((x) => ({ ...x, filter: f.resolve(x.filter) })),
+			values: (key, scope, filters) => this.values(key, scope, filters),
+			tags: (scope, filters) => this.tagCounts(scope, filters),
+			keys: () =>
+				[...f.propertyKeys().values()]
+					.sort((x, y) => y.notes - x.notes)
+					.slice(0, MENU_ITEMS)
+					.map((k) => [k.name, k.notes]),
+			scopes: () =>
+				(a?.all() ?? [])
+					.map((s) => ({ id: s.id, name: s.name, kind: s.kind, members: a?.count(s.id) ?? 0 }))
+					.sort((x, y) => y.members - x.members),
+		};
+	}
+
+	/** The notes inside the scope and filters (null: every note). */
+	private within(scope?: string, filters: readonly Filter[] = []): ReadonlySet<string> | null {
+		const sets: Array<ReadonlySet<string>> = [];
+		if (scope !== undefined && this.scopeAccess) {
+			this.scopeAccess.ensure();
+			sets.push(this.scopeAccess.membersOf(scope));
+		}
+		for (const x of filters) if (x.kind !== "title" && this.filterSets) sets.push(this.filterSets.notes(x));
+		if (!sets.length) return null;
+		const [first, ...rest] = sets;
+		return new Set([...(first ?? [])].filter((p) => rest.every((r) => r.has(p))));
+	}
+
+	private files(scope?: string, filters?: readonly Filter[]): TFile[] {
+		const w = this.within(scope, filters);
+		const all = this.app.vault.getMarkdownFiles();
+		return w ? all.filter((f) => w.has(f.path)) : all;
+	}
+
+	/** A property's values and their note counts (counted inside the scope and filters). */
+	private values(key: string, scope?: string, filters?: readonly Filter[]): Array<[string, number]> {
+		const low = key.toLowerCase();
+		const counts = new Map<string, { name: string; n: number }>();
+		for (const file of this.files(scope, filters)) {
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (!fm) continue;
+			const k = Object.keys(fm).find((x) => x.toLowerCase() === low);
+			if (k === undefined) continue;
+			const raw: unknown = fm[k];
+			for (const v of new Set(
+				(Array.isArray(raw) ? raw : [raw]).map((x) =>
+					typeof x === "string" ? x.trim() : typeof x === "number" || typeof x === "boolean" ? String(x) : "",
+				),
+			)) {
+				if (!v) continue;
+				const shown = v.replace(/^\[\[|\]\]$/g, "").split("|")[0] ?? v;
+				const id = fold(shown);
+				const c = counts.get(id) ?? { name: shown, n: 0 };
+				c.n++;
+				counts.set(id, c);
+			}
+		}
+		return [...counts.values()]
+			.sort((x, y) => y.n - x.n || x.name.localeCompare(y.name))
+			.slice(0, MENU_ITEMS)
+			.map((c) => [c.name, c.n]);
+	}
+
+	private tagCounts(scope?: string, filters?: readonly Filter[]): Array<[string, number]> {
+		const counts = new Map<string, number>();
+		for (const file of this.files(scope, filters)) {
+			const cache = this.app.metadataCache.getFileCache(file);
+			if (!cache) continue;
+			for (const t of new Set((getAllTags(cache) ?? []).map((x) => x.toLowerCase())))
+				counts.set(t, (counts.get(t) ?? 0) + 1);
+		}
+		return [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, MENU_ITEMS);
+	}
 
 	/** Rule counts for the chip's card, kept while the modal is open (each is a pass over the vault). */
 	private readonly ruleCounts = new Map<string, number>();
@@ -212,13 +298,18 @@ export class JetHost implements ModalHost {
 		});
 	}
 
-	list(text: string, paint: (entries: Entry[], status?: string) => void, scope?: string): void {
-		if (!text.trim()) {
+	list(
+		text: string,
+		paint: (entries: Entry[], status?: string) => void,
+		scope?: string,
+		filters: readonly Filter[] = [],
+	): void {
+		if (!text.trim() && !filters.length) {
 			paint(scope !== undefined ? this.scopeRecents(scope) : this.recents());
 			this.search().warm();
 			return;
 		}
-		this.search().list(text, paint, scope);
+		this.search().list(text, paint, scope, filters);
 	}
 
 	recents(): Entry[] {
@@ -402,9 +493,11 @@ export class JetHost implements ModalHost {
 		});
 	}
 
-	closed(text: string, opened: boolean, scope?: ScopeView): void {
+	closed(text: string, opened: boolean, scope?: ScopeView, filters: readonly Filter[] = []): void {
 		this.ruleCounts.clear();
-		if (opened) rememberSearch(this.data(), scope ? scopedSearch(scope.name, text) : text);
+		// Remembered as typed, scope and filters included, so choosing it again applies them again.
+		const parts = [...filters.map(filterText).filter(Boolean), text.trim()].filter(Boolean).join(" ");
+		if (opened) rememberSearch(this.data(), scope ? scopedSearch(scope.name, parts) : parts);
 		this.search().idle();
 		this.save();
 	}

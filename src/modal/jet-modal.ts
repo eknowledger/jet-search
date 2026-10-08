@@ -1,4 +1,5 @@
-import { type App, Modal, setIcon } from "obsidian";
+import { type App, Menu, Modal, setIcon } from "obsidian";
+import { type Filter, filterLabel, filterText, type Found, sameFilter, withoutPieces } from "../filters/filter";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
@@ -81,12 +82,17 @@ export type ModalHost = {
 	 * The list for this text (empty text: recents), inside the scope `scope` when a chip is applied;
 	 * `paint` may be called again as results arrive.
 	 */
-	list(text: string, paint: (entries: Entry[], status?: string) => void, scope?: string): void;
+	list(
+		text: string,
+		paint: (entries: Entry[], status?: string) => void,
+		scope?: string,
+		filters?: readonly Filter[],
+	): void;
 	open(path: string, how: OpenHow, at?: { line: number; ch: number; len: number }): void;
 	/** Footer hints for the current text and scope state. */
 	hints(text: string, state?: HintState): Array<[key: string, label: string]>;
 	/** The modal closed: its text, whether a note was opened, and the chip's scope if one was applied. */
-	closed(text: string, opened: boolean, scope?: ScopeView): void;
+	closed(text: string, opened: boolean, scope?: ScopeView, filters?: readonly Filter[]): void;
 	placeholder: string;
 	/** The preview pane's setting (⌘. toggles it). */
 	previewOn(): boolean;
@@ -105,6 +111,18 @@ export type ModalHost = {
 		card(id: string): ScopeCard;
 		/** Open the scope's settings. */
 		edit(id: string): void;
+	};
+	/** Filters typed in the box or picked in the bar; absent: no filters. */
+	filters?: {
+		/** The filters in the text (links resolved), where each is and whether it is finished. */
+		find(text: string): Found[];
+		/** A property's values with their note counts, inside the scope and filters (most first). */
+		values(key: string, scope?: string, filters?: readonly Filter[]): Array<[value: string, notes: number]>;
+		tags(scope?: string, filters?: readonly Filter[]): Array<[tag: string, notes: number]>;
+		/** Property keys your notes use, with their note counts. */
+		keys(): Array<[key: string, notes: number]>;
+		/** Every scope, for the bar's In menu. */
+		scopes(): ScopeView[];
 	};
 };
 
@@ -148,6 +166,13 @@ export class JetModal extends Modal {
 	private widened: { chip: ScopeView; choices: ScopeView[] } | null = null;
 	/** Between onOpen and onClose. */
 	shown = false;
+	// Filters: chips after the scope's, the last one selected by ⌫, and the bar.
+	private filters: Filter[] = [];
+	private filterSel = false;
+	private readonly fchipsEl: HTMLElement;
+	private readonly barEl: HTMLElement;
+	/** Each list request; a paint for an older one is dropped. */
+	private listSeq = 0;
 	private typing: Typed = {};
 	private readonly chipEl: HTMLElement;
 	private readonly chipLabel: HTMLElement;
@@ -173,6 +198,7 @@ export class JetModal extends Modal {
 		this.chipLabel = this.chipEl.createSpan({ cls: "jet-chl" });
 		const x = this.chipEl.createSpan({ cls: "jet-chx", attr: { "aria-label": "Remove scope", role: "button" } });
 		setIcon(x, "x");
+		this.fchipsEl = top.createSpan({ cls: "jet-fchips" });
 		this.inputEl = top.createEl("input", {
 			cls: "jet-q",
 			attr: {
@@ -188,6 +214,13 @@ export class JetModal extends Modal {
 		this.ghostEl = top.createSpan({ cls: "jet-ghostbox is-hidden" });
 		this.ihintEl = top.createSpan({ cls: "jet-ihint is-hidden" });
 		this.statusEl = top.createSpan({ cls: "jet-status" });
+		if (host.filters) {
+			const fb = top.createSpan({ cls: "jet-fbtn", attr: { "aria-label": "Filters (⌘F)", role: "button" } });
+			setIcon(fb, "list-filter");
+			fb.addEventListener("mousedown", (e) => e.preventDefault());
+			fb.addEventListener("click", () => this.toggleBar());
+		}
+		this.barEl = this.contentEl.createDiv({ cls: "jet-fbar is-hidden" });
 
 		const body = this.contentEl.createDiv({ cls: "jet-body" });
 		this.listEl = body.createDiv({ cls: "jet-list", attr: { id: "jet-list", role: "listbox" } });
@@ -200,14 +233,16 @@ export class JetModal extends Modal {
 
 		this.inputEl.addEventListener("input", () => {
 			this.chipSelected = false;
+			this.filterSel = false;
 			this.autoUndo = false;
 			this.refresh();
 		});
 		this.inputEl.addEventListener("scroll", () => this.placeGhost());
 		// Any key but the chip's own keeps the chip and unselects it.
 		this.inputEl.addEventListener("keydown", (e) => {
-			if (!this.chipSelected || CHIP_KEYS.has(e.key)) return;
+			if ((!this.chipSelected && !this.filterSel) || CHIP_KEYS.has(e.key)) return;
 			this.chipSelected = false;
+			this.filterSel = false;
 			this.hideCard();
 			this.drawScope();
 			this.footer(this.inputEl.value);
@@ -256,7 +291,7 @@ export class JetModal extends Modal {
 		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
 		this.preview.destroy();
 		if (this.cardTimer !== null) window.clearTimeout(this.cardTimer);
-		this.host.closed(this.inputEl.value, this.opened, this.chip ?? undefined);
+		this.host.closed(this.inputEl.value, this.opened, this.chip ?? undefined, this.filters);
 		this.contentEl.empty();
 	}
 
@@ -294,8 +329,11 @@ export class JetModal extends Modal {
 
 	/** Paint a list (called by the host, maybe several times per keystroke as tiers answer). */
 	paint(entries: Entry[], status = ""): void {
-		// The first header says where the search runs: inside the chip's scope, or everywhere while one is suggested.
-		const note = this.chip ? `in ${this.chip.name}` : this.typing.suggest ? "everywhere" : undefined;
+		// The first header says where the search runs (inside the chip's scope, or everywhere while one
+		// is suggested) and how many filters narrow it.
+		const n = this.filters.length;
+		const where = this.chip ? `in ${this.chip.name}` : this.typing.suggest ? "everywhere" : "";
+		const note = [where, n ? `${n} filter${n === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") || undefined;
 		const h = entries.findIndex((e) => e.type === "header");
 		const first = entries[h];
 		if (note && first?.type === "header") entries = entries.map((e, i) => (i === h ? { ...first, note } : e));
@@ -313,7 +351,22 @@ export class JetModal extends Modal {
 	 * recent search, the prefill), so an explicit `in:name` at its end applies without a space after it.
 	 */
 	private refresh(final = false): void {
-		const raw = this.inputEl.value;
+		let raw = this.inputEl.value;
+		// Filters first: finished ones become chips; unfinished ones are left out of the search.
+		let pending: Found[] = [];
+		if (this.host.filters) {
+			const found = this.host.filters.find(raw);
+			const done = found.filter((f) => f.complete || final);
+			if (done.length) {
+				for (const d of done)
+					if (!this.filters.some((x) => sameFilter(x, d.filter))) this.filters.push(d.filter);
+				raw = withoutPieces(raw, done);
+				this.inputEl.value = raw;
+				this.inputEl.setSelectionRange(raw.length, raw.length);
+				pending = this.host.filters.find(raw).filter((f) => !f.complete);
+			} else pending = found;
+		}
+		this.drawFilters();
 		this.typing = {};
 		if (!this.chip && this.host.scopes) {
 			const t = this.host.scopes.typed(raw);
@@ -337,17 +390,164 @@ export class JetModal extends Modal {
 			if (!t.applied) this.typing = t;
 		}
 		this.drawScope();
-		const text = this.inputEl.value;
+		const shown = this.inputEl.value;
+		const text = pending.length ? withoutPieces(shown, pending) : shown;
 		const scope = this.chip?.id;
 		this.selectedKey = null;
+		const seq = ++this.listSeq;
 		this.host.list(
 			text,
 			(entries, status) => {
-				if (this.inputEl.value === text && this.chip?.id === scope) this.paint(entries, status);
+				if (seq === this.listSeq) this.paint(entries, status);
 			},
 			scope,
+			[...this.filters],
 		);
-		this.footer(text);
+		this.footer(shown);
+	}
+
+	// ── Filters ────────────────────────────────────
+
+	private drawFilters(): void {
+		this.fchipsEl.empty();
+		this.filters.forEach((f, i) => {
+			const [head, value] = filterLabel(f);
+			const last = i === this.filters.length - 1;
+			const c = this.fchipsEl.createSpan({ cls: `jet-fchip${last && this.filterSel ? " is-selected" : ""}` });
+			if (head) c.createSpan({ cls: "jet-fh", text: head });
+			c.createSpan({ cls: "jet-fv", text: value });
+			const x = c.createSpan({ cls: "jet-chx", attr: { "aria-label": "Remove filter", role: "button" } });
+			setIcon(x, "x");
+			c.addEventListener("mousedown", (e) => e.preventDefault());
+			x.addEventListener("click", () => {
+				this.filters = this.filters.filter((y) => y !== f);
+				this.filterSel = false;
+				this.refresh();
+			});
+		});
+		this.drawBar();
+	}
+
+	private addFilter(f: Filter): void {
+		if (!this.filters.some((x) => sameFilter(x, f))) this.filters.push(f);
+		this.filterSel = false;
+		this.refresh();
+		this.inputEl.focus();
+	}
+
+	/** ⌘F or the filter icon: the bar (Title only, In, Type, Tags, Edited, + Filter, Clear). */
+	private toggleBar(): void {
+		this.barEl.toggleClass("is-hidden", !this.barEl.hasClass("is-hidden"));
+		this.modalEl.toggleClass("has-fbar", !this.barEl.hasClass("is-hidden"));
+		this.drawBar();
+		this.inputEl.focus();
+	}
+
+	private drawBar(): void {
+		const f = this.host.filters;
+		const bar = this.barEl;
+		if (!f || bar.hasClass("is-hidden")) return;
+		bar.empty();
+		const button = (label: string, icon: string, on: boolean, click: (el: HTMLElement) => void): void => {
+			const b = bar.createSpan({ cls: `jet-fb${on ? " is-on" : ""}`, attr: { role: "button" } });
+			setIcon(b.createSpan({ cls: "jet-fbi" }), icon);
+			b.appendText(label);
+			b.addEventListener("mousedown", (e) => e.preventDefault());
+			b.addEventListener("click", () => click(b));
+		};
+		const menu = (el: HTMLElement, items: Array<[string, () => void]>): void => {
+			const m = new Menu();
+			if (!items.length) m.addItem((i) => i.setTitle("Nothing to pick here"));
+			for (const [title, run] of items) m.addItem((i) => i.setTitle(title).onClick(run));
+			const r = el.getBoundingClientRect();
+			m.showAtPosition({ x: r.left, y: r.bottom + 4 });
+		};
+		const scope = this.chip?.id;
+		const title = this.filters.some((x) => x.kind === "title");
+		button("Title only", "type", title, () =>
+			title
+				? ((this.filters = this.filters.filter((x) => x.kind !== "title")), this.refresh())
+				: this.addFilter({ kind: "title" }),
+		);
+		button(this.chip ? `In: ${this.chip.name}` : "In", "scan-search", !!this.chip, (el) =>
+			menu(
+				el,
+				f
+					.scopes()
+					.map((v) => [
+						`${v.name}${v.kind ? ` · ${v.kind}` : ""} · ${v.members}`,
+						() => this.applyChip(v, this.inputEl.value),
+					]),
+			),
+		);
+		if (f.keys().some(([k]) => k.toLowerCase() === "type"))
+			button(
+				"Type",
+				"shapes",
+				this.filters.some((x) => x.kind === "prop" && x.key.toLowerCase() === "type"),
+				(el) =>
+					menu(
+						el,
+						f
+							.values("type", scope, this.filters)
+							.map(([v, n]) => [
+								`${v} · ${n}`,
+								() => this.addFilter({ kind: "prop", key: "type", value: v }),
+							]),
+					),
+			);
+		button(
+			"Tags",
+			"hash",
+			this.filters.some((x) => x.kind === "tag"),
+			(el) =>
+				menu(
+					el,
+					f
+						.tags(scope, this.filters)
+						.map(([t, n]) => [`${t} · ${n}`, () => this.addFilter({ kind: "tag", tag: t })]),
+				),
+		);
+		button(
+			"Edited",
+			"calendar",
+			this.filters.some((x) => x.kind === "edited"),
+			(el) =>
+				menu(
+					el,
+					(
+						[
+							["Today", 1],
+							["Past 7 days", 7],
+							["Past 30 days", 30],
+							["Past 90 days", 90],
+						] as Array<[string, number]>
+					).map(([t, days]) => [t, () => this.addFilter({ kind: "edited", days })]),
+				),
+		);
+		button("Filter", "plus", false, (el) =>
+			menu(
+				el,
+				f.keys().map(([k, n]) => [
+					`${k} · ${n}`,
+					() => {
+						const v = this.inputEl.value;
+						this.inputEl.value = `${v ? `${v} ` : ""}${k}:`;
+						this.inputEl.focus();
+						this.refresh();
+					},
+				]),
+			),
+		);
+		bar.createSpan({ cls: "jet-sp" });
+		if (this.filters.length || this.chip)
+			button("Clear", "x", false, () => {
+				this.filters = [];
+				this.filterSel = false;
+				this.chip = null;
+				this.choices = [];
+				this.refresh();
+			});
 	}
 
 	// ── Scopes ─────────────────────────────────────
@@ -698,14 +898,21 @@ export class JetModal extends Modal {
 		const escapes = (scope.keys ?? []).filter((k) => k.key === "Escape");
 		for (const k of escapes) scope.unregister(k);
 		this.scope.register([], "Escape", () => {
+			if (this.filterSel) {
+				this.filterSel = false;
+				this.drawFilters();
+				return false;
+			}
 			if (this.chipSelected) {
 				this.chipSelected = false;
 				this.hideCard();
 				this.drawScope();
 				this.footer(this.inputEl.value);
-			} else if (this.inputEl.value || this.chip) {
+			} else if (this.inputEl.value || this.chip || this.filters.length) {
 				this.inputEl.value = "";
 				this.chip = null;
+				this.choices = [];
+				this.filters = [];
 				this.refresh();
 			} else this.close();
 			return false;
@@ -735,7 +942,26 @@ export class JetModal extends Modal {
 		});
 		// ⌫ at the start selects the chip, then removes it; ← at the start opens its card.
 		this.scope.register([], "Backspace", (e) => {
-			if (e.isComposing || !this.chip || !this.atStart()) return;
+			if (e.isComposing || !this.atStart()) return;
+			// The last chip first: filters, then the scope.
+			if (this.filters.length) {
+				if (!this.filterSel) {
+					this.filterSel = true;
+					this.chipSelected = false;
+					this.drawFilters();
+					return false;
+				}
+				const f = this.filters.pop() as Filter;
+				this.filterSel = false;
+				// Back as text at the end, unfinished, so you can change it (it is not a chip again until a space).
+				const t = filterText(f);
+				const v = this.inputEl.value;
+				if (t) this.inputEl.value = v ? `${v} ${t}` : t;
+				this.inputEl.setSelectionRange(this.inputEl.value.length, this.inputEl.value.length);
+				this.refresh();
+				return false;
+			}
+			if (!this.chip) return;
 			if (this.autoUndo) {
 				this.suppressAuto.add(this.chip.id);
 				this.removeChip(true);
@@ -782,6 +1008,11 @@ export class JetModal extends Modal {
 		});
 		this.scope.register(["Mod", "Alt"], "Enter", () => {
 			this.choose("split");
+			return false;
+		});
+		this.scope.register(["Mod"], "f", () => {
+			if (!this.host.filters) return;
+			this.toggleBar();
 			return false;
 		});
 		this.scope.register(["Mod"], "g", () => {

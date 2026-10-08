@@ -522,7 +522,16 @@ export class TFolder extends TAbstractFile {
 
 /** Obsidian's menu: items chain setTitle / setIcon / onClick; the test reads `items`. */
 export class Menu {
+	/** The last menu made (tests click its items). */
+	static last: Menu | null = null;
 	readonly items: Array<{ title: string; click: (() => void) | null }> = [];
+	constructor() {
+		Menu.last = this;
+	}
+	addSeparator(): this {
+		return this;
+	}
+	showAtMouseEvent(): void {}
 	addItem(
 		f: (i: {
 			setTitle(t: string): unknown;
@@ -534,6 +543,7 @@ export class Menu {
 		const api = {
 			setTitle: (t: string) => ((it.title = t), api),
 			setIcon: () => api,
+			setChecked: () => api,
 			onClick: (c: () => void) => ((it.click = c), api),
 		};
 		f(api);

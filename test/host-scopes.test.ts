@@ -175,3 +175,24 @@ describe("the host's scopes", () => {
 		expect(app.vault.getFileByPath("Inbox/Loose.md")).not.toBeNull();
 	});
 });
+
+describe("the host's filters", () => {
+	it("remembers a search with its filters and scope, typed so they apply again", () => {
+		const app = new App();
+		const data = normalizeData(null);
+		const search = { list: () => {}, warm: () => {}, idle: () => {} } as unknown as Search;
+		const host = new JetHost(
+			app as never,
+			() => data,
+			() => {},
+			() => false,
+			() => search,
+		);
+		host.closed("world", true, { id: "c", name: "Cobalt", kind: "", members: 1 }, [
+			{ kind: "prop", key: "status", value: "draft" },
+			{ kind: "edited", days: 7 },
+			{ kind: "title" },
+		]);
+		expect(data.searches[0]).toBe("in:Cobalt status:draft edited:7d world");
+	});
+});
