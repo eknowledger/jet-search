@@ -14,7 +14,12 @@ import type { QueryReply } from "./worker/protocol";
 type Item = Extract<Entry, { type: "item" }>;
 
 /** Scope members for a scoped search (the ScopeKeeper). */
-export type ScopeMembers = { ensure(): void; membersOf(id: string): ReadonlySet<string> };
+export type ScopeMembers = {
+	ensure(): void;
+	membersOf(id: string): ReadonlySet<string>;
+	/** Its name, and where a note created in it goes (the no-results screen). */
+	describe?(id: string): { name: string; create: string } | null;
+};
 type Shown = NonNullable<Item["excerpt"]> & { offset: number };
 
 /** Titles shown above the text hits for a name-like query. */
@@ -88,7 +93,7 @@ export class Search {
 			}
 			const first = this.compose(tier0, reply, now, new Map(), meta);
 			if (!first.length) {
-				paint(await this.recovery(text), this.status());
+				paint(await this.recovery(text, scope), this.status());
 				return;
 			}
 			paint(first, this.status());
@@ -194,19 +199,42 @@ export class Search {
 		};
 	}
 
-	/** Nothing matched: the spelling the vault uses, and creating the note. */
-	private async recovery(text: string): Promise<Entry[]> {
+	/**
+	 * Nothing matched: the spelling the vault uses, and creating the note. Inside a
+	 * scope: also searching everywhere, with its count, and creating
+	 * the note in the scope.
+	 */
+	private async recovery(text: string, scope?: string): Promise<Entry[]> {
 		const s = await this.client.call({ op: "suggest", text });
 		const n = (k: number): string => `${k} note${k === 1 ? "" : "s"}`;
+		const t = text.trim();
+		const d = scope !== undefined ? (this.scopes?.describe?.(scope) ?? null) : null;
 		const out: Entry[] = [
 			{
 				type: "notice",
-				title: `No results for “${text.trim()}”`,
+				title: d ? `No results for “${t}” in ${d.name}` : `No results for “${t}”`,
 				detail: s.text ? `Did you mean “${s.text}”? It is written that way in ${n(s.notes)}.` : undefined,
 			},
 		];
+		if (d) {
+			const all = await this.client.query(text, { limit: 50 });
+			const k = all?.hits.length ?? 0;
+			out.push({
+				type: "widen",
+				label: `Search everywhere for “${t}”`,
+				detail: all
+					? k
+						? `${k >= 50 ? "50+" : k} ${k === 1 ? "note" : "notes"}`
+						: "Nothing there either"
+					: undefined,
+			});
+		}
 		if (s.text) out.push({ type: "search", query: s.text, detail: n(s.notes) });
-		out.push({ type: "create", text: text.trim(), detail: "A new note with this name" });
+		out.push(
+			d
+				? { type: "create", text: t, detail: `In ${d.name} · ${d.create}` }
+				: { type: "create", text: t, detail: "A new note with this name" },
+		);
 		return out;
 	}
 

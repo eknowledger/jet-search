@@ -28,7 +28,9 @@ export type Entry =
 	/** A message line (no results), not selectable. */
 	| { type: "notice"; title: string; detail?: string }
 	/** Create a note named after the text (no-results screen). */
-	| { type: "create"; text: string; detail?: string };
+	| { type: "create"; text: string; detail?: string }
+	/** Search the same text everywhere (nothing in the scope). */
+	| { type: "widen"; label: string; detail?: string };
 
 /** A scope as the modal shows it: its chip, banner and hints. */
 export type ScopeView = { id: string; name: string; kind: string; members: number };
@@ -41,6 +43,8 @@ export type Typed = {
 	hint?: ScopeView;
 	/** `in:name` or `@name`; `complete` once a space follows it (or it is quoted). */
 	applied?: { scope: ScopeView; text: string; complete: boolean };
+	/** The suggested (or hinted) scope is on Auto and may apply at once. */
+	auto?: boolean;
 };
 
 /** The chip's card: its rules with counts. */
@@ -55,7 +59,18 @@ export type ScopeCard = {
 };
 
 /** What the footer hints depend on, besides the text. */
-export type HintState = { suggest?: string; hint?: string; chip?: string; selected?: true };
+export type HintState = {
+	suggest?: string;
+	hint?: string;
+	chip?: string;
+	selected?: true;
+	/** The chip was applied by Auto just now: ⌫ undoes it. */
+	auto?: true;
+	/** Other scopes share the chip's name: ⇥ moves to the next. */
+	more?: true;
+	/** The search was widened from this scope: ⇧⇧ goes back. */
+	widened?: string;
+};
 
 /** How to open a note. */
 export type OpenHow = "default" | "other" | "split";
@@ -80,8 +95,8 @@ export type ModalHost = {
 	copyLink(path: string): void;
 	/** ⌥↵: put a link to the note where the cursor is in the note being edited. */
 	insertLink(path: string): void;
-	/** ⇧↵: create a note named after the text and open it. */
-	create(text: string): void;
+	/** ⇧↵: create a note named after the text and open it, in the chip's scope if any. */
+	create(text: string, scope?: string): void;
 	/** The footer's settings popover, if this host has one. */
 	renderSettings?(el: HTMLElement): void;
 	/** Scopes typed in the box; absent when there are none. */
@@ -123,6 +138,16 @@ export class JetModal extends Modal {
 	// Scopes: the applied chip, what the text says, and their elements.
 	private chip: ScopeView | null = null;
 	private chipSelected = false;
+	/** The scopes sharing the chip's name (⇥ cycles them); just the chip otherwise. */
+	private choices: ScopeView[] = [];
+	/** Auto applied the chip just now: ⌫ at the start undoes it. */
+	private autoUndo = false;
+	/** Scopes whose Auto was undone in this search: suggested from then on. */
+	private readonly suppressAuto = new Set<string>();
+	/** Widened from a chip (⇧⇧): ⇧⇧ again puts it back. */
+	private widened: { chip: ScopeView; choices: ScopeView[] } | null = null;
+	/** Between onOpen and onClose. */
+	shown = false;
 	private typing: Typed = {};
 	private readonly chipEl: HTMLElement;
 	private readonly chipLabel: HTMLElement;
@@ -175,6 +200,7 @@ export class JetModal extends Modal {
 
 		this.inputEl.addEventListener("input", () => {
 			this.chipSelected = false;
+			this.autoUndo = false;
 			this.refresh();
 		});
 		this.inputEl.addEventListener("scroll", () => this.placeGhost());
@@ -210,6 +236,7 @@ export class JetModal extends Modal {
 	}
 
 	onOpen(): void {
+		this.shown = true;
 		this.inputEl.value = this.initial;
 		this.inputEl.select();
 		this.refresh(true);
@@ -224,6 +251,7 @@ export class JetModal extends Modal {
 	}
 
 	onClose(): void {
+		this.shown = false;
 		this.resize?.disconnect();
 		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
 		this.preview.destroy();
@@ -293,6 +321,19 @@ export class JetModal extends Modal {
 				this.applyChip(t.applied.scope, t.applied.text);
 				return;
 			}
+			// Auto: once a space follows the name, the scope applies without Tab.
+			const auto = t.auto ? (t.suggest?.scope ?? t.hint) : undefined;
+			if (auto && !this.suppressAuto.has(auto.id)) {
+				const s = t.suggest;
+				const spaced = s ? /\s/u.test(raw[s.at + s.name.length] ?? "") : /\s$/u.test(raw);
+				if (spaced) {
+					this.applyChip(auto, s?.rest ?? "");
+					this.autoUndo = true;
+					this.drawScope();
+					this.footer(this.inputEl.value);
+					return;
+				}
+			}
 			if (!t.applied) this.typing = t;
 		}
 		this.drawScope();
@@ -312,8 +353,11 @@ export class JetModal extends Modal {
 	// ── Scopes ─────────────────────────────────────
 
 	/** Tab, `in:name` or a recent search: the scope becomes the chip; the box keeps the rest. */
-	private applyChip(scope: ScopeView, text: string): void {
+	private applyChip(scope: ScopeView, text: string, choices: ScopeView[] = [scope]): void {
 		this.chip = scope;
+		this.choices = choices;
+		this.widened = null;
+		this.autoUndo = false;
 		this.chipSelected = false;
 		this.hideCard();
 		this.inputEl.value = text;
@@ -326,6 +370,8 @@ export class JetModal extends Modal {
 		const chip = this.chip;
 		if (!chip) return;
 		this.chip = null;
+		this.choices = [];
+		this.autoUndo = false;
 		this.chipSelected = false;
 		this.hideCard();
 		if (nameBack) {
@@ -335,11 +381,47 @@ export class JetModal extends Modal {
 		this.refresh();
 	}
 
+	/** ⇥ again, or ⇧⇥: the next (or previous) scope of the chip's name. */
+	private cycle(step: number): void {
+		const n = this.choices.length;
+		const i = this.chip ? this.choices.findIndex((c) => c.id === this.chip?.id) : -1;
+		const next = this.choices[(i + step + n) % n];
+		if (!next || i < 0) return;
+		this.chip = next;
+		this.refresh();
+	}
+
+	/**
+	 * ⇧⇧ while open: with a chip, drop it and search the same text everywhere; after
+	 * that, put it back. False when there is nothing to widen (⇧⇧ then does what it always does).
+	 */
+	widen(): boolean {
+		if (this.chip) {
+			this.widened = { chip: this.chip, choices: this.choices };
+			this.chip = null;
+			this.choices = [];
+			this.chipSelected = false;
+			this.autoUndo = false;
+			this.hideCard();
+			this.refresh();
+			return true;
+		}
+		const w = this.widened;
+		if (!w) return false;
+		this.widened = null;
+		this.chip = w.chip;
+		this.choices = w.choices;
+		this.refresh();
+		return true;
+	}
+
 	private drawScope(): void {
 		const chip = this.chip;
 		this.chipEl.toggleClass("is-hidden", !chip);
 		this.chipEl.toggleClass("is-selected", !!chip && this.chipSelected);
-		this.chipLabel.setText(chip?.name ?? "");
+		this.chipLabel.setText(
+			chip ? (this.choices.length > 1 && chip.kind ? `${chip.name} · ${chip.kind}` : chip.name) : "",
+		);
 		this.inputEl.placeholder = chip ? `Search in ${chip.name}…` : this.host.placeholder;
 		const hint = !chip ? this.typing.hint : undefined;
 		this.ihintEl.toggleClass("is-hidden", !hint);
@@ -348,23 +430,76 @@ export class JetModal extends Modal {
 			this.ihintEl.createEl("kbd", { text: "⇥" });
 			this.ihintEl.appendText(`Search in ${hint.name}`);
 		}
-		const s = this.typing.suggest;
-		if (s) {
-			this.bannerEl.empty();
-			setIcon(this.bannerEl.createSpan({ cls: "jet-bic" }), "scan-search");
-			const t = this.bannerEl.createSpan({ cls: "jet-bt" });
-			t.appendText("Search in ");
-			t.createEl("b", { text: s.scope.name });
-			const n = s.scope.members;
-			t.appendText(` for “${s.rest}” · ${n.toLocaleString()} note${n === 1 ? "" : "s"}`);
-			if (s.others.length) t.appendText(` · also ${s.others.map((o) => o.kind || o.name).join(", ")}`);
-			const k = this.bannerEl.createSpan({ cls: "jet-bk" });
-			k.createEl("kbd", { text: "⇥" });
-			k.appendText("Tab");
-			if (this.bannerEl.parentElement !== this.listEl) this.listEl.prepend(this.bannerEl);
-		} else this.bannerEl.remove();
+		this.drawBanner();
 		this.placeGhost();
 		if (!chip) this.hideCard();
+	}
+
+	/** The banner above the rows: widened, Auto's undo, the scopes of one name, or the suggestion. */
+	private drawBanner(): void {
+		const b = this.bannerEl;
+		const chip = this.chip;
+		const s = this.typing.suggest;
+		const keys = (pairs: Array<[string, string]>): void => {
+			const k = b.createSpan({ cls: "jet-bk" });
+			for (const [key, label] of pairs) {
+				k.createEl("kbd", { text: key });
+				k.appendText(label);
+			}
+		};
+		const head = (icon: string): HTMLElement => {
+			setIcon(b.createSpan({ cls: "jet-bic" }), icon);
+			return b.createSpan({ cls: "jet-bt" });
+		};
+		const pills = (all: ScopeView[], active: string | null): void => {
+			const row = b.createDiv({ cls: "jet-pills" });
+			for (const v of all)
+				row.createSpan({
+					cls: `jet-pill${v.id === active ? " is-active" : ""}`,
+					text: `${v.name} · ${v.kind || "Scope"} · ${v.members.toLocaleString()}`,
+				});
+		};
+		const notes = (n: number): string => `${n.toLocaleString()} note${n === 1 ? "" : "s"}`;
+		b.empty();
+		b.removeClass("is-multi");
+		if (!chip && this.widened) {
+			const t = head("globe");
+			t.appendText("Searching everywhere · was in ");
+			t.createEl("b", { text: this.widened.chip.name });
+			keys([["⇧⇧", "Back"]]);
+		} else if (chip && this.autoUndo) {
+			const t = head("undo-2");
+			t.appendText("Scoped to ");
+			t.createEl("b", { text: chip.name });
+			t.appendText(" · Auto");
+			keys([["⌫", "Undo"]]);
+		} else if (chip && this.choices.length > 1) {
+			b.addClass("is-multi");
+			head("scan-search").appendText(
+				`${this.choices.length} scopes are named “${chip.name}”`.replace(/^2 /, "Two "),
+			);
+			keys([
+				["⇥", "next"],
+				["⇧⇥", "back"],
+			]);
+			pills(this.choices, chip.id);
+		} else if (s && s.others.length) {
+			b.addClass("is-multi");
+			const all = [s.scope, ...s.others];
+			head("scan-search").appendText(`${all.length} scopes are named “${s.scope.name}”`.replace(/^2 /, "Two "));
+			keys([["⇥", "Tab"]]);
+			pills(all, null);
+		} else if (s) {
+			const t = head("scan-search");
+			t.appendText("Search in ");
+			t.createEl("b", { text: s.scope.name });
+			t.appendText(` for “${s.rest}” · ${notes(s.scope.members)}`);
+			keys([["⇥", "Tab"]]);
+		} else {
+			b.remove();
+			return;
+		}
+		if (b.parentElement !== this.listEl) this.listEl.prepend(b);
 	}
 
 	/** A dashed box around the typed name; the text itself does not move. */
@@ -392,7 +527,15 @@ export class JetModal extends Modal {
 	}
 
 	private hintState(): HintState {
-		if (this.chip) return this.chipSelected ? { chip: this.chip.name, selected: true } : { chip: this.chip.name };
+		const c = this.chip;
+		if (c) {
+			const st: HintState = { chip: c.name };
+			if (this.chipSelected) st.selected = true;
+			if (this.autoUndo) st.auto = true;
+			if (this.choices.length > 1) st.more = true;
+			return st;
+		}
+		if (this.widened) return { widened: this.widened.chip.name };
 		if (this.typing.suggest) return { suggest: this.typing.suggest.scope.name };
 		if (this.typing.hint) return { hint: this.typing.hint.name };
 		return {};
@@ -535,8 +678,12 @@ export class JetModal extends Modal {
 		}
 		if (e.type === "create") {
 			this.opened = true;
-			this.host.create(e.text);
+			this.host.create(e.text, this.chip?.id);
 			this.close();
+			return;
+		}
+		if (e.type === "widen") {
+			this.widen();
 			return;
 		}
 		if (e.type !== "item") return;
@@ -564,11 +711,21 @@ export class JetModal extends Modal {
 			return false;
 		});
 		// Tab accepts the suggestion, or the name alone with nothing typed yet.
+		this.scope.register(["Shift"], "Tab", (e) => {
+			if (e.isComposing || !this.chip || this.choices.length < 2) return;
+			this.cycle(-1);
+			return false;
+		});
 		this.scope.register([], "Tab", (e) => {
-			if (e.isComposing || this.chip) return;
+			if (e.isComposing) return;
+			if (this.chip) {
+				if (this.choices.length < 2) return;
+				this.cycle(1);
+				return false;
+			}
 			const s = this.typing.suggest;
 			if (s) {
-				this.applyChip(s.scope, s.rest);
+				this.applyChip(s.scope, s.rest, [s.scope, ...s.others]);
 				return false;
 			}
 			if (this.typing.hint) {
@@ -579,6 +736,11 @@ export class JetModal extends Modal {
 		// ⌫ at the start selects the chip, then removes it; ← at the start opens its card.
 		this.scope.register([], "Backspace", (e) => {
 			if (e.isComposing || !this.chip || !this.atStart()) return;
+			if (this.autoUndo) {
+				this.suppressAuto.add(this.chip.id);
+				this.removeChip(true);
+				return false;
+			}
 			if (!this.chipSelected) {
 				this.chipSelected = true;
 				this.drawScope();
@@ -663,7 +825,7 @@ export class JetModal extends Modal {
 			const text = this.inputEl.value.trim();
 			if (!text) return false;
 			this.opened = true;
-			this.host.create(text);
+			this.host.create(text, this.chip?.id);
 			this.close();
 			return false;
 		});
@@ -685,7 +847,9 @@ const keyOf = (e: Entry): string | null =>
 			? `s:${e.query}`
 			: e.type === "create"
 				? `c:${e.text}`
-				: null;
+				: e.type === "widen"
+					? `w:${e.label}`
+					: null;
 
 /** Fill a pooled row element for an entry (rebuilt each time: rows are few and small). */
 const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
@@ -712,6 +876,14 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 	}
 	el.setAttr("role", "option");
 	el.setAttr("aria-selected", "false");
+	if (e.type === "widen") {
+		el.className = "jet-row jet-rowt";
+		setIcon(el.createSpan({ cls: "jet-ic" }), "globe");
+		const b = el.createDiv({ cls: "jet-rb" });
+		b.createDiv({ cls: "jet-l1" }).createSpan({ cls: "jet-rt", text: e.label });
+		if (e.detail) b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: e.detail });
+		return;
+	}
 	if (e.type === "search" || e.type === "create") {
 		el.className = `jet-row ${e.detail ? "jet-rowt" : "jet-row-search"}`;
 		setIcon(el.createSpan({ cls: "jet-ic" }), e.type === "create" ? "file-plus" : e.detail ? "search" : "history");

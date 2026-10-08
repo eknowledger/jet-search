@@ -35,6 +35,8 @@ const setup = (scopes: Scope[] = [COBALT, STUDIO]) => {
 	data.opened["2.Projects/Cobalt/Old.md"] = [1, 5000];
 	const searched: Array<[string, string | undefined]> = [];
 	const edited: string[] = [];
+	const measured: string[] = [];
+	const amb = new Map<string, number>();
 	let ensured = 0;
 	const access: HostScopes = {
 		all: () => scopes,
@@ -45,6 +47,8 @@ const setup = (scopes: Scope[] = [COBALT, STUDIO]) => {
 		membersOf: (id) => new Set(id === "cobalt" ? paths : []),
 		ruleCount: (r: Rule) => (r.kind === "folder" ? 3 : r.kind === "tag" ? 2 : 1),
 		edit: (id) => edited.push(id),
+		ambiguity: (id) => amb.get(id) ?? null,
+		measure: (id) => measured.push(id),
 	};
 	const search = {
 		list: (t: string, _p: unknown, s?: string) => searched.push([t, s]),
@@ -60,7 +64,7 @@ const setup = (scopes: Scope[] = [COBALT, STUDIO]) => {
 		undefined,
 		access,
 	);
-	return { host, data, searched, edited, ensured: () => ensured };
+	return { host, app, data, searched, edited, measured, amb, ensured: () => ensured };
 };
 
 describe("the host's scopes", () => {
@@ -134,5 +138,40 @@ describe("the host's scopes", () => {
 		const { host, edited } = setup();
 		host.scopes?.edit("cobalt");
 		expect(edited).toEqual(["cobalt"]);
+	});
+
+	it("Auto applies at once for a rare name in any casing; unmeasured, only as written (and it gets measured)", () => {
+		const bridge: Scope = { ...COBALT, id: "bridge", name: "Moonbridge", aliases: [], mode: "auto" };
+		const { host, measured, amb } = setup([bridge, STUDIO]);
+		expect(host.scopes?.typed("moonbridge invoices")?.auto).toBeUndefined();
+		expect(host.scopes?.typed("Moonbridge invoices")?.auto).toBe(true);
+		expect(measured).toContain("bridge");
+		amb.set("bridge", 0.4);
+		expect(host.scopes?.typed("moonbridge invoices")?.auto).toBe(true);
+		expect(host.scopes?.typed("moonbridge")?.auto).toBe(true);
+	});
+
+	it("scopes of one name are listed biggest first, and never apply by themselves", () => {
+		const small: Scope = { ...COBALT, id: "c2", kind: "Areas", mode: "auto" };
+		const { host, amb } = setup([small, { ...COBALT, mode: "auto" }]);
+		amb.set("cobalt", 0);
+		amb.set("c2", 0);
+		const t = host.scopes?.typed("Cobalt world");
+		expect(t?.suggest?.scope.id).toBe("cobalt");
+		expect(t?.suggest?.others.map((o) => o.id)).toEqual(["c2"]);
+		expect(t?.auto).toBeUndefined();
+	});
+
+	it("creates a note in the chip's scope: its folder, its property filled in", async () => {
+		const { host, app } = setup();
+		(app.vault as unknown as { folders: Set<string> }).folders.add("2.Projects/Cobalt");
+		host.create("New idea", "cobalt");
+		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => setTimeout(r, 0));
+		const fm = (app as unknown as { frontmatter: Map<string, Record<string, unknown>> }).frontmatter;
+		expect(fm.get("2.Projects/Cobalt/New idea.md")).toEqual({ project: "[[Cobalt]]" });
+		host.create("Loose", undefined);
+		await new Promise((r) => setTimeout(r, 0));
+		expect(app.vault.getFileByPath("Inbox/Loose.md")).not.toBeNull();
 	});
 });

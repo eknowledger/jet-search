@@ -810,3 +810,32 @@
 	width: 13px;
 	height: 13px;
 }
+
+/* Scopes of one name, Auto, widen */
+.jet-ban.is-multi {
+	flex-wrap: wrap;
+	row-gap: 7px;
+}
+
+.jet-pills {
+	flex-basis: 100%;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-left: 25px;
+}
+
+.jet-pill {
+	font-size: 12px;
+	line-height: 18px;
+	padding: 1px 9px;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.jet-pill.is-active {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+	background: hsla(var(--interactive-accent-hsl), 0.12);
+}

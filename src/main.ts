@@ -7,6 +7,8 @@ import { indexStatus, rebuild } from "./index-status";
 import { addCommandAs, hasCommand, openSettingsAt, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
+import { ambiguity } from "./scopes/auto";
+import { createDetail, createTarget } from "./scopes/create";
 import { ScopeKeeper } from "./scopes/keeper";
 import { obsidianSnapshot } from "./scopes/snapshot-obsidian";
 import { ScopeWatcher } from "./scopes/watcher";
@@ -44,6 +46,9 @@ export default class JetSearchPlugin extends Plugin {
 	/** Obsidian keeps the tab's definitions from its last update(): call it when settings change elsewhere. */
 	settingTab!: JetSettingTab;
 	private sleepTimer: number | null = null;
+	/** Each scope's ambiguity, measured on demand; forgotten when scopes change. */
+	private readonly ambiguities = new Map<string, { name: string; value: number; outside: number }>();
+	private readonly measuring = new Set<string>();
 	private readonly standIns: string[] = [];
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
 
@@ -57,7 +62,14 @@ export default class JetSearchPlugin extends Plugin {
 			() => this.data.settings.stemming,
 		);
 		this.scopes = new ScopeKeeper(this.app, this.client, () => this.data.scopes);
-		this.search = new Search(this.app, this.client, this.feeder, () => this.data, this.scopes);
+		this.search = new Search(this.app, this.client, this.feeder, () => this.data, {
+			ensure: () => this.scopes.ensure(),
+			membersOf: (id) => this.scopes.membersOf(id),
+			describe: (id) => {
+				const s = this.data.scopes.find((x) => x.id === id);
+				return s ? { name: s.name, create: createDetail(createTarget(s)) } : null;
+			},
+		});
 		this.watcher = new ScopeWatcher({
 			mode: () => this.data.settings.scopesWhenNew,
 			scopes: () => this.data.scopes,
@@ -101,6 +113,8 @@ export default class JetSearchPlugin extends Plugin {
 					const s = this.data.scopes.find((x) => x.id === id);
 					if (s) openSettingsAt(this.app, this.manifest.id, ["Scopes", s.name]);
 				},
+				ambiguity: (id) => this.ambiguityOf(id),
+				measure: (id) => void this.measure(id),
 			},
 		);
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
@@ -135,8 +149,44 @@ export default class JetSearchPlugin extends Plugin {
 		}, SLEEP_AFTER_MS);
 	}
 
+	/** A scope's ambiguity, or null before it is measured (or after its name changed). */
+	ambiguityOf(id: string): number | null {
+		return this.mentionsOf(id)?.value ?? null;
+	}
+
+	/** Its ambiguity and how many notes outside it mention its name (the scope's settings page). */
+	mentionsOf(id: string): { value: number; outside: number } | null {
+		const s = this.data.scopes.find((x) => x.id === id);
+		const a = this.ambiguities.get(id);
+		return s && a && a.name === s.name ? a : null;
+	}
+
+	/** Count the name's mentions with the worker (it loads the index if asleep); the settings redraw. */
+	async measure(id: string): Promise<void> {
+		const s = this.data.scopes.find((x) => x.id === id);
+		if (!s || this.measuring.has(id)) return;
+		this.measuring.add(id);
+		try {
+			await this.feeder.ensure();
+			this.scopes.ensure();
+			const m = await this.client.call({ op: "mentions", text: s.name, scope: id });
+			this.ambiguities.set(id, {
+				name: s.name,
+				value: ambiguity(m, this.scopes.count(id)),
+				outside: m.notes - m.inside,
+			});
+			this.settingTab.refresh();
+		} catch (e) {
+			console.error("Jet Search: counting mentions failed", e);
+		} finally {
+			this.measuring.delete(id);
+		}
+	}
+
 	/** Open Jet (from the command, Shift-Shift or a stand-in id); a short selection in the editor prefills it. */
 	open(text = this.selection()): void {
+		// Open already with a scope: the same keys widen the search instead.
+		if (this.modal?.shown && this.modal.widen()) return;
 		this.modal?.close();
 		const modal = new JetModal(this.app, this.host, text);
 		this.modal = modal;

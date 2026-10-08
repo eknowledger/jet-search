@@ -15,6 +15,7 @@ import {
 	type SettingPage,
 } from "obsidian";
 import { closeSettingPage } from "../internals";
+import { autoOffer } from "../scopes/auto";
 import { type Mode, type Rule, type Scope, scopeId } from "../scopes/model";
 import { pickFolder, pickProperty, pickTag } from "./rule-pickers";
 
@@ -27,6 +28,8 @@ export type ScopesHost = {
 	/** Note counts, or null when they are not worked out (the tab is not on screen). */
 	count(id: string): number | null;
 	ruleCount(rule: Rule): number | null;
+	/** How often the name is written outside the scope, or null until measured (asks for it). */
+	mentions(id: string): { value: number; outside: number } | null;
 	/** The scopes changed: members again, and the page drawn again. */
 	changed(): void;
 	/** Open the Generate review (first time) or the review of what is new; false when it cannot from a button. */
@@ -169,6 +172,31 @@ const textOnBlur = (row: Setting, value: string, save: (v: string) => void): voi
 	});
 };
 
+/**
+ * "When typed": Auto is offered only for a name rarely written
+ * outside the scope, or, for a name with capitals inside it, only as written; the page says why.
+ */
+export const whenTyped = (h: ScopesHost, s: Scope): SettingDefinition => {
+	const m = h.mentions(s.id);
+	const offer = autoOffer(s.name, m ? m.value : null);
+	const why = !m
+		? `Checking how often “${s.name}” is written outside it…`
+		: `“${s.name}” is written in ${plural(m.outside)} outside it (${m.value.toFixed(1)} per note in it): ` +
+			(offer === "any"
+				? "Auto is safe."
+				: offer === "case"
+					? `Auto applies only when typed as “${s.name}”.`
+					: "too common for Auto, so it stays Suggest.");
+	const options: Record<string, string> = { suggest: "Suggest" };
+	if (offer !== "no" || s.mode === "auto") options.auto = offer === "case" ? `Auto (as “${s.name}”)` : "Auto";
+	options["in-only"] = "in: only";
+	return {
+		name: "When typed",
+		desc: `Suggest: ⇥ accepts. Auto: applied at once. in: only: only in:${s.name} or @${s.name}. ${why}`,
+		control: { type: "dropdown", key: `scope:${s.id}:mode`, options },
+	};
+};
+
 /** A scope's own page: its row in the list opens it. */
 const scopePage = (h: ScopesHost, s: Scope): SettingDefinitionPage => {
 	const n = h.count(s.id);
@@ -200,17 +228,7 @@ const scopePage = (h: ScopesHost, s: Scope): SettingDefinitionPage => {
 					h.changed();
 				}),
 		},
-		{
-			name: "When typed",
-			desc:
-				"Suggest: ⇥ accepts. Auto: applied at once (best for names you rarely write as a plain word). " +
-				`in: only: only in:${s.name} or @${s.name}.`,
-			control: {
-				type: "dropdown",
-				key: `scope:${s.id}:mode`,
-				options: { suggest: "Suggest", auto: "Auto", "in-only": "in: only" },
-			},
-		},
+		whenTyped(h, s),
 	];
 	const rules: SettingGroupItem[] = s.rules.map((r) => ({ name: ruleText(r), desc: ruleDesc(r, h.ruleCount(r)) }));
 	const rest: SettingDefinition[] = [

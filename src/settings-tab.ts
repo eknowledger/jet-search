@@ -340,6 +340,11 @@ export class JetSettingTab extends PluginSettingTab {
 				return keeper.count(id);
 			},
 			ruleCount: (r) => (shown() ? keeper.ruleCount(r) : null),
+			mentions: (id) => {
+				const m = this.owner.mentionsOf(id);
+				if (!m && shown()) void this.owner.measure(id);
+				return m;
+			},
 			changed: () => {
 				keeper.reset();
 				this.redraw();

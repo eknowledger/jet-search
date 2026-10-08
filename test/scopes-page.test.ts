@@ -3,6 +3,7 @@ import { App, TFile } from "obsidian";
 import JetSearchPlugin from "../src/main";
 import type { Scope } from "../src/scopes/model";
 import type { JetSettingTab } from "../src/settings-tab";
+import { whenTyped } from "../src/settings/scopes-page";
 
 type Def = {
 	type?: string;
@@ -107,5 +108,28 @@ describe("folders to leave out as a page", () => {
 		expect(list?.items?.map((d) => d.name)).toEqual(["Archive", "Templates"]);
 		list?.onDelete?.(0);
 		expect(plugin.data.settings.exclude).toEqual(["Templates"]);
+	});
+});
+
+describe("When typed: Auto offered by ambiguity", () => {
+	const s = (name: string, mode: "suggest" | "auto" = "suggest") =>
+		({ id: "x", name, aliases: [], kind: "", rules: [], combine: "any", mode, source: "manual" }) as const;
+	const host = (m: { value: number; outside: number } | null) => ({ mentions: () => m }) as never;
+	const options = (d: ReturnType<typeof whenTyped>) => Object.keys((d.control as { options: object }).options);
+
+	it("a rare name: Auto, and the page says why", () => {
+		const d = whenTyped(host({ value: 0.5, outside: 27 }), { ...s("Cobalt"), aliases: [] });
+		expect(options(d)).toEqual(["suggest", "auto", "in-only"]);
+		expect(d.desc).toContain("27 notes outside it (0.5 per note in it): Auto is safe.");
+	});
+
+	it("a common word: no Auto; capitals inside: only as written; not measured yet: checking", () => {
+		expect(options(whenTyped(host({ value: 20.8, outside: 623 }), { ...s("Team"), aliases: [] }))).toEqual([
+			"suggest",
+			"in-only",
+		]);
+		const ask = whenTyped(host({ value: 2.9, outside: 315 }), { ...s("OKR"), aliases: [] });
+		expect((ask.control as { options: Record<string, string> }).options.auto).toBe("Auto (as “OKR”)");
+		expect(whenTyped(host(null), { ...s("Cobalt"), aliases: [] }).desc).toContain("Checking how often");
 	});
 });

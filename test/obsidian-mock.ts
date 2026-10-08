@@ -190,9 +190,20 @@ export class Vault {
 	}
 
 	readonly files = new Map<string, TFile>();
+	readonly folders = new Set<string>();
 
 	getFileByPath(path: string): TFile | null {
 		return this.files.get(path) ?? null;
+	}
+
+	getFolderByPath(path: string): { path: string } | null {
+		return this.folders.has(path) ? { path } : null;
+	}
+
+	async create(path: string, _data: string): Promise<TFile> {
+		const f = new TFile(path);
+		this.files.set(path, f);
+		return f;
 	}
 
 	async read(_file: TFile): Promise<string> {
@@ -281,6 +292,17 @@ export class App {
 	readonly vault = new Vault();
 	readonly workspace = new Workspace();
 	readonly metadataCache = new MetadataCache();
+	/** Frontmatter written with processFrontMatter, by path. */
+	readonly frontmatter = new Map<string, Record<string, unknown>>();
+	readonly fileManager = {
+		getNewFileParent: (_from: string) => ({ path: "Inbox" }),
+		processFrontMatter: async (f: TFile, fn: (fm: Record<string, unknown>) => void): Promise<void> => {
+			const fm = this.frontmatter.get(f.path) ?? {};
+			fn(fm);
+			this.frontmatter.set(f.path, fm);
+		},
+		generateMarkdownLink: (f: TFile) => `[[${f.basename}]]`,
+	};
 }
 
 export type PluginManifest = { id: string; name: string; version: string; dir?: string };

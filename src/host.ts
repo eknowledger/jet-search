@@ -3,6 +3,9 @@ import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Entry, HintState, ModalHost, OpenHow, ScopeCard, ScopeView, Typed } from "./modal/jet-modal";
 import type { Rule, Scope } from "./scopes/model";
+import { autoApplies } from "./scopes/auto";
+import { createTarget } from "./scopes/create";
+import { fold } from "./scopes/names";
 import { parseScope } from "./scopes/parse";
 import { MODE_LABEL } from "./settings/scopes-page";
 import type { Search } from "./search";
@@ -28,6 +31,10 @@ export type HostScopes = {
 	ruleCount(rule: Rule): number;
 	/** Open the scope's settings page. */
 	edit(id: string): void;
+	/** Mentions outside ÷ notes inside, or null before it is measured. */
+	ambiguity(id: string): number | null;
+	/** Measure it (the worker counts mentions), for next time. */
+	measure(id: string): void;
 };
 
 /** Notes listed for a scope with nothing typed. */
@@ -77,9 +84,10 @@ export class JetHost implements ModalHost {
 		const view = (s: Scope): ScopeView => ({ id: s.id, name: s.name, kind: s.kind, members: a.count(s.id) });
 		if (p.applied) return { applied: { scope: view(p.applied), text: p.text, complete: !!p.complete } };
 		if (p.suggest) {
-			const [first, ...others] = p.suggest.scopes;
+			// Scopes of one name: the biggest first.
+			const [first, ...others] = [...p.suggest.scopes].sort((x, y) => a.count(y.id) - a.count(x.id));
 			if (!first) return {};
-			return {
+			const t: Typed = {
 				suggest: {
 					scope: view(first),
 					others: others.map(view),
@@ -88,8 +96,22 @@ export class JetHost implements ModalHost {
 					at: p.suggest.at,
 				},
 			};
+			// A name two scopes share never applies by itself.
+			if (!others.length && this.autoFor(a, first, p.suggest.name)) t.auto = true;
+			return t;
 		}
-		return p.hint ? { hint: view(p.hint) } : {};
+		if (!p.hint) return {};
+		const typedName = text.trim();
+		return this.autoFor(a, p.hint, typedName) ? { hint: view(p.hint), auto: true } : { hint: view(p.hint) };
+	}
+
+	/** Whether an Auto scope applies at once for the name as typed. */
+	private autoFor(a: HostScopes, s: Scope, typed: string): boolean {
+		if (s.mode !== "auto") return false;
+		const amb = a.ambiguity(s.id);
+		if (amb === null) a.measure(s.id);
+		const written = [s.name, ...s.aliases].find((n) => fold(n) === fold(typed)) ?? s.name;
+		return autoApplies(written, typed, amb);
 	}
 
 	private card(a: HostScopes, id: string): ScopeCard {
@@ -255,6 +277,28 @@ export class JetHost implements ModalHost {
 		const t = text.trim();
 		const short = t.length > 18 ? `${t.slice(0, 17)}…` : t;
 		const tab = this.newTab() ? "Same tab" : "New tab";
+		if (state.chip && state.auto)
+			return [
+				["⌫", "Undo scope"],
+				["↵", "Open"],
+				["⌘↵", tab],
+				["⇧⇧", "Widen"],
+			];
+		if (state.widened)
+			return [
+				["⇧⇧", `Back to ${state.widened}`],
+				["↵", "Open"],
+				["⌘↵", tab],
+				["⌥↵", "Insert link"],
+			];
+		if (state.chip && state.more && !state.selected)
+			return [
+				["⇥", "Next scope"],
+				["⇧⇥", "Back"],
+				["↵", "Open"],
+				["⌫", `Remove ${state.chip}`],
+				["⇧⇧", "Widen"],
+			];
 		if (state.chip && state.selected)
 			return [
 				["⌫", `Remove ${state.chip} (it returns as text)`],
@@ -266,9 +310,9 @@ export class JetHost implements ModalHost {
 				? [
 						["↵", "Open"],
 						["⌘↵", tab],
-						["⌥↵", "Insert link"],
+						["⇧↵", `Create in ${state.chip}`],
 						["⌫", `Remove ${state.chip}`],
-						["⌘.", "Preview"],
+						["⇧⇧", "Widen"],
 					]
 				: [
 						["↵", "Open"],
@@ -327,19 +371,30 @@ export class JetHost implements ModalHost {
 		view.editor.replaceSelection(this.app.fileManager.generateMarkdownLink(file, view.file.path));
 	}
 
-	create(text: string): void {
+	create(text: string, scope?: string): void {
 		const name = text
 			.replace(/[\\/:*?"<>|#^[\]]/g, " ")
 			.replace(/\s+/g, " ")
 			.trim()
 			.slice(0, 120);
 		if (!name) return;
+		// In a scope: its folder, its property (or tag) filled in.
+		const s = scope !== undefined ? this.scopeAccess?.all().find((x) => x.id === scope) : undefined;
+		const target = s ? createTarget(s) : null;
 		const active = this.app.workspace.getActiveFile()?.path ?? "";
-		const folder = this.app.fileManager.getNewFileParent(active).path;
+		const folder =
+			target?.folder && this.app.vault.getFolderByPath(target.folder)
+				? target.folder
+				: this.app.fileManager.getNewFileParent(active).path;
 		const path = normalizePath(`${folder === "/" ? "" : `${folder}/`}${name}.md`);
 		const existing = this.app.vault.getFileByPath(path);
 		void (async () => {
 			const file = existing ?? (await this.app.vault.create(path, ""));
+			if (!existing && (target?.prop || target?.tag))
+				await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+					if (target.prop) fm[target.prop[0]] = target.prop[1];
+					if (target.tag) fm.tags = [target.tag.replace(/^#/, "")];
+				});
 			await this.app.workspace.getLeaf(this.newTab() ? "tab" : false).openFile(file);
 		})().catch((e: unknown) => {
 			console.error("Jet Search: could not create the note", e);
