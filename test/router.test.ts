@@ -140,3 +140,32 @@ describe("worker router", () => {
 		expect(await ask(r, "maple ")).toEqual([]);
 	});
 });
+
+describe("scope sets in the worker", () => {
+	const askIn = async (r: Router, text: string, scope: string): Promise<string[]> =>
+		((await r.handle({ op: "query", seq: 1, text, limit: 50, now: 0, scope })) as QueryReply).hits
+			.map((h) => h.path)
+			.sort();
+
+	it("keeps each scope's notes, follows deltas, renames and deletes, and filters queries by them", async () => {
+		const r = new Router(() => memoryStore(), timers);
+		await r.handle({ op: "open", vaultId: "v", stemming: [] });
+		await r.handle({
+			op: "batch",
+			notes: [raw("a.md", "orchid garden"), raw("b.md", "orchid lantern"), raw("c.md", "orchid pebble")],
+			last: true,
+		});
+		await r.handle({ op: "scope:set", id: "s1", paths: ["a.md", "b.md"] });
+		expect(await askIn(r, "orchid ", "s1")).toEqual(["a.md", "b.md"]);
+		await r.handle({ op: "scope:delta", id: "s1", add: ["c.md"], remove: ["a.md"] });
+		expect(await askIn(r, "orchid ", "s1")).toEqual(["b.md", "c.md"]);
+		await r.handle({ op: "rename", from: "b.md", to: "d.md" });
+		expect(await askIn(r, "orchid ", "s1")).toEqual(["c.md", "d.md"]);
+		await r.handle({ op: "delete", paths: ["c.md"] });
+		expect(await askIn(r, "orchid ", "s1")).toEqual(["d.md"]);
+		// An unknown scope answers nothing rather than everything.
+		expect(await askIn(r, "orchid ", "nope")).toEqual([]);
+		await r.handle({ op: "scope:clear" });
+		expect(await askIn(r, "orchid ", "s1")).toEqual([]);
+	});
+});

@@ -15,12 +15,18 @@ export type Request =
 	| { op: "upsert"; notes: RawNote[] }
 	| { op: "delete"; paths: string[] }
 	| { op: "rename"; from: string; to: string }
-	| { op: "query"; seq: number; text: string; limit: number; now: number; allow?: string[] }
+	/** `scope`: only that scope's notes (its set, below); `allow`: only these paths. */
+	| { op: "query"; seq: number; text: string; limit: number; now: number; allow?: string[]; scope?: string }
 	| { op: "mtimes" }
 	/** No results: the closest spelling the vault uses, and how many notes it finds. */
 	| { op: "suggest"; text: string }
 	| { op: "save" }
 	| { op: "stats" }
+	/** A scope's notes, as paths; kept through renames and deletes. Not saved. */
+	| { op: "scope:set"; id: string; paths: string[] }
+	| { op: "scope:delta"; id: string; add: string[]; remove: string[] }
+	/** Drop these scopes' sets (all of them without `ids`). */
+	| { op: "scope:clear"; ids?: string[] }
 	/** Forget this vault's index (settings: Clear index). */
 	| { op: "clear" };
 
