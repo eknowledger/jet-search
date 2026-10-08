@@ -17,6 +17,8 @@ const SCAN_LIMIT = 256 * 1024;
 /** Further hits are counted up to this many ("+99 more"). */
 const MORE_CAP = 99;
 const HIT_LIMIT = 1000;
+/** Hits tried as the excerpt's centre (the best line is nearly always among the first ones). */
+const ANCHORS = 30;
 /** How far either side of the hit a long line is looked at when building its excerpt, in widths. */
 const REACH = 4;
 
@@ -192,17 +194,27 @@ export const cutExcerpt = (
 	const first = found[0];
 	if (!first) return null;
 	// The best hit: the one whose line, near it, holds the most of your words; the first among equals.
+	// Hits are in text order, so each window is a run of neighbours; the first 30 hits are tried.
 	let anchor = first;
 	if (found.length > 1) {
 		let best = -1;
-		for (const h of found) {
+		const tries = Math.min(found.length, ANCHORS);
+		for (let i = 0; i < tries; i++) {
+			const h = found[i] as (typeof found)[number];
 			const ls = text.lastIndexOf("\n", h.at - 1) + 1;
 			let le = text.indexOf("\n", h.at);
 			if (le < 0) le = text.length;
 			const lo = Math.max(ls, h.at - width / 2);
 			const hi = Math.min(le, h.at + width / 2);
 			const groups = new Map<string, number>();
-			for (const o of found) if (o.at >= lo && o.at < hi) groups.set(o.group, o.weight);
+			for (let j = i; j >= 0 && (found[j] as { at: number }).at >= lo; j--) {
+				const o = found[j] as (typeof found)[number];
+				groups.set(o.group, o.weight);
+			}
+			for (let j = i + 1; j < found.length && (found[j] as { at: number }).at < hi; j++) {
+				const o = found[j] as (typeof found)[number];
+				groups.set(o.group, o.weight);
+			}
 			// Without the typed words, each term counts as a word. With them, word forms and typos (which
 			// cannot be told apart by word) count half a word between them.
 			let score = 0;
