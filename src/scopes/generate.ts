@@ -191,8 +191,11 @@ export const generate = (snap: Snapshot): Generated => {
 	for (const n of live)
 		for (let d: string | null = parentOf(n.path); d !== null; d = d === "" ? null : parentOf(d)) folder(d).sub++;
 
-	// 2. Flags: see-through folders (periods, sequences), repeated subfolders, ids.
+	// 2. Flags: see-through folders (periods: their notes count for the folder above; sequences such as
+	// "Week 2" or "2024 Spring": looked through, their subfolders count as the folder above's), repeated
+	// subfolders, ids.
 	const seeThrough = new Set<string>();
+	const sequences = new Set<string>();
 	for (const f of folders.values()) {
 		const kids = f.children.filter((c) => !masked(c));
 		if (!kids.length) continue;
@@ -200,7 +203,7 @@ export const generate = (snap: Snapshot): Generated => {
 		const periods = kids.filter((c) => isPeriod(basename(c), { inYear, locales: cfg.locales }));
 		if (periods.length / kids.length >= 0.8) for (const c of periods) seeThrough.add(c);
 		for (const name of sequenceSiblings(kids.map(basename)))
-			for (const c of kids) if (basename(c) === name) seeThrough.add(c);
+			for (const c of kids) if (basename(c) === name && !seeThrough.has(c)) sequences.add(c);
 	}
 	const repeatedUnder = new Map<string, Set<string>>();
 	for (const f of folders.values()) {
@@ -219,8 +222,16 @@ export const generate = (snap: Snapshot): Generated => {
 		const p = parentOf(child);
 		return p !== "" && (repeatedUnder.get(grand)?.has(fold(basename(child))) ?? false) && folders.has(p);
 	};
-	const seeThroughAll = (p: string): boolean => seeThrough.has(p) || isRepeated(p) || jdId(basename(p));
-	for (const p of [...seeThrough].sort().slice(0, 30))
+	const seeThroughAll = (p: string): boolean =>
+		seeThrough.has(p) || sequences.has(p) || isRepeated(p) || jdId(basename(p));
+	/** A folder's children, with sequence folders looked through (their subfolders take their place). */
+	const kidsOf = (path: string): string[] =>
+		(folders.get(path)?.children ?? []).flatMap((c) => {
+			if (masked(c) || jdHandled.has(c)) return [];
+			if (sequences.has(c)) return kidsOf(c);
+			return seeThrough.has(c) || isRepeated(c) || jdId(basename(c)) ? [] : [c];
+		});
+	for (const p of [...seeThrough, ...sequences].sort().slice(0, 30))
 		notProposed.push({ what: p, why: "dates or a numbered sequence: not topics" });
 
 	const groups: Group[] = [];
@@ -293,7 +304,7 @@ export const generate = (snap: Snapshot): Generated => {
 	for (const f of folders.values()) {
 		if (masked(f.path) || jdHandled.has(f.path) || f.path === inbox || f.path === daily || seeThroughAll(f.path))
 			continue;
-		const kids = f.children.filter((c) => !masked(c) && !seeThroughAll(c) && !jdHandled.has(c));
+		const kids = kidsOf(f.path);
 		const qualifying = kids.filter((c) => (folders.get(c)?.sub ?? 0) >= 5);
 		const inKids = qualifying.reduce((s, c) => s + (folders.get(c)?.sub ?? 0), 0);
 		if (qualifying.length < 2 || !f.sub || inKids / f.sub < 0.5) continue;
@@ -352,6 +363,7 @@ export const generate = (snap: Snapshot): Generated => {
 		byValue: Map<string, { spellings: Map<string, number>; notes: Set<string> }>;
 		long: number;
 		lens: number;
+		multi: number;
 	};
 	const stats = new Map<string, KeyStat>();
 	for (const n of live) {
@@ -371,10 +383,12 @@ export const generate = (snap: Snapshot): Generated => {
 					byValue: new Map(),
 					long: 0,
 					lens: 0,
+					multi: 0,
 				};
 				stats.set(lower, s);
 			}
 			s.notes.add(n.path);
+			if (vs.length >= 2) s.multi++;
 			for (const v of vs) {
 				s.elements++;
 				if (isLinkText(v)) {
@@ -409,6 +423,13 @@ export const generate = (snap: Snapshot): Generated => {
 			notProposed.push({
 				what: `values of ${s.key}`,
 				why: "set on date-named notes (a journal field), not topics",
+			});
+			continue;
+		}
+		if (s.multi / s.notes.size >= 0.5) {
+			notProposed.push({
+				what: `values of ${s.key}`,
+				why: "several values on each note (like attendees), not a way to sort notes",
 			});
 			continue;
 		}
@@ -629,21 +650,24 @@ export const generate = (snap: Snapshot): Generated => {
 			const touching = others.filter((t) => [...t.members].some((p) => keyNotes.has(p)));
 			const covered = new Set(touching.flatMap((t) => [...t.members].filter((p) => keyNotes.has(p)))).size;
 			if (touching.length < 3 || covered / keyNotes.size < 0.3) return false;
-			// Spread: a value's notes sit in ≥ 3 of these topics, none holding half of them (weighted by notes).
-			const spread = gs.filter((g) => {
-				const shares = touching
-					.map((t) => [...g.members].filter((p) => t.members.has(p)).length)
-					.filter((x) => x > 0);
-				return shares.length >= 3 && Math.max(...shares) < g.members.size / 2;
-			});
-			const spreadNotes = spread.reduce((n, g) => n + g.members.size, 0);
+			// Breadth: a kind turns up in most of these topics (meetings in every project); a topic that
+			// cuts across them (#topic/consensus in three courses of eleven) sits in a few. Weighted by notes.
 			const totalNotes = gs.reduce((n, g) => n + g.members.size, 0);
-			// Or: each topic holds 3 or more of its values (a kind recurs inside every topic).
+			const breadth =
+				gs.reduce(
+					(n, g) =>
+						n +
+						g.members.size *
+							(touching.filter((t) => [...g.members].some((p) => t.members.has(p))).length /
+								touching.length),
+					0,
+				) / totalNotes;
+			// Calibrated on the corpus: a type key 0.35 (6 values per project), topic tags 0.22 (3 per course).
 			const per = touching
 				.map((t) => gs.filter((g) => [...g.members].some((p) => t.members.has(p))).length)
-				.sort((a, b) => a - b);
+				.sort((x, y) => x - y);
 			const median = per[Math.floor(per.length / 2)] ?? 0;
-			return spreadNotes / totalNotes >= 0.6 || median >= 3;
+			return breadth >= 0.3 || median >= 5;
 		});
 		if (!isKind) continue;
 		for (const g of gs) kinds.add(g);
@@ -724,6 +748,20 @@ export const generate = (snap: Snapshot): Generated => {
 		const inside = [...a.members].filter((p) => b.members.has(p)).length;
 		if (inside / a.members.size >= 0.5) join(i, closest);
 	});
+	// The same group under two names: ≥ 80% of the smaller set shared, sizes within 2× (#course/cs110 and its course).
+	for (let x = 0; x < candidates.length; x++) {
+		const a = candidates[x] as Group;
+		if (a.members.size < LIST) continue;
+		for (let y = x + 1; y < candidates.length; y++) {
+			const b = candidates[y] as Group;
+			if (b.family === a.family || b.members.size < LIST) continue;
+			const [small, big] = a.members.size <= b.members.size ? [a.members, b.members] : [b.members, a.members];
+			if (big.size > 2 * small.size) continue;
+			let shared = 0;
+			for (const p of small) if (big.has(p)) shared++;
+			if (shared / small.size >= 0.8) join(x, y);
+		}
+	}
 	const merged = new Map<number, Group[]>();
 	candidates.forEach((g, i) => merged.set(find(i), [...(merged.get(find(i)) ?? []), g]));
 	for (const [k, gs] of merged) if (gs.every((g) => g.signal === "flat-tag")) merged.delete(k);
@@ -835,6 +873,7 @@ const stripSharedAffix = (gs: Group[]): void => {
 		for (const g of gs) {
 			const words = g.name.split(/\s+/);
 			if (words.length < 2) continue;
+			if (end === "first" && /^\d/.test(words[1] ?? "")) continue;
 			const w = fold(end === "first" ? (words[0] as string) : (words[words.length - 1] as string));
 			count.set(w, (count.get(w) ?? 0) + 1);
 		}
@@ -844,7 +883,7 @@ const stripSharedAffix = (gs: Group[]): void => {
 			const words = g.name.split(/\s+/);
 			if (words.length < 2) continue;
 			const at = end === "first" ? 0 : words.length - 1;
-			if (fold(words[at] as string) !== token) continue;
+			if (fold(words[at] as string) !== token || (end === "first" && /^\d/.test(words[1] ?? ""))) continue;
 			g.aliases = [...g.aliases, g.name];
 			g.name = words.filter((_, k) => k !== at).join(" ");
 		}
