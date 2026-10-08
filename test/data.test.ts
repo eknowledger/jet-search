@@ -69,3 +69,13 @@ describe("Jet data", () => {
 		expect(d.opened).toEqual({});
 	});
 });
+
+describe("scopes in data.json", () => {
+	it("loads none by default and keeps well-formed ones", () => {
+		expect(normalizeData(null).scopes).toEqual([]);
+		const d = normalizeData({
+			scopes: [{ name: "Garden", rules: [{ kind: "tag", tag: "garden" }] }, { name: "" }],
+		});
+		expect(d.scopes.map((s) => [s.name, s.rules])).toEqual([["Garden", [{ kind: "tag", tag: "#garden" }]]]);
+	});
+});

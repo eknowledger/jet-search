@@ -1,3 +1,5 @@
+import { normalizeScopes, type Scope } from "./scopes/model";
+
 /**
  * What Jet keeps in its data.json (settings and the frecency store): settings,
  * the notes you opened (for recents and the frecency boost) and your recent searches.
@@ -39,6 +41,8 @@ export type JetData = {
 	searches: string[];
 	/** When this vault's index was first built (null: never; the first build then starts on its own). */
 	indexedAt: number | null;
+	/** Scopes. */
+	scopes: Scope[];
 };
 
 const HALF_LIFE = 30 * 86_400_000;
@@ -66,7 +70,13 @@ export const normalizeData = (raw: unknown): JetData => {
 			if (Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "number") opened[p] = [v[0], v[1]];
 	const searches = Array.isArray(r.searches) ? r.searches.filter((x): x is string => typeof x === "string") : [];
 	const indexedAt = typeof r.indexedAt === "number" ? r.indexedAt : null;
-	return { settings, opened, searches: searches.slice(0, MAX_SEARCHES), indexedAt };
+	return {
+		settings,
+		opened,
+		searches: searches.slice(0, MAX_SEARCHES),
+		indexedAt,
+		scopes: normalizeScopes(r.scopes),
+	};
 };
 
 /** A note was opened: its frecency decays to now and gains one (30-day half-life). */
