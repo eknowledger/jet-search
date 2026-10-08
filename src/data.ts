@@ -20,6 +20,8 @@ export type JetSettings = {
 	exclude: string[];
 	/** Stemming languages (English on by default). */
 	stemming: string[];
+	/** What happens when Jet notices new scopes. */
+	scopesWhenNew: "tell" | "add" | "nothing";
 };
 
 export const DEFAULT_SETTINGS: JetSettings = {
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	excerpts: true,
 	exclude: [],
 	stemming: ["en"],
+	scopesWhenNew: "tell",
 };
 
 /** Per note: a frecency score (decays with a 30-day half-life) and when it was last opened. */
@@ -63,6 +66,7 @@ export const normalizeData = (raw: unknown): JetData => {
 		excerpts: typeof s.excerpts === "boolean" ? s.excerpts : DEFAULT_SETTINGS.excerpts,
 		exclude: Array.isArray(s.exclude) ? s.exclude.filter((x): x is string => typeof x === "string") : [],
 		stemming: Array.isArray(s.stemming) ? s.stemming.filter((x): x is string => typeof x === "string") : ["en"],
+		scopesWhenNew: s.scopesWhenNew === "add" || s.scopesWhenNew === "nothing" ? s.scopesWhenNew : "tell",
 	};
 	const opened: Record<string, Opened> = {};
 	if (r.opened && typeof r.opened === "object")

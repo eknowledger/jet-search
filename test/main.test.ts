@@ -103,6 +103,7 @@ describe("settings tab", () => {
 		const { defs } = await defsOf();
 		expect(defs.filter((d) => d.type === "group").map((d) => d.heading)).toEqual([
 			"Open",
+			undefined,
 			"Results",
 			"Word forms",
 			"Index",

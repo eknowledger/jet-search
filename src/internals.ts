@@ -1,4 +1,4 @@
-import type { App, Command } from "obsidian";
+import type { App, Command, SettingPage } from "obsidian";
 
 /** The few undocumented Obsidian internals Jet touches, typed loosely and always optional. */
 type Internals = {
@@ -12,6 +12,10 @@ type Internals = {
 		enabledPlugins?: Set<string>;
 	};
 	appId?: string;
+	setting?: {
+		openPage?: (page: SettingPage) => void;
+		closePage?: () => void;
+	};
 };
 
 const internals = (app: App): Internals => app as unknown as Internals;
@@ -53,3 +57,17 @@ export const shiftOwnedElsewhere = (app: App): boolean => {
 	if (!r?.isRunning?.("commands")) return false;
 	return !!r.settingsOf?.("commands")?.taps?.some((t) => t.code === "ShiftLeft" || t.code === "ShiftRight");
 };
+
+/**
+ * Open a settings sub-page from code (a button), as Obsidian's own navigable rows do. Internal API
+ * (Obsidian 1.13+); false when missing, and the caller falls back to a navigable row.
+ */
+export const openSettingPage = (app: App, page: SettingPage): boolean => {
+	const s = internals(app).setting;
+	if (!s?.openPage) return false;
+	s.openPage(page);
+	return true;
+};
+
+/** Go back one settings sub-page (after deleting the scope the page showed). */
+export const closeSettingPage = (app: App): void => internals(app).setting?.closePage?.();

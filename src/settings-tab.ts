@@ -10,6 +10,7 @@ import {
 import { BUILD_ID } from "./build-id";
 import { STEM_LANGUAGES } from "./engine/stem";
 import { clearIndex, rebuild, statusNow } from "./index-status";
+import { type ScopesHost, scopesPage } from "./settings/scopes-page";
 import type JetSearchPlugin from "./main";
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -69,6 +70,8 @@ export class JetSettingTab extends PluginSettingTab {
 					},
 				],
 			},
+			// Scopes: one row, opening the Scopes page (option C).
+			{ type: "group", items: [scopesPage(this.scopesHost())] },
 			{
 				type: "group",
 				heading: "Results",
@@ -126,6 +129,9 @@ export class JetSettingTab extends PluginSettingTab {
 
 	getControlValue(key: string): unknown {
 		const s = this.owner.data.settings;
+		const scope = this.scopeKey(key);
+		if (scope) return scope.field === "mode" ? scope.s.mode : scope.s.combine;
+		if (key === "scopesWhenNew") return s.scopesWhenNew;
 		if (key.startsWith(STEM)) return s.stemming.includes(key.slice(STEM.length));
 		switch (key) {
 			case "doubleShift":
@@ -147,6 +153,23 @@ export class JetSettingTab extends PluginSettingTab {
 
 	setControlValue(key: string, value: unknown): void {
 		const s = this.owner.data.settings;
+		const scope = this.scopeKey(key);
+		if (scope) {
+			if (scope.field === "mode" && (value === "suggest" || value === "auto" || value === "in-only"))
+				scope.s.mode = value;
+			if (scope.field === "combine") {
+				scope.s.combine = value === "all" ? "all" : "any";
+				this.owner.scopes.reset();
+			}
+			this.owner.save();
+			this.redraw();
+			return;
+		}
+		if (key === "scopesWhenNew") {
+			s.scopesWhenNew = value === "add" || value === "nothing" ? value : "tell";
+			this.owner.save();
+			return;
+		}
 		if (key.startsWith(STEM)) {
 			const lang = key.slice(STEM.length);
 			s.stemming = value === true ? [...new Set([...s.stemming, lang])] : s.stemming.filter((x) => x !== lang);
@@ -240,6 +263,39 @@ export class JetSettingTab extends PluginSettingTab {
 			b.setButtonText("Clear").onClick(() => void clearIndex(this.owner).then(() => this.redraw()));
 			b.buttonEl.addClass("mod-warning");
 		});
+	}
+
+	/** `scope:<id>:mode` and `scope:<id>:combine` control keys. */
+	private scopeKey(key: string): { s: import("./scopes/model").Scope; field: "mode" | "combine" } | null {
+		const m = /^scope:(.+):(mode|combine)$/.exec(key);
+		const s = m ? this.owner.data.scopes.find((x) => x.id === m[1]) : undefined;
+		return m && s ? { s, field: m[2] as "mode" | "combine" } : null;
+	}
+
+	/**
+	 * What the Scopes page needs. Counts are worked out only while the tab is on screen: Obsidian also
+	 * asks for the definitions when the plugin loads (for its settings search), and Jet does nothing at start.
+	 */
+	private scopesHost(): ScopesHost {
+		const keeper = this.owner.scopes;
+		const shown = (): boolean => this.containerEl.isConnected;
+		return {
+			app: this.app,
+			scopes: () => this.owner.data.scopes,
+			save: () => this.owner.save(),
+			count: (id) => {
+				if (!shown()) return null;
+				keeper.ensure();
+				return keeper.count(id);
+			},
+			ruleCount: (r) => (shown() ? keeper.ruleCount(r) : null),
+			changed: () => {
+				keeper.reset();
+				this.redraw();
+			},
+			generate: () => new Notice("Generating scopes is not ready yet."),
+			newCount: () => 0,
+		};
 	}
 
 	/** Draw the tab again with fresh values (after a rebuild or a clear). */

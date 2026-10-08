@@ -140,6 +140,25 @@ export class Modal {
 }
 
 /** Counts calls to every vault method that reads a file or lists files. */
+/** Obsidian's fuzzy picker: `choose(text)` picks the item whose text includes it (tests). */
+export class FuzzySuggestModal<T> extends Modal {
+	placeholder = "";
+	setPlaceholder(p: string): void {
+		this.placeholder = p;
+	}
+	getItems(): T[] {
+		return [];
+	}
+	getItemText(_item: T): string {
+		return "";
+	}
+	onChooseItem(_item: T): void {}
+	choose(text: string): void {
+		const item = this.getItems().find((x) => this.getItemText(x).includes(text));
+		if (item !== undefined) this.onChooseItem(item);
+	}
+}
+
 export class Vault {
 	readonly calls: string[] = [];
 	private listeners = new Map<string, Set<Listener>>();
@@ -426,6 +445,14 @@ export class Control {
 		this.buttonEl.toggleAttribute("disabled", on);
 		return this;
 	}
+	setCta(): this {
+		this.buttonEl.classList.add("mod-cta");
+		return this;
+	}
+	setWarning(): this {
+		this.buttonEl.classList.add("mod-warning");
+		return this;
+	}
 	setButtonText(t: string): this {
 		this.buttonEl.textContent = t;
 		return this;
@@ -450,6 +477,35 @@ export class Notice {
 
 export class TAbstractFile {
 	constructor(readonly path: string) {}
+}
+
+export class TFolder extends TAbstractFile {
+	isRoot(): boolean {
+		return this.path === "/" || this.path === "";
+	}
+}
+
+/** Obsidian's menu: items chain setTitle / setIcon / onClick; the test reads `items`. */
+export class Menu {
+	readonly items: Array<{ title: string; click: (() => void) | null }> = [];
+	addItem(
+		f: (i: {
+			setTitle(t: string): unknown;
+			setIcon(i: string): unknown;
+			onClick(c: () => void): unknown;
+		}) => unknown,
+	): this {
+		const it = { title: "", click: null as (() => void) | null };
+		const api = {
+			setTitle: (t: string) => ((it.title = t), api),
+			setIcon: () => api,
+			onClick: (c: () => void) => ((it.click = c), api),
+		};
+		f(api);
+		this.items.push(it);
+		return this;
+	}
+	showAtPosition(): void {}
 }
 
 export class TFile extends TAbstractFile {

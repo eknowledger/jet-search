@@ -6,8 +6,8 @@
 import type { App, TFile } from "obsidian";
 import type { JetClient } from "../worker/jet-client";
 import { noteFacts } from "./facts";
-import { inScope, members } from "./members";
-import type { Scope } from "./model";
+import { inScope, matches, members } from "./members";
+import type { Rule, Scope } from "./model";
 
 export class ScopeKeeper {
 	private sets: Map<string, Set<string>> | null = null;
@@ -37,6 +37,18 @@ export class ScopeKeeper {
 	/** A scope's members (empty before the first pass). */
 	membersOf(id: string): ReadonlySet<string> {
 		return this.sets?.get(id) ?? new Set();
+	}
+
+	/** Whether the first pass ran (counts are known). */
+	get ready(): boolean {
+		return this.sets !== null;
+	}
+
+	/** How many notes one rule takes (the scope page shows it per rule): one pass over the cache. */
+	ruleCount(r: Rule): number {
+		let n = 0;
+		for (const f of this.app.vault.getMarkdownFiles()) if (matches(r, noteFacts(this.app, f))) n++;
+		return n;
 	}
 
 	/** The scopes changed (settings): start over at the next `ensure`. */
