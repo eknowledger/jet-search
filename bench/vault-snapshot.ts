@@ -124,7 +124,9 @@ export const readSnapshot = (dir: string): Snapshot => {
 	if (app.newFileLocation === "folder" && typeof app.newFileFolderPath === "string")
 		config.inbox = app.newFileFolderPath;
 	const templates = readJson(join(obs, "templates.json")).folder;
+	const templater = readJson(join(obs, "plugins", "templater-obsidian", "data.json")).templates_folder;
 	if (typeof templates === "string" && templates) config.templates = templates;
+	else if (typeof templater === "string" && templater) config.templates = templater;
 	const daily = readJson(join(obs, "daily-notes.json")).folder;
 	if (typeof daily === "string" && daily) config.daily = daily;
 	const types = readJson(join(obs, "types.json")).types;

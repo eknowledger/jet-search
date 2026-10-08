@@ -8,12 +8,11 @@
  */
 import { matches } from "./members";
 import type { NoteFacts } from "./members";
-import { type Rule, scopeId } from "./model";
+import { type Origin, type Rule, scopeId } from "./model";
 import { compact, fold, isPeriod, jdArea, jdCategory, jdId, sequenceSiblings, sharesScheme, stripName } from "./names";
 import type { Snapshot } from "./snapshot";
 
-/** Where a proposal was found : the signal, the pattern, and the member's identity in it. */
-export type Origin = { signal: string; at: string; key: string; v: number };
+export type { Origin } from "./model";
 
 export type Proposal = {
 	id: string;
@@ -170,7 +169,8 @@ export const generate = (snap: Snapshot): Generated => {
 	// By shape: attachment folders (≥ 80% of files not notes), template folders (≥ 50% of notes with placeholders).
 	for (const f of folders.values()) {
 		if (f.path === "" || f.files < 3) continue;
-		if ((f.files - f.md) / f.files >= 0.8) masks.add(f.path);
+		// A folder of files with a few stray notes, not a project with many assets.
+		if ((f.files - f.md) / f.files >= 0.8 && f.md < 5) masks.add(f.path);
 	}
 	const masked = (p: string): boolean => [...masks].some((m) => p === m || p.startsWith(`${m}/`));
 	const notes = snap.notes.filter((n) => !masked(n.path));
@@ -184,8 +184,9 @@ export const generate = (snap: Snapshot): Generated => {
 	}
 	const live = notes.filter((n) => !masked(n.path));
 	const N = live.length;
-	for (const m of [...masks].sort())
-		if (folders.has(m) && m !== ".trash")
+	const shownMasks = [...masks].sort().filter((m) => folders.has(m) && m !== ".trash");
+	for (const m of shownMasks)
+		if (!shownMasks.some((o) => o !== m && m.startsWith(`${o}/`)))
 			notProposed.push({ what: m, why: "left out: excluded, templates or attachments" });
 	for (const n of live)
 		for (let d: string | null = parentOf(n.path); d !== null; d = d === "" ? null : parentOf(d)) folder(d).sub++;
@@ -589,8 +590,18 @@ export const generate = (snap: Snapshot): Generated => {
 		(g) => g.family === "folder" || g.signal === "link-property" || g.signal === "tag-hierarchy",
 	);
 	const kinds = new Set<Group>();
+	const sets = new Map<string, Group[]>();
+	for (const t of topics) {
+		const key = t.family === "folder" ? `folder:${t.container ?? ""}` : `${t.signal}:${t.at}`;
+		sets.set(key, [...(sets.get(key) ?? []), t]);
+	}
+	const topicSets = [...sets.values()];
+	const folderGroups = groups.filter((g) => g.family === "folder" && g.signal !== "flat-tag");
+	const folderNames = new Set(folderGroups.map((g) => compact(g.name)));
+	const folderPaths = folderGroups.map((g) => g.folder ?? "").filter(Boolean);
 	for (const [id, gs] of kindKeys) {
-		if (gs.length < 2 || gs.length > 12) continue;
+		// Any number of values: real `type` keys have dozens; the partition and spread tests decide.
+		if (gs.length < 2) continue;
 		const keyNotes = new Set(gs.flatMap((g) => [...g.members]));
 		const count = new Map<string, number>();
 		for (const g of gs) for (const p of g.members) count.set(p, (count.get(p) ?? 0) + 1);
@@ -604,17 +615,37 @@ export const generate = (snap: Snapshot): Generated => {
 			});
 			continue;
 		}
-		const others = topics.filter((t) => !gs.includes(t));
-		const coveredBy = others.filter((t) => [...t.members].some((p) => keyNotes.has(p)));
-		const covered = new Set(coveredBy.flatMap((t) => [...t.members].filter((p) => keyNotes.has(p)))).size;
-		if (coveredBy.length < 2 || covered / keyNotes.size < 0.3) continue;
-		const spread = gs.filter((g) => {
-			const shares = others
-				.map((t) => [...g.members].filter((p) => t.members.has(p)).length)
-				.filter((x) => x > 0);
-			return shares.length >= 3 && Math.max(...shares) < g.members.size / 2;
+		// Values that agree with folders (same names, or links to notes in them) are the topics themselves.
+		const agreeing = gs.filter(
+			(g) =>
+				folderNames.has(compact(g.name)) ||
+				(g.target !== undefined && folderPaths.some((f) => under(g.target as string, f))),
+		).length;
+		if (agreeing / gs.length >= 0.5) continue;
+		// Judged within one set of sibling topics at a time (a container's children, one link key's
+		// targets, one tag root's children): big parent folders and tiny nested ones must not blur it.
+		const isKind = topicSets.some((set) => {
+			const others = set.filter((t) => !gs.includes(t));
+			const touching = others.filter((t) => [...t.members].some((p) => keyNotes.has(p)));
+			const covered = new Set(touching.flatMap((t) => [...t.members].filter((p) => keyNotes.has(p)))).size;
+			if (touching.length < 3 || covered / keyNotes.size < 0.3) return false;
+			// Spread: a value's notes sit in ≥ 3 of these topics, none holding half of them (weighted by notes).
+			const spread = gs.filter((g) => {
+				const shares = touching
+					.map((t) => [...g.members].filter((p) => t.members.has(p)).length)
+					.filter((x) => x > 0);
+				return shares.length >= 3 && Math.max(...shares) < g.members.size / 2;
+			});
+			const spreadNotes = spread.reduce((n, g) => n + g.members.size, 0);
+			const totalNotes = gs.reduce((n, g) => n + g.members.size, 0);
+			// Or: each topic holds 3 or more of its values (a kind recurs inside every topic).
+			const per = touching
+				.map((t) => gs.filter((g) => [...g.members].some((p) => t.members.has(p))).length)
+				.sort((a, b) => a - b);
+			const median = per[Math.floor(per.length / 2)] ?? 0;
+			return spreadNotes / totalNotes >= 0.6 || median >= 3;
 		});
-		if (spread.length / gs.length < 0.6) continue;
+		if (!isKind) continue;
 		for (const g of gs) kinds.add(g);
 		notProposed.push({
 			what: id.replace(/^property:/, "values of ").replace(/^tag:/, "children of #"),
@@ -703,14 +734,33 @@ export const generate = (snap: Snapshot): Generated => {
 		const kids = candidates.filter((g) => g.container === c && g.signal === "container-folder");
 		if (!kids.length) continue;
 		const agreed = kids.filter((g) =>
-			(merged.get(find(candidates.indexOf(g))) ?? []).some((x) => x.family !== "folder"),
+			(merged.get(find(candidates.indexOf(g))) ?? []).some(
+				(x) => x.family !== "folder" && x.signal !== "flat-tag",
+			),
 		);
 		if (agreed.length / kids.length >= 0.5) agreeing.add(c);
 	}
-	const depths = containers.map((c) => (c === "" ? 0 : c.split("/").length));
-	const shallowest = depths.length ? Math.min(...depths) : 0;
-	const primary = (c: string): boolean =>
-		agreeing.size ? agreeing.has(c) : (c === "" ? 0 : c.split("/").length) === shallowest;
+	// Per branch, top-down: a container whose children agree is primary; one with agreement below it
+	// defers to that level; otherwise the shallowest container on the branch is; all below a primary one are not.
+	const isContainer = new Set(containers);
+	const containerParent = (c: string): string | null => {
+		for (let d = c === "" ? null : parentOf(c); d !== null; d = d === "" ? null : parentOf(d))
+			if (isContainer.has(d)) return d;
+		return null;
+	};
+	const agreeBelow = (c: string): boolean => [...agreeing].some((a) => a !== c && under(a, c));
+	const primaryOf = new Map<string, boolean>();
+	const decide = (c: string): boolean => {
+		const known = primaryOf.get(c);
+		if (known !== undefined) return known;
+		const up = containerParent(c);
+		let above = false;
+		for (let a = up; a !== null; a = containerParent(a)) if (decide(a)) above = true;
+		const result = agreeing.has(c) ? !above || !agreeing.has(up ?? "\u0000") : !above && !agreeBelow(c);
+		primaryOf.set(c, result);
+		return result;
+	};
+	const primary = (c: string): boolean => decide(c);
 
 	// Name, count, default.
 	const proposals: Proposal[] = [];
