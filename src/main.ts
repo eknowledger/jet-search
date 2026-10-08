@@ -35,6 +35,8 @@ export default class JetSearchPlugin extends Plugin {
 	feeder!: Feeder;
 	search!: Search;
 	scopes!: ScopeKeeper;
+	/** Obsidian keeps the tab's definitions from its last update(): call it when settings change elsewhere. */
+	settingTab!: JetSettingTab;
 	private sleepTimer: number | null = null;
 	private readonly standIns: string[] = [];
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
@@ -73,7 +75,8 @@ export default class JetSearchPlugin extends Plugin {
 		);
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
-		this.addSettingTab(new JetSettingTab(this.app, this));
+		this.settingTab = new JetSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
 		this.app.workspace.onLayoutReady(() => this.listen());
 	}
 

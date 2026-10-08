@@ -12,6 +12,7 @@ import {
 	type SettingDefinitionItem,
 	type SettingDefinitionPage,
 	type SettingGroupItem,
+	type SettingPage,
 } from "obsidian";
 import { closeSettingPage } from "../internals";
 import { type Mode, type Rule, type Scope, scopeId } from "../scopes/model";
@@ -28,8 +29,12 @@ export type ScopesHost = {
 	ruleCount(rule: Rule): number | null;
 	/** The scopes changed: members again, and the page drawn again. */
 	changed(): void;
-	/** Open the Generate review (first time) or the review of what is new. */
-	generate(): void;
+	/** Open the Generate review (first time) or the review of what is new; false when it cannot from a button. */
+	generate(): boolean;
+	/** The Generate page itself (for a navigable row when a button cannot open it). */
+	generatePage(): SettingPage;
+	/** Whether a button can open a settings page (Obsidian's internal openPage). */
+	canOpenPages(): boolean;
 	/** How many new scopes Jet has noticed since the last generation. */
 	newCount(): number;
 };
@@ -77,8 +82,21 @@ export const scopesPage = (h: ScopesHost): SettingDefinitionPage => {
 	const all = h.scopes();
 	const generatedBefore = all.some((s) => s.source === "generated");
 	const fresh = h.newCount();
+	const findName = generatedBefore ? "Find new scopes" : "Find scopes in your vault";
+	const findDesc = generatedBefore
+		? fresh
+			? `${fresh} new since you last generated.`
+			: "Looks at your folders, properties and tags again; shows only what is new or changed."
+		: "Looks at your folders, properties and tags for groups of notes, and proposes a scope for each. " +
+			"Run it again at any time: it shows only what is new or changed.";
+	const findPage: SettingDefinitionPage = {
+		type: "page",
+		name: findName,
+		desc: findDesc,
+		page: () => h.generatePage(),
+	};
 	const find: SettingDefinition = {
-		name: generatedBefore ? "Find new scopes" : "Find scopes in your vault",
+		name: findName,
 		desc: generatedBefore
 			? fresh
 				? `${fresh} new since you last generated.`
@@ -110,7 +128,7 @@ export const scopesPage = (h: ScopesHost): SettingDefinitionPage => {
 		desc: SCOPES_INTRO,
 		displayValue: () => scopesSummary(h),
 		items: [
-			{ type: "group", items: [find, whenNew] },
+			{ type: "group", items: [h.canOpenPages() ? find : findPage, whenNew] },
 			{
 				type: "list",
 				items: all.map((s) => scopePage(h, s)),

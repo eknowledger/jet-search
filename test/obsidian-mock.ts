@@ -140,6 +140,18 @@ export class Modal {
 }
 
 /** Counts calls to every vault method that reads a file or lists files. */
+/** A settings sub-page (Obsidian 1.13): the page draws itself into containerEl. */
+export abstract class SettingPage {
+	readonly rootEl = document.createElement("div");
+	readonly titlebarEl = document.createElement("div");
+	readonly containerEl = document.createElement("div");
+	title = "";
+	abstract display(): void;
+	hide(): void {}
+}
+
+export const moment = Object.assign(() => ({}), { locale: () => "en" });
+
 /** Obsidian's fuzzy picker: `choose(text)` picks the item whose text includes it (tests). */
 export class FuzzySuggestModal<T> extends Modal {
 	placeholder = "";
@@ -463,6 +475,7 @@ export class Control {
 	}
 	onClick(h: () => unknown): this {
 		this.handler = h;
+		this.buttonEl.addEventListener("click", () => void h());
 		return this;
 	}
 }

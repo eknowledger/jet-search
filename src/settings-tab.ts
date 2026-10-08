@@ -7,10 +7,14 @@ import {
 	type SettingDefinition,
 	type SettingDefinitionItem,
 	type SettingDefinitionPage,
+	type SettingPage,
 } from "obsidian";
 import { BUILD_ID } from "./build-id";
+import { openSettingPage } from "./internals";
+import { obsidianSnapshot } from "./scopes/snapshot-obsidian";
 import { STEM_LANGUAGES } from "./engine/stem";
 import { clearIndex, rebuild, statusNow } from "./index-status";
+import { createGeneratePage } from "./settings/generate-page";
 import { pickFolder } from "./settings/rule-pickers";
 import { type ScopesHost, scopesPage } from "./settings/scopes-page";
 import type JetSearchPlugin from "./main";
@@ -340,9 +344,30 @@ export class JetSettingTab extends PluginSettingTab {
 				keeper.reset();
 				this.redraw();
 			},
-			generate: () => new Notice("Generating scopes is not ready yet."),
+			generate: () => {
+				const page = this.generatePage();
+				return !!page && openSettingPage(this.app, page);
+			},
+			generatePage: () => this.generatePage() as SettingPage,
+			canOpenPages: () => !!(this.app as unknown as { setting?: { openPage?: unknown } }).setting?.openPage,
 			newCount: () => 0,
 		};
+	}
+
+	private generatePage(): SettingPage | null {
+		return createGeneratePage({
+			app: this.app,
+			scopes: () => this.owner.data.scopes,
+			setScopes: (scopes) => {
+				this.owner.data.scopes = scopes;
+			},
+			save: () => this.owner.save(),
+			changed: () => {
+				this.owner.scopes.reset();
+				this.redraw();
+			},
+			snapshot: () => obsidianSnapshot(this.app, this.owner.data.settings.exclude),
+		});
 	}
 
 	/** Draw the tab again with fresh values (after a rebuild or a clear). */
