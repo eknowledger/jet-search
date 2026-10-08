@@ -1,7 +1,10 @@
 import { type App, MarkdownView, normalizePath, Notice, type TFile } from "obsidian";
 import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
-import type { Entry, ModalHost, OpenHow } from "./modal/jet-modal";
+import type { Entry, HintState, ModalHost, OpenHow, ScopeCard, ScopeView, Typed } from "./modal/jet-modal";
+import type { Rule, Scope } from "./scopes/model";
+import { parseScope } from "./scopes/parse";
+import { MODE_LABEL } from "./settings/scopes-page";
 import type { Search } from "./search";
 import type { IndexStatus } from "./index-status";
 
@@ -15,6 +18,34 @@ export const iconOf = (app: App, file: TFile): string => {
 	return "file-text";
 };
 
+/** The scopes as the host needs them (the plugin's scopes and its ScopeKeeper). */
+export type HostScopes = {
+	all(): readonly Scope[];
+	/** The members pass, if not done yet (a few ms, once). */
+	ensure(): void;
+	count(id: string): number;
+	membersOf(id: string): ReadonlySet<string>;
+	ruleCount(rule: Rule): number;
+	/** Open the scope's settings page. */
+	edit(id: string): void;
+};
+
+/** Notes listed for a scope with nothing typed. */
+const SCOPE_RECENTS = 50;
+
+/** A scope and its text as a recent search: the explicit form, so choosing it applies the scope again. */
+export const scopedSearch = (name: string, text: string): string =>
+	`in:${/[\s"]/.test(name) ? `"${name.replace(/"/g, "")}"` : name}${text.trim() ? ` ${text.trim()}` : ""}`;
+
+/** One rule as the chip's card says it. */
+const ruleLine = (r: Rule): { icon: string; text: string } => {
+	if (r.kind === "folder") return { icon: "folder", text: `${r.path}/ and below` };
+	if (r.kind === "tag") return { icon: "hash", text: `${r.tag} and nested tags` };
+	if ("target" in r)
+		return { icon: "link", text: `${r.key} → [[${(r.target.split("/").pop() ?? "").replace(/\.md$/i, "")}]]` };
+	return { icon: "equal", text: `${r.key} = ${r.value}` };
+};
+
 /** What the modal shows: recents and recent searches with no text, else the search's answers. */
 export class JetHost implements ModalHost {
 	readonly placeholder = "Search notes…";
@@ -26,7 +57,86 @@ export class JetHost implements ModalHost {
 		private readonly newTab: () => boolean,
 		private readonly search: () => Search,
 		private readonly index?: { status: () => Promise<IndexStatus>; rebuild: () => Promise<void> },
+		private readonly scopeAccess?: HostScopes,
 	) {}
+
+	/** Rule counts for the chip's card, kept while the modal is open (each is a pass over the vault). */
+	private readonly ruleCounts = new Map<string, number>();
+
+	/** Scope typing for the modal, when there are scopes. */
+	get scopes(): ModalHost["scopes"] {
+		const a = this.scopeAccess;
+		if (!a?.all().length) return undefined;
+		return { typed: (t) => this.typed(a, t), card: (id) => this.card(a, id), edit: (id) => a.edit(id) };
+	}
+
+	private typed(a: HostScopes, text: string): Typed {
+		const p = parseScope(text, a.all());
+		if (!p.applied && !p.suggest && !p.hint) return {};
+		a.ensure();
+		const view = (s: Scope): ScopeView => ({ id: s.id, name: s.name, kind: s.kind, members: a.count(s.id) });
+		if (p.applied) return { applied: { scope: view(p.applied), text: p.text, complete: !!p.complete } };
+		if (p.suggest) {
+			const [first, ...others] = p.suggest.scopes;
+			if (!first) return {};
+			return {
+				suggest: {
+					scope: view(first),
+					others: others.map(view),
+					name: p.suggest.name,
+					rest: p.suggest.rest,
+					at: text.length - text.trimStart().length,
+				},
+			};
+		}
+		return p.hint ? { hint: view(p.hint) } : {};
+	}
+
+	private card(a: HostScopes, id: string): ScopeCard {
+		const s = a.all().find((x) => x.id === id);
+		if (!s) return { name: "", kind: "", mode: "", rules: [], total: 0, aliases: [] };
+		const count = (r: Rule): number => {
+			const key = JSON.stringify(r);
+			let n = this.ruleCounts.get(key);
+			if (n === undefined) {
+				n = a.ruleCount(r);
+				this.ruleCounts.set(key, n);
+			}
+			return n;
+		};
+		return {
+			name: s.name,
+			kind: s.kind,
+			mode: MODE_LABEL[s.mode],
+			all: s.combine === "all",
+			rules: s.rules.map((r) => ({ ...ruleLine(r), count: count(r) })),
+			total: a.count(s.id),
+			aliases: [...s.aliases],
+		};
+	}
+
+	/** A scope's notes with nothing typed: those you opened, most recent first, then by last change. */
+	private scopeRecents(id: string): Entry[] {
+		const a = this.scopeAccess;
+		if (!a) return [];
+		a.ensure();
+		const now = Date.now();
+		const opened = this.data().opened;
+		const files = [...a.membersOf(id)]
+			.map((p) => this.app.vault.getFileByPath(p))
+			.filter((f): f is TFile => !!f)
+			.map((f) => {
+				const at = opened[f.path]?.[1];
+				return { f, tier: at === undefined ? 0 : 1, at: at ?? f.stat.mtime };
+			})
+			.sort((x, y) => y.tier - x.tier || y.at - x.at)
+			.slice(0, SCOPE_RECENTS);
+		if (!files.length) return [];
+		return [
+			{ type: "header", label: "Recent", count: files.length },
+			...files.map(({ f, at }) => ({ ...this.item(f, now), meta: age(at, now) })),
+		];
+	}
 
 	/** The popover from the footer: excerpts, the double tap window, the index. */
 	renderSettings(el: HTMLElement): void {
@@ -80,13 +190,13 @@ export class JetHost implements ModalHost {
 		});
 	}
 
-	list(text: string, paint: (entries: Entry[], status?: string) => void): void {
+	list(text: string, paint: (entries: Entry[], status?: string) => void, scope?: string): void {
 		if (!text.trim()) {
-			paint(this.recents());
+			paint(scope !== undefined ? this.scopeRecents(scope) : this.recents());
 			this.search().warm();
 			return;
 		}
-		this.search().list(text, paint);
+		this.search().list(text, paint, scope);
 	}
 
 	recents(): Entry[] {
@@ -141,9 +251,40 @@ export class JetHost implements ModalHost {
 		void leaf.openFile(file);
 	}
 
-	hints(text: string): Array<[string, string]> {
+	hints(text: string, state: HintState = {}): Array<[string, string]> {
 		const t = text.trim();
 		const short = t.length > 18 ? `${t.slice(0, 17)}…` : t;
+		const tab = this.newTab() ? "Same tab" : "New tab";
+		if (state.chip && state.selected)
+			return [
+				["⌫", `Remove ${state.chip} (it returns as text)`],
+				["Esc", "Keep it"],
+				["↵", "Open"],
+			];
+		if (state.chip)
+			return t
+				? [
+						["↵", "Open"],
+						["⌘↵", tab],
+						["⌥↵", "Insert link"],
+						["⌫", `Remove ${state.chip}`],
+						["⌘.", "Preview"],
+					]
+				: [
+						["↵", "Open"],
+						["↑↓", "Choose"],
+						["⌫", `Remove ${state.chip}`],
+						["Esc", "Clear"],
+					];
+		const named = state.suggest ?? state.hint;
+		if (named)
+			return [
+				["⇥", `Search in ${named}`],
+				["↵", "Open"],
+				["⌘↵", tab],
+				["⌥↵", "Insert link"],
+				state.hint ? ["⇧↵", `Create “${short}”`] : ["⌘.", "Preview"],
+			];
 		return t
 			? [
 					["↵", "Open"],
@@ -206,8 +347,9 @@ export class JetHost implements ModalHost {
 		});
 	}
 
-	closed(text: string, opened: boolean): void {
-		if (opened) rememberSearch(this.data(), text);
+	closed(text: string, opened: boolean, scope?: ScopeView): void {
+		this.ruleCounts.clear();
+		if (opened) rememberSearch(this.data(), scope ? scopedSearch(scope.name, text) : text);
 		this.search().idle();
 		this.save();
 	}

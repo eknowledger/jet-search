@@ -1,0 +1,138 @@
+import { describe, expect, it } from "vitest";
+import { App, TFile } from "obsidian";
+import { normalizeData } from "../src/data";
+import { type HostScopes, JetHost } from "../src/host";
+import type { Entry } from "../src/modal/jet-modal";
+import type { Rule, Scope } from "../src/scopes/model";
+import type { Search } from "../src/search";
+
+const COBALT: Scope = {
+	id: "cobalt",
+	name: "Cobalt",
+	aliases: ["cob"],
+	kind: "Projects",
+	rules: [
+		{ kind: "folder", path: "2.Projects/Cobalt" },
+		{ kind: "property", key: "project", target: "2.Projects/Cobalt/Cobalt.md" },
+		{ kind: "tag", tag: "#cobalt" },
+	],
+	combine: "any",
+	mode: "suggest",
+	source: "generated",
+};
+const STUDIO: Scope = { ...COBALT, id: "amb", name: "Amber Studio", aliases: [], kind: "Areas" };
+
+const setup = (scopes: Scope[] = [COBALT, STUDIO]) => {
+	const app = new App();
+	const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
+	const paths = ["2.Projects/Cobalt/Plan.md", "2.Projects/Cobalt/Notes.md", "2.Projects/Cobalt/Old.md"];
+	paths.forEach((p, i) => {
+		const f = new TFile(p);
+		f.stat.mtime = 1000 * (i + 1);
+		files.set(p, f);
+	});
+	const data = normalizeData(null);
+	data.opened["2.Projects/Cobalt/Old.md"] = [1, 5000];
+	const searched: Array<[string, string | undefined]> = [];
+	const edited: string[] = [];
+	let ensured = 0;
+	const access: HostScopes = {
+		all: () => scopes,
+		ensure: () => {
+			ensured++;
+		},
+		count: (id) => (id === "cobalt" ? 3 : 0),
+		membersOf: (id) => new Set(id === "cobalt" ? paths : []),
+		ruleCount: (r: Rule) => (r.kind === "folder" ? 3 : r.kind === "tag" ? 2 : 1),
+		edit: (id) => edited.push(id),
+	};
+	const search = {
+		list: (t: string, _p: unknown, s?: string) => searched.push([t, s]),
+		warm: () => {},
+		idle: () => {},
+	} as unknown as Search;
+	const host = new JetHost(
+		app as never,
+		() => data,
+		() => {},
+		() => false,
+		() => search,
+		undefined,
+		access,
+	);
+	return { host, data, searched, edited, ensured: () => ensured };
+};
+
+describe("the host's scopes", () => {
+	it("no scopes, no scope typing", () => {
+		expect(setup([]).host.scopes).toBeUndefined();
+	});
+
+	it("tells the modal what the text says, with the scope's size known for the banner", () => {
+		const { host, ensured } = setup();
+		const t = host.scopes?.typed("  Cobalt world");
+		expect(t?.suggest).toMatchObject({ scope: { id: "cobalt", name: "Cobalt", members: 3 }, rest: "world", at: 2 });
+		expect(ensured()).toBe(1);
+		expect(host.scopes?.typed("Cobalt")?.hint?.id).toBe("cobalt");
+		expect(host.scopes?.typed("@cob world")?.applied).toMatchObject({ text: "world", complete: true });
+		expect(host.scopes?.typed("garden")).toEqual({});
+	});
+
+	it("the card: each rule in words with its count, the total and the aliases", () => {
+		const c = setup().host.scopes?.card("cobalt");
+		expect(c).toEqual({
+			name: "Cobalt",
+			kind: "Projects",
+			mode: "Suggest",
+			all: false,
+			rules: [
+				{ icon: "folder", text: "2.Projects/Cobalt/ and below", count: 3 },
+				{ icon: "link", text: "project → [[Cobalt]]", count: 1 },
+				{ icon: "hash", text: "#cobalt and nested tags", count: 2 },
+			],
+			total: 3,
+			aliases: ["cob"],
+		});
+	});
+
+	it("searches inside the chip's scope; no text lists its notes, opened first, then by change", () => {
+		const { host, searched } = setup();
+		host.list("world", () => {}, "cobalt");
+		expect(searched).toEqual([["world", "cobalt"]]);
+		let shown: Entry[] = [];
+		host.list("", (e) => (shown = e), "cobalt");
+		expect(shown[0]).toMatchObject({ type: "header", label: "Recent" });
+		expect(shown.filter((e) => e.type === "item").map((e) => (e as { path: string }).path)).toEqual([
+			"2.Projects/Cobalt/Old.md",
+			"2.Projects/Cobalt/Notes.md",
+			"2.Projects/Cobalt/Plan.md",
+		]);
+	});
+
+	it("hints follow the scope state", () => {
+		const { host } = setup();
+		expect(host.hints("Cobalt world", { suggest: "Cobalt" })[0]).toEqual(["⇥", "Search in Cobalt"]);
+		expect(host.hints("Cobalt", { hint: "Cobalt" })[0]).toEqual(["⇥", "Search in Cobalt"]);
+		expect(host.hints("world", { chip: "Cobalt" }).map((h) => h[0])).toContain("⌫");
+		expect(host.hints("", { chip: "Cobalt" })).toContainEqual(["Esc", "Clear"]);
+		expect(host.hints("world", { chip: "Cobalt", selected: true })[0]).toEqual([
+			"⌫",
+			"Remove Cobalt (it returns as text)",
+		]);
+	});
+
+	it("remembers a search with its scope, in the form that applies it again", () => {
+		const { host, data } = setup();
+		const view = (s: Scope) => ({ id: s.id, name: s.name, kind: s.kind, members: 3 });
+		host.closed("garden plan", true, view(COBALT));
+		host.closed("plugin", true, view(STUDIO));
+		host.closed("", true, view(COBALT));
+		expect(data.searches).toEqual(["in:Cobalt", 'in:"Amber Studio" plugin', "in:Cobalt garden plan"]);
+	});
+
+	it("Edit scope opens the scope's settings", () => {
+		const { host, edited } = setup();
+		host.scopes?.edit("cobalt");
+		expect(edited).toEqual(["cobalt"]);
+	});
+});

@@ -4,7 +4,7 @@ import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
 import { Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
-import { addCommandAs, hasCommand, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
+import { addCommandAs, hasCommand, openSettingsAt, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
 import { ScopeKeeper } from "./scopes/keeper";
@@ -91,6 +91,17 @@ export default class JetSearchPlugin extends Plugin {
 				return this.search;
 			},
 			{ status: () => indexStatus(this), rebuild: () => rebuild(this) },
+			{
+				all: () => this.data.scopes,
+				ensure: () => this.scopes.ensure(),
+				count: (id) => this.scopes.count(id),
+				membersOf: (id) => this.scopes.membersOf(id),
+				ruleCount: (r) => this.scopes.ruleCount(r),
+				edit: (id) => {
+					const s = this.data.scopes.find((x) => x.id === id);
+					if (s) openSettingsAt(this.app, this.manifest.id, ["Scopes", s.name]);
+				},
+			},
 		);
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });

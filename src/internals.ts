@@ -15,6 +15,9 @@ type Internals = {
 	setting?: {
 		openPage?: (page: SettingPage) => void;
 		closePage?: () => void;
+		open?: () => void;
+		openTabById?: (id: string) => void;
+		modalEl?: HTMLElement;
 	};
 };
 
@@ -71,3 +74,27 @@ export const openSettingPage = (app: App, page: SettingPage): boolean => {
 
 /** Go back one settings sub-page (after deleting the scope the page showed). */
 export const closeSettingPage = (app: App): void => internals(app).setting?.closePage?.();
+
+/**
+ * Open Jet's settings at a sub-page chain (["Scopes", "Cobalt"]) by choosing each navigable row, as
+ * you would. Stops at the first row it cannot find (settings stay open where they are).
+ */
+export const openSettingsAt = (app: App, tab: string, rows: readonly string[]): void => {
+	const s = internals(app).setting;
+	if (!s?.open || !s.openTabById) return;
+	s.open();
+	s.openTabById(tab);
+	const step = (i: number): void => {
+		const name = rows[i];
+		if (name === undefined) return;
+		window.setTimeout(() => {
+			const row = [...(s.modalEl?.querySelectorAll<HTMLElement>(".setting-item.mod-navigable") ?? [])].find(
+				(r) => r.querySelector(".setting-item-name")?.textContent?.trim() === name,
+			);
+			if (!row) return;
+			row.click();
+			step(i + 1);
+		}, 120);
+	};
+	step(0);
+};

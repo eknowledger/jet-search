@@ -76,6 +76,13 @@ describe("typing a scope", () => {
 		expect(b.applied?.id).toBe("cobalt");
 		expect(b.text).toBe("garden plan");
 		expect(b.suggest).toBeUndefined();
+		expect(b.complete).toBe(true);
+	});
+
+	it("an explicit form still being typed is not complete (the modal waits for the space)", () => {
+		expect(parseScope("@cob", SCOPES)).toMatchObject({ complete: false, text: "" });
+		expect(parseScope("world @cob", SCOPES).complete).toBe(false);
+		expect(parseScope('in:"Amber Studio"', SCOPES).complete).toBe(true);
 	});
 
 	it("explicit forms take a quoted or joined multi-word name", () => {

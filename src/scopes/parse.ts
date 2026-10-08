@@ -12,6 +12,11 @@ export type Parsed = {
 	text: string;
 	/** Applied by `in:name` or `@name` (the first scope of that name). */
 	applied?: Scope;
+	/**
+	 * The explicit form is finished: quoted, or a space follows it. While `@cob` is still being typed
+	 * it may already name a scope by an alias; the modal waits for the space.
+	 */
+	complete?: boolean;
 	/** The scopes whose name starts the text, the name as typed, and the text after it. */
 	suggest?: { scopes: Scope[]; name: string; rest: string };
 	/** The text is a scope's name alone. */
@@ -51,8 +56,10 @@ export const parseScope = (input: string, scopes: readonly Scope[]): Parsed => {
 		const key = compact(explicit[2] ?? explicit[3] ?? "");
 		const s = key ? scopes.find((x) => [x.name, ...x.aliases].some((n) => compact(n) === key)) : undefined;
 		if (s) {
-			const text = `${input.slice(0, explicit.index)}${explicit[1] ?? ""}${input.slice(explicit.index + explicit[0].length)}`;
-			return { text: text.replace(/\s+/g, " ").trim(), applied: s };
+			const end = explicit.index + explicit[0].length;
+			const text = `${input.slice(0, explicit.index)}${explicit[1] ?? ""}${input.slice(end)}`;
+			const complete = explicit[2] !== undefined || /\s/u.test(input[end] ?? "");
+			return { text: text.replace(/\s+/g, " ").trim(), applied: s, complete };
 		}
 	}
 	const byName = namesOf(scopes);

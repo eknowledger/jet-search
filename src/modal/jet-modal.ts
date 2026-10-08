@@ -6,7 +6,8 @@ export type Ranges = ReadonlyArray<readonly [number, number]>;
 
 /** One line of the result list: a group header, a result, or a recent search. */
 export type Entry =
-	| { type: "header"; label: string; count?: number }
+	/** `note`: where the search runs ("in Cobalt", "everywhere"), set by the modal. */
+	| { type: "header"; label: string; count?: number; note?: string }
 	| {
 			type: "item";
 			path: string;
@@ -29,17 +30,48 @@ export type Entry =
 	/** Create a note named after the text (no-results screen). */
 	| { type: "create"; text: string; detail?: string };
 
+/** A scope as the modal shows it: its chip, banner and hints. */
+export type ScopeView = { id: string; name: string; kind: string; members: number };
+
+/** What a typed text says about scopes (the parser). */
+export type Typed = {
+	/** A name at the start, then more text: `at` is where the name starts in the text. */
+	suggest?: { scope: ScopeView; others: ScopeView[]; name: string; rest: string; at: number };
+	/** The name alone. */
+	hint?: ScopeView;
+	/** `in:name` or `@name`; `complete` once a space follows it (or it is quoted). */
+	applied?: { scope: ScopeView; text: string; complete: boolean };
+};
+
+/** The chip's card: its rules with counts. */
+export type ScopeCard = {
+	name: string;
+	kind: string;
+	mode: string;
+	all?: boolean;
+	rules: Array<{ icon: string; text: string; count: number }>;
+	total: number;
+	aliases: string[];
+};
+
+/** What the footer hints depend on, besides the text. */
+export type HintState = { suggest?: string; hint?: string; chip?: string; selected?: true };
+
 /** How to open a note. */
 export type OpenHow = "default" | "other" | "split";
 
 /** What the modal needs from the plugin. */
 export type ModalHost = {
-	/** The list for this text (empty text: recents); `paint` may be called again as results arrive. */
-	list(text: string, paint: (entries: Entry[], status?: string) => void): void;
+	/**
+	 * The list for this text (empty text: recents), inside the scope `scope` when a chip is applied;
+	 * `paint` may be called again as results arrive.
+	 */
+	list(text: string, paint: (entries: Entry[], status?: string) => void, scope?: string): void;
 	open(path: string, how: OpenHow, at?: { line: number; ch: number; len: number }): void;
-	/** Footer hints for the current text. */
-	hints(text: string): Array<[key: string, label: string]>;
-	closed(text: string, opened: boolean): void;
+	/** Footer hints for the current text and scope state. */
+	hints(text: string, state?: HintState): Array<[key: string, label: string]>;
+	/** The modal closed: its text, whether a note was opened, and the chip's scope if one was applied. */
+	closed(text: string, opened: boolean, scope?: ScopeView): void;
 	placeholder: string;
 	/** The preview pane's setting (⌘. toggles it). */
 	previewOn(): boolean;
@@ -52,12 +84,22 @@ export type ModalHost = {
 	create(text: string): void;
 	/** The footer's settings popover, if this host has one. */
 	renderSettings?(el: HTMLElement): void;
+	/** Scopes typed in the box; absent when there are none. */
+	scopes?: {
+		typed(text: string): Typed;
+		card(id: string): ScopeCard;
+		/** Open the scope's settings. */
+		edit(id: string): void;
+	};
 };
 
 /** The selection rests this long before the preview renders. */
 const PREVIEW_REST_MS = 80;
 /** Below this width the preview hides itself. */
 const NARROW_PX = 760;
+/** Hovering the chip this long opens its card; leaving it this long closes it. */
+const CARD_OPEN_MS = 250;
+const CARD_CLOSE_MS = 200;
 
 /**
  * Jet's search modal: our own list, not SuggestModal, so rows are
@@ -78,6 +120,18 @@ export class JetModal extends Modal {
 	private readonly preview: Preview;
 	private previewTimer: number | null = null;
 	private resize: ResizeObserver | null = null;
+	// Scopes: the applied chip, what the text says, and their elements.
+	private chip: ScopeView | null = null;
+	private chipSelected = false;
+	private typing: Typed = {};
+	private readonly chipEl: HTMLElement;
+	private readonly chipLabel: HTMLElement;
+	private readonly ghostEl: HTMLElement;
+	private readonly ihintEl: HTMLElement;
+	private readonly bannerEl: HTMLElement;
+	private cardEl: HTMLElement | null = null;
+	private cardTimer: number | null = null;
+	private measureCtx: CanvasRenderingContext2D | null | undefined;
 
 	constructor(
 		app: App,
@@ -90,6 +144,10 @@ export class JetModal extends Modal {
 		this.contentEl.addClass("jet-content");
 		const top = this.contentEl.createDiv({ cls: "jet-in" });
 		setIcon(top.createSpan({ cls: "jet-sic" }), "search");
+		this.chipEl = top.createSpan({ cls: "jet-chip is-hidden" });
+		this.chipLabel = this.chipEl.createSpan({ cls: "jet-chl" });
+		const x = this.chipEl.createSpan({ cls: "jet-chx", attr: { "aria-label": "Remove scope", role: "button" } });
+		setIcon(x, "x");
 		this.inputEl = top.createEl("input", {
 			cls: "jet-q",
 			attr: {
@@ -102,14 +160,40 @@ export class JetModal extends Modal {
 				"aria-autocomplete": "list",
 			},
 		});
+		this.ghostEl = top.createSpan({ cls: "jet-ghostbox is-hidden" });
+		this.ihintEl = top.createSpan({ cls: "jet-ihint is-hidden" });
 		this.statusEl = top.createSpan({ cls: "jet-status" });
+
 		const body = this.contentEl.createDiv({ cls: "jet-body" });
 		this.listEl = body.createDiv({ cls: "jet-list", attr: { id: "jet-list", role: "listbox" } });
+		// The banner sits above the rows while a scope is suggested; detached otherwise.
+		this.bannerEl = this.listEl.createDiv({ cls: "jet-ban" });
+		this.bannerEl.remove();
 		this.preview = new Preview(app, body, (a, p) => this.act(a, p));
 		this.modalEl.toggleClass("is-preview-off", !host.previewOn());
 		this.footEl = this.contentEl.createDiv({ cls: "jet-ft" });
 
-		this.inputEl.addEventListener("input", () => this.refresh());
+		this.inputEl.addEventListener("input", () => {
+			this.chipSelected = false;
+			this.refresh();
+		});
+		this.inputEl.addEventListener("scroll", () => this.placeGhost());
+		// Any key but the chip's own keeps the chip and unselects it.
+		this.inputEl.addEventListener("keydown", (e) => {
+			if (!this.chipSelected || CHIP_KEYS.has(e.key)) return;
+			this.chipSelected = false;
+			this.hideCard();
+			this.drawScope();
+			this.footer(this.inputEl.value);
+		});
+		this.chipEl.addEventListener("mousedown", (e) => e.preventDefault());
+		x.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.removeChip(false);
+		});
+		this.chipLabel.addEventListener("click", () => (this.cardEl ? this.hideCard() : this.showCard()));
+		this.chipEl.addEventListener("mouseenter", () => this.cardSoon(true));
+		this.chipEl.addEventListener("mouseleave", () => this.cardSoon(false));
 		this.listEl.addEventListener("mousedown", (e) => e.preventDefault());
 		this.listEl.addEventListener("click", (e) => {
 			const row = (e.target as HTMLElement).closest<HTMLElement>(".jet-row");
@@ -128,7 +212,7 @@ export class JetModal extends Modal {
 	onOpen(): void {
 		this.inputEl.value = this.initial;
 		this.inputEl.select();
-		this.refresh();
+		this.refresh(true);
 		this.inputEl.focus();
 		// The modal's own window (it may be a popout): its ResizeObserver.
 		const win = this.modalEl.win as Window & { ResizeObserver: typeof ResizeObserver };
@@ -143,7 +227,8 @@ export class JetModal extends Modal {
 		this.resize?.disconnect();
 		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
 		this.preview.destroy();
-		this.host.closed(this.inputEl.value, this.opened);
+		if (this.cardTimer !== null) window.clearTimeout(this.cardTimer);
+		this.host.closed(this.inputEl.value, this.opened, this.chip ?? undefined);
 		this.contentEl.empty();
 	}
 
@@ -181,6 +266,11 @@ export class JetModal extends Modal {
 
 	/** Paint a list (called by the host, maybe several times per keystroke as tiers answer). */
 	paint(entries: Entry[], status = ""): void {
+		// The first header says where the search runs: inside the chip's scope, or everywhere while one is suggested.
+		const note = this.chip ? `in ${this.chip.name}` : this.typing.suggest ? "everywhere" : undefined;
+		const h = entries.findIndex((e) => e.type === "header");
+		const first = entries[h];
+		if (note && first?.type === "header") entries = entries.map((e, i) => (i === h ? { ...first, note } : e));
 		this.entries = entries;
 		this.statusEl.setText(status);
 		// The selected note stays selected if it is still listed; else the first row.
@@ -190,18 +280,177 @@ export class JetModal extends Modal {
 		this.select(sel, false);
 	}
 
-	private refresh(): void {
+	/**
+	 * The text changed: what it says about scopes, then its list. `final`: the text was set whole (a
+	 * recent search, the prefill), so an explicit `in:name` at its end applies without a space after it.
+	 */
+	private refresh(final = false): void {
+		const raw = this.inputEl.value;
+		this.typing = {};
+		if (!this.chip && this.host.scopes) {
+			const t = this.host.scopes.typed(raw);
+			if (t.applied && (t.applied.complete || final)) {
+				this.applyChip(t.applied.scope, t.applied.text);
+				return;
+			}
+			if (!t.applied) this.typing = t;
+		}
+		this.drawScope();
 		const text = this.inputEl.value;
+		const scope = this.chip?.id;
 		this.selectedKey = null;
-		this.host.list(text, (entries, status) => {
-			if (this.inputEl.value === text) this.paint(entries, status);
-		});
+		this.host.list(
+			text,
+			(entries, status) => {
+				if (this.inputEl.value === text && this.chip?.id === scope) this.paint(entries, status);
+			},
+			scope,
+		);
 		this.footer(text);
+	}
+
+	// ── Scopes ─────────────────────────────────────
+
+	/** Tab, `in:name` or a recent search: the scope becomes the chip; the box keeps the rest. */
+	private applyChip(scope: ScopeView, text: string): void {
+		this.chip = scope;
+		this.chipSelected = false;
+		this.hideCard();
+		this.inputEl.value = text;
+		this.inputEl.setSelectionRange(text.length, text.length);
+		this.refresh();
+	}
+
+	/** × keeps the text; the second ⌫ puts the name back in front of it, as you typed it. */
+	private removeChip(nameBack: boolean): void {
+		const chip = this.chip;
+		if (!chip) return;
+		this.chip = null;
+		this.chipSelected = false;
+		this.hideCard();
+		if (nameBack) {
+			this.inputEl.value = `${chip.name} ${this.inputEl.value}`;
+			this.inputEl.setSelectionRange(chip.name.length + 1, chip.name.length + 1);
+		}
+		this.refresh();
+	}
+
+	private drawScope(): void {
+		const chip = this.chip;
+		this.chipEl.toggleClass("is-hidden", !chip);
+		this.chipEl.toggleClass("is-selected", !!chip && this.chipSelected);
+		this.chipLabel.setText(chip?.name ?? "");
+		this.inputEl.placeholder = chip ? `Search in ${chip.name}…` : this.host.placeholder;
+		const hint = !chip ? this.typing.hint : undefined;
+		this.ihintEl.toggleClass("is-hidden", !hint);
+		this.ihintEl.empty();
+		if (hint) {
+			this.ihintEl.createEl("kbd", { text: "⇥" });
+			this.ihintEl.appendText(`Search in ${hint.name}`);
+		}
+		const s = this.typing.suggest;
+		if (s) {
+			this.bannerEl.empty();
+			setIcon(this.bannerEl.createSpan({ cls: "jet-bic" }), "scan-search");
+			const t = this.bannerEl.createSpan({ cls: "jet-bt" });
+			t.appendText("Search in ");
+			t.createEl("b", { text: s.scope.name });
+			const n = s.scope.members;
+			t.appendText(` for “${s.rest}” · ${n.toLocaleString()} note${n === 1 ? "" : "s"}`);
+			if (s.others.length) t.appendText(` · also ${s.others.map((o) => o.kind || o.name).join(", ")}`);
+			const k = this.bannerEl.createSpan({ cls: "jet-bk" });
+			k.createEl("kbd", { text: "⇥" });
+			k.appendText("Tab");
+			if (this.bannerEl.parentElement !== this.listEl) this.listEl.prepend(this.bannerEl);
+		} else this.bannerEl.remove();
+		this.placeGhost();
+		if (!chip) this.hideCard();
+	}
+
+	/** A dashed box around the typed name; the text itself does not move. */
+	private placeGhost(): void {
+		const s = this.typing.suggest;
+		this.ghostEl.toggleClass("is-hidden", !s);
+		if (!s) return;
+		const raw = this.inputEl.value;
+		const left = this.inputEl.offsetLeft + this.textWidth(raw.slice(0, s.at)) - this.inputEl.scrollLeft;
+		this.ghostEl.style.left = `${left - 5}px`;
+		this.ghostEl.style.width = `${this.textWidth(raw.slice(s.at, s.at + s.name.length)) + 10}px`;
+	}
+
+	private textWidth(text: string): number {
+		if (this.measureCtx === undefined) {
+			const canvas = this.contentEl.createEl("canvas");
+			canvas.remove();
+			this.measureCtx = canvas.getContext?.("2d") ?? null;
+		}
+		const ctx = this.measureCtx;
+		if (!ctx) return text.length * 9;
+		const cs = this.inputEl.win.getComputedStyle(this.inputEl);
+		ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+		return ctx.measureText(text).width;
+	}
+
+	private hintState(): HintState {
+		if (this.chip) return this.chipSelected ? { chip: this.chip.name, selected: true } : { chip: this.chip.name };
+		if (this.typing.suggest) return { suggest: this.typing.suggest.scope.name };
+		if (this.typing.hint) return { hint: this.typing.hint.name };
+		return {};
+	}
+
+	private cardSoon(open: boolean): void {
+		if (this.cardTimer !== null) window.clearTimeout(this.cardTimer);
+		this.cardTimer = window.setTimeout(
+			() => {
+				this.cardTimer = null;
+				if (open) this.showCard();
+				else this.hideCard();
+			},
+			open ? CARD_OPEN_MS : CARD_CLOSE_MS,
+		);
+	}
+
+	/** The chip's rules with counts, under the chip. */
+	private showCard(): void {
+		const chip = this.chip;
+		if (!chip || !this.host.scopes || this.cardEl) return;
+		const c = this.host.scopes.card(chip.id);
+		const card = this.chipEl.parentElement?.createDiv({ cls: "jet-card" });
+		if (!card) return;
+		this.cardEl = card;
+		card.style.left = `${this.chipEl.offsetLeft}px`;
+		card.addEventListener("mousedown", (e) => e.preventDefault());
+		card.addEventListener("mouseenter", () => this.cardSoon(true));
+		card.addEventListener("mouseleave", () => this.cardSoon(false));
+		const h = card.createDiv({ cls: "jet-c1", text: c.name });
+		h.createSpan({ text: ` · ${[c.kind, c.mode].filter(Boolean).join(" · ")}` });
+		card.createDiv({ cls: "jet-cm", text: c.all ? "Notes matching all of" : "Notes matching any of" });
+		for (const r of c.rules) {
+			const row = card.createDiv({ cls: "jet-cr2" });
+			setIcon(row.createSpan({ cls: "jet-ci" }), r.icon);
+			row.createSpan({ text: r.text });
+			row.createSpan({ cls: "jet-cn", text: r.count.toLocaleString() });
+		}
+		const f = card.createDiv({ cls: "jet-cf" });
+		const aliases = c.aliases.length ? ` · aliases ${c.aliases.join(", ")}` : "";
+		f.createSpan({ text: `${c.total.toLocaleString()} notes in all${aliases}` });
+		const edit = f.createSpan({ cls: "jet-ce", attr: { role: "button" } });
+		setIcon(edit, "settings");
+		edit.appendText("Edit scope");
+		edit.addEventListener("click", () => {
+			this.host.scopes?.edit(chip.id);
+			this.close();
+		});
+	}
+
+	private hideCard(): void {
+		this.cardEl?.remove();
+		this.cardEl = null;
 	}
 
 	private footer(text: string): void {
 		this.footEl.empty();
-		for (const [key, label] of this.host.hints(text)) {
+		for (const [key, label] of this.host.hints(text, this.hintState())) {
 			const h = this.footEl.createSpan({ cls: "jet-ht" });
 			h.createEl("kbd", { text: key });
 			h.appendText(label);
@@ -281,7 +530,7 @@ export class JetModal extends Modal {
 		if (!e) return;
 		if (e.type === "search") {
 			this.inputEl.value = e.query;
-			this.refresh();
+			this.refresh(true);
 			return;
 		}
 		if (e.type === "create") {
@@ -302,10 +551,47 @@ export class JetModal extends Modal {
 		const escapes = (scope.keys ?? []).filter((k) => k.key === "Escape");
 		for (const k of escapes) scope.unregister(k);
 		this.scope.register([], "Escape", () => {
-			if (this.inputEl.value) {
+			if (this.chipSelected) {
+				this.chipSelected = false;
+				this.hideCard();
+				this.drawScope();
+				this.footer(this.inputEl.value);
+			} else if (this.inputEl.value || this.chip) {
 				this.inputEl.value = "";
+				this.chip = null;
 				this.refresh();
 			} else this.close();
+			return false;
+		});
+		// Tab accepts the suggestion, or the name alone with nothing typed yet.
+		this.scope.register([], "Tab", (e) => {
+			if (e.isComposing || this.chip) return;
+			const s = this.typing.suggest;
+			if (s) {
+				this.applyChip(s.scope, s.rest);
+				return false;
+			}
+			if (this.typing.hint) {
+				this.applyChip(this.typing.hint, "");
+				return false;
+			}
+		});
+		// ⌫ at the start selects the chip, then removes it; ← at the start opens its card.
+		this.scope.register([], "Backspace", (e) => {
+			if (e.isComposing || !this.chip || !this.atStart()) return;
+			if (!this.chipSelected) {
+				this.chipSelected = true;
+				this.drawScope();
+				this.footer(this.inputEl.value);
+			} else this.removeChip(true);
+			return false;
+		});
+		this.scope.register([], "ArrowLeft", (e) => {
+			if (e.isComposing || !this.chip || !this.atStart()) return;
+			this.chipSelected = true;
+			this.drawScope();
+			this.showCard();
+			this.footer(this.inputEl.value);
 			return false;
 		});
 		this.scope.register([], "ArrowDown", () => {
@@ -382,7 +668,14 @@ export class JetModal extends Modal {
 			return false;
 		});
 	}
+
+	private atStart(): boolean {
+		return this.inputEl.selectionStart === 0 && this.inputEl.selectionEnd === 0;
+	}
 }
+
+/** Keys the chip handles itself; any other key unselects it. */
+const CHIP_KEYS = new Set(["Backspace", "ArrowLeft", "Escape", "Tab", "Shift", "Meta", "Alt", "Control"]);
 
 const selectable = (e: Entry): boolean => e.type !== "header" && e.type !== "notice";
 const keyOf = (e: Entry): string | null =>
@@ -404,6 +697,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		el.className = "jet-h";
 		el.removeAttribute("role");
 		el.createSpan({ text: e.label });
+		if (e.note) el.createSpan({ cls: "jet-hscope", text: `· ${e.note}` });
 		if (e.count !== undefined) el.createSpan({ cls: "jet-hs", text: String(e.count) });
 		return;
 	}
