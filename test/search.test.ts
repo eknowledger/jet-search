@@ -205,3 +205,30 @@ describe("searching with filters", () => {
 		expect(items(shown).sort()).toEqual(["a/Draft one.md", "a/Draft two.md"]);
 	});
 });
+
+describe("match reasons", () => {
+	it("a row says what its filters found, and which property holds a hit outside the body", async () => {
+		const app = new App();
+		const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
+		const caches = (app.metadataCache as unknown as { caches: Map<string, unknown> }).caches;
+		files.set("a/Note.md", new TFile("a/Note.md"));
+		caches.set("a/Note.md", { frontmatter: { summary: "The garden plan of the system", status: "draft" } });
+		const client = {
+			query: () =>
+				Promise.resolve({ seq: 1, terms: ["world"], hits: [{ path: "a/Note.md", score: 1, matched: 1 }] }),
+		} as unknown as JetClient;
+		const feeder = { progress: null, ensure: () => Promise.resolve() } as unknown as Feeder;
+		const data = normalizeData(null);
+		data.indexedAt = 1;
+		const s = new Search(app, client, feeder, () => data, undefined, {
+			notes: () => new Set(["a/Note.md"]),
+			reason: () => "status = draft",
+		});
+		const paints: Entry[][] = [];
+		s.list("world", (e) => paints.push(e), undefined, [{ kind: "prop", key: "status", value: "draft" }]);
+		for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+		const row = (paints.at(-1) ?? []).find((e): e is Item => e.type === "item");
+		expect(row?.reasons).toEqual(["status = draft", "summary"]);
+		expect(row?.excerpt?.text).toBe("The garden plan of the system");
+	});
+});

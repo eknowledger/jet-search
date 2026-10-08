@@ -10,7 +10,9 @@ import { JetModal } from "./modal/jet-modal";
 import { FilterSets } from "./filters/sets";
 import { ambiguity } from "./scopes/auto";
 import { createDetail, createTarget } from "./scopes/create";
+import { noteFacts } from "./scopes/facts";
 import { ScopeKeeper } from "./scopes/keeper";
+import { matches } from "./scopes/members";
 import { obsidianSnapshot } from "./scopes/snapshot-obsidian";
 import { ScopeWatcher } from "./scopes/watcher";
 import { Search } from "./search";
@@ -76,6 +78,21 @@ export default class JetSearchPlugin extends Plugin {
 				describe: (id) => {
 					const s = this.data.scopes.find((x) => x.id === id);
 					return s ? { name: s.name, create: createDetail(createTarget(s)) } : null;
+				},
+				via: (id, path) => {
+					const s = this.data.scopes.find((x) => x.id === id);
+					const file = this.app.vault.getFileByPath(path);
+					if (!s || !file) return null;
+					const facts = noteFacts(this.app, file);
+					if (s.rules.some((r) => r.kind === "folder" && matches(r, facts))) return null;
+					const r = s.rules.find((x) => matches(x, facts));
+					return !r
+						? null
+						: r.kind === "tag"
+							? `via ${r.tag}`
+							: r.kind === "property"
+								? `via ${r.key}`
+								: null;
 				},
 			},
 			this.filterSets,

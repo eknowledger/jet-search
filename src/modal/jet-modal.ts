@@ -8,7 +8,7 @@ export type Ranges = ReadonlyArray<readonly [number, number]>;
 /** One line of the result list: a group header, a result, or a recent search. */
 export type Entry =
 	/** `note`: where the search runs ("in Cobalt", "everywhere"), set by the modal. */
-	| { type: "header"; label: string; count?: number; note?: string }
+	| { type: "header"; label: string; count?: number; note?: string; sort?: string }
 	| {
 			type: "item";
 			path: string;
@@ -26,6 +26,11 @@ export type Entry =
 			at?: { line: number; ch: number; len: number };
 			/** Shown dimmed: what a fix would find. */
 			dim?: boolean;
+			/** Why it matched beyond the text: "type = status-report", "via project", "summary". */
+			reasons?: string[];
+			/** For sorting. */
+			mtime?: number;
+			ctime?: number;
 	  }
 	| { type: "search"; query: string; detail?: string }
 	/** A message line (no results), not selectable. */
@@ -73,6 +78,43 @@ export type HintState = {
 	more?: true;
 	/** The search was widened from this scope: ⇧⇧ goes back. */
 	widened?: string;
+};
+
+/** Result order. */
+export type Sort = "best" | "edited-new" | "edited-old" | "created-new" | "created-old" | "title";
+
+export const SORTS: Array<[Sort, string]> = [
+	["best", "Best match"],
+	["edited-new", "Last edited: newest first"],
+	["edited-old", "Last edited: oldest first"],
+	["created-new", "Created: newest first"],
+	["created-old", "Created: oldest first"],
+	["title", "Title: A → Z"],
+];
+
+/** The items in this order (the first header's place kept); "best" leaves them as they came. */
+export const sortEntries = (entries: Entry[], sort: Sort): Entry[] => {
+	if (sort === "best") return entries;
+	type It = Extract<Entry, { type: "item" }>;
+	const items = entries.filter((e): e is It => e.type === "item" && !e.dim);
+	if (items.length < 2) return entries;
+	const key: Record<Exclude<Sort, "best">, (a: It, b: It) => number> = {
+		"edited-new": (a, b) => (b.mtime ?? 0) - (a.mtime ?? 0),
+		"edited-old": (a, b) => (a.mtime ?? 0) - (b.mtime ?? 0),
+		"created-new": (a, b) => (b.ctime ?? 0) - (a.ctime ?? 0),
+		"created-old": (a, b) => (a.ctime ?? 0) - (b.ctime ?? 0),
+		title: (a, b) => a.title.localeCompare(b.title),
+	};
+	const sorted = [...items].sort(key[sort]);
+	const rest = entries.filter((e) => e.type !== "item" && e.type !== "header");
+	const first = entries.find((e) => e.type === "header");
+	const head: Entry = {
+		type: "header",
+		label: "Results",
+		count: sorted.length,
+		note: first?.type === "header" ? first.note : undefined,
+	};
+	return [head, ...sorted, ...rest];
 };
 
 /** How to open a note. */
@@ -198,6 +240,8 @@ export class JetModal extends Modal {
 	private readonly barEl: HTMLElement;
 	/** Each list request; a paint for an older one is dropped. */
 	private listSeq = 0;
+	/** Result order for this search. */
+	private sort: Sort = "best";
 	// Autocomplete and fix-it.
 	private ac: Completion | null = null;
 	private acIndex = 0;
@@ -297,6 +341,12 @@ export class JetModal extends Modal {
 		this.chipEl.addEventListener("mouseleave", () => this.cardSoon(false));
 		this.listEl.addEventListener("mousedown", (e) => e.preventDefault());
 		this.listEl.addEventListener("click", (e) => {
+			const s = (e.target as HTMLElement).closest<HTMLElement>(".jet-sort");
+			if (!s) return;
+			e.stopPropagation();
+			this.sortMenu(s);
+		});
+		this.listEl.addEventListener("click", (e) => {
 			const row = (e.target as HTMLElement).closest<HTMLElement>(".jet-row");
 			const i = row ? Number(row.dataset.index) : -1;
 			if (i < 0) return;
@@ -368,7 +418,11 @@ export class JetModal extends Modal {
 	}
 
 	/** Paint a list (called by the host, maybe several times per keystroke as tiers answer). */
+	/** The entries as the host gave them (re-sorted without asking again). */
+	private lastEntries: Entry[] = [];
+
 	paint(entries: Entry[], status = ""): void {
+		this.lastEntries = entries;
 		// The first header says where the search runs (inside the chip's scope, or everywhere while one
 		// is suggested) and how many filters narrow it.
 		const n = this.filters.length;
@@ -377,6 +431,16 @@ export class JetModal extends Modal {
 		const h = entries.findIndex((e) => e.type === "header");
 		const first = entries[h];
 		if (note && first?.type === "header") entries = entries.map((e, i) => (i === h ? { ...first, note } : e));
+		// Sorting is for a search (text or filters), not the recents with nothing typed.
+		const searching = !!this.inputEl.value.trim() || this.filters.length > 0;
+		if (searching) entries = sortEntries(entries, this.sort);
+		// The sort control sits on the first header, once there is something to order.
+		const hs = entries.findIndex((e) => e.type === "header");
+		const hh = entries[hs];
+		if (searching && hh?.type === "header" && entries.filter((e) => e.type === "item").length > 1)
+			entries = entries.map((e, i) =>
+				i === hs ? { ...hh, sort: SORTS.find(([k]) => k === this.sort)?.[1] ?? "" } : e,
+			);
 		// A fix for an unknown key: what it would find, dimmed, under the results.
 		if (this.fix && this.fixPreview.length)
 			entries = [
@@ -401,6 +465,25 @@ export class JetModal extends Modal {
 	 * The text changed: what it says about scopes, then its list. `final`: the text was set whole (a
 	 * recent search, the prefill), so an explicit `in:name` at its end applies without a space after it.
 	 */
+	/** The sort menu, at the header's control. */
+	private sortMenu(at: HTMLElement): void {
+		const m = new Menu();
+		for (const [k, label] of SORTS)
+			m.addItem((i) =>
+				i
+					.setTitle(label)
+					.setChecked(k === this.sort)
+					.onClick(() => this.setSort(k)),
+			);
+		const r = at.getBoundingClientRect();
+		m.showAtPosition({ x: r.left, y: r.bottom + 4 });
+	}
+
+	private setSort(k: Sort): void {
+		this.sort = k;
+		this.paint(this.lastEntries, this.statusEl.textContent ?? "");
+	}
+
 	private refresh(final = false): void {
 		let raw = this.inputEl.value;
 		// Filters first: finished ones become chips; unfinished ones are left out of the search.
@@ -1211,6 +1294,12 @@ export class JetModal extends Modal {
 			this.choose("split");
 			return false;
 		});
+		// ⌘⇧S: the next order.
+		this.scope.register(["Mod", "Shift"], "s", () => {
+			const i = SORTS.findIndex(([k]) => k === this.sort);
+			this.setSort((SORTS[(i + 1) % SORTS.length] as [Sort, string])[0]);
+			return false;
+		});
 		this.scope.register(["Mod"], "f", () => {
 			if (!this.host.filters) return;
 			this.toggleBar();
@@ -1294,6 +1383,11 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		el.removeAttribute("role");
 		el.createSpan({ text: e.label });
 		if (e.note) el.createSpan({ cls: "jet-hscope", text: `· ${e.note}` });
+		if (e.sort) {
+			const s = el.createSpan({ cls: "jet-sort", attr: { role: "button", "aria-label": "Sort (⌘⇧S)" } });
+			s.appendText(e.sort);
+			setIcon(s.createSpan({ cls: "jet-sorti" }), "chevron-down");
+		}
 		if (e.count !== undefined) el.createSpan({ cls: "jet-hs", text: String(e.count) });
 		return;
 	}
@@ -1335,6 +1429,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 	l1.createSpan({ cls: "jet-rm", text: e.meta });
 	const l2 = body.createDiv({ cls: "jet-l2" });
 	if (e.crumb) l2.createSpan({ cls: "jet-cr", text: e.crumb });
+	for (const r of e.reasons ?? []) l2.createSpan({ cls: "jet-rsn", text: r });
 	if (e.excerpt) {
 		if (e.excerpt.more) l2.createSpan({ cls: "jet-more", text: `+${e.excerpt.more} more` });
 		highlight(body.createDiv({ cls: "jet-l3" }), e.excerpt.text, e.excerpt.marks, "jet-mark", "mark");

@@ -20,14 +20,20 @@ export type ScopeMembers = {
 	membersOf(id: string): ReadonlySet<string>;
 	/** Its name, and where a note created in it goes (the no-results screen). */
 	describe?(id: string): { name: string; create: string } | null;
+	/** Why the note is in the scope when not by its folder ("via project"), else null. */
+	via?(id: string, path: string): string | null;
 };
 
 /** The notes a filter keeps (FilterSets). */
-export type FilterNotes = { notes(f: Filter): ReadonlySet<string> };
+export type FilterNotes = {
+	notes(f: Filter): ReadonlySet<string>;
+	/** What the note has that the filter asked for ("type = status-report", "edited Oct 2"). */
+	reason?(f: Filter, path: string): string | null;
+};
 
 /** Notes listed for filters with no text, most recently changed first. */
 const FILTERED_LIST = 50;
-type Shown = NonNullable<Item["excerpt"]> & { offset: number };
+type Shown = NonNullable<Item["excerpt"]> & { offset: number; reason?: string };
 
 /** Titles shown above the text hits for a name-like query. */
 const MAX_TITLES = 8;
@@ -48,6 +54,8 @@ export class Search {
 	/** Headings, tags and properties, only while the content index is not ready. */
 	private meta: MetaIndex | null = null;
 	private readonly idOf = new Map<string, number>();
+	/** The scope and filters of the list being composed (for the rows' reasons). */
+	private why: { scope?: string; filters: readonly Filter[] } = { filters: [] };
 	private readonly pathOf = new Map<number, string>();
 	private nextId = 1;
 	/** The open modal's current text and painter, to re-run when the index changes. */
@@ -78,6 +86,7 @@ export class Search {
 		filters: readonly Filter[] = [],
 	): void {
 		this.current = { text, paint, scope, filters };
+		this.why = { scope, filters };
 		let inScope: ReadonlySet<string> | null = null;
 		if (scope !== undefined && this.scopes) {
 			this.scopes.ensure();
@@ -217,7 +226,11 @@ export class Search {
 			if (!file) continue;
 			const ex = excerpts.get(h.path);
 			text.push(
-				this.item(file, now, { excerpt: ex ?? null, hit: { terms: reply?.terms ?? [], offset: ex?.offset } }),
+				this.item(file, now, {
+					excerpt: ex ? { text: ex.text, marks: ex.marks, more: ex.more } : null,
+					hit: { terms: reply?.terms ?? [], offset: ex?.reason ? undefined : ex?.offset },
+					...(ex?.reason ? { reasons: [...this.reasons(h.path), ex.reason] } : {}),
+				}),
 			);
 			shown.add(h.path);
 		}
@@ -239,6 +252,7 @@ export class Search {
 	}
 
 	private item(file: TFile, now: number, extra: Partial<Item>): Item {
+		const reasons = this.reasons(file.path);
 		return {
 			type: "item",
 			path: file.path,
@@ -247,8 +261,24 @@ export class Search {
 			crumb: crumb(file.path),
 			meta: age(file.stat.mtime, now),
 			icon: iconOf(this.app, file),
+			mtime: file.stat.mtime,
+			ctime: file.stat.ctime,
+			...(reasons.length ? { reasons } : {}),
 			...extra,
 		};
+	}
+
+	/** Why a row matched beyond its text: the filters' values, and the scope rule when not its folder. */
+	private reasons(path: string): string[] {
+		const out: string[] = [];
+		const { scope, filters } = this.why;
+		for (const f of filters) {
+			const r = f.kind === "title" ? null : (this.filterNotes?.reason?.(f, path) ?? null);
+			if (r) out.push(r);
+		}
+		const via = scope !== undefined ? (this.scopes?.via?.(scope, path) ?? null) : null;
+		if (via) out.push(via);
+		return out;
 	}
 
 	/**
@@ -314,7 +344,24 @@ export class Search {
 				const ex = cutExcerpt(withoutTitleLine(await this.app.vault.cachedRead(file), r.title), terms, {
 					exact,
 				});
-				if (ex) out.set(r.path, { text: ex.text, marks: ex.marks, more: ex.more, offset: ex.offset });
+				if (ex) {
+					out.set(r.path, { text: ex.text, marks: ex.marks, more: ex.more, offset: ex.offset });
+					return;
+				}
+				// Not in the body: a property holds it (the "summary" badge).
+				for (const f of properties(this.app.metadataCache.getFileCache(file) ?? {})) {
+					const value = f.text.slice(f.text.indexOf(": ") + 2);
+					const px = cutExcerpt(value, terms, { exact });
+					if (!px) continue;
+					out.set(r.path, {
+						text: px.text,
+						marks: px.marks,
+						more: 0,
+						offset: 0,
+						reason: f.text.slice(0, f.text.indexOf(": ")),
+					});
+					return;
+				}
 			}),
 		);
 		return out;

@@ -19,6 +19,8 @@ const MORE_CAP = 99;
 const HIT_LIMIT = 1000;
 /** Hits tried as the excerpt's centre (the best line is nearly always among the first ones). */
 const ANCHORS = 30;
+/** Hits told apart by word for that choice (the anchors and their neighbours). */
+const GROUPED = 64;
 /** How far either side of the hit a long line is looked at when building its excerpt, in widths. */
 const REACH = 4;
 
@@ -184,8 +186,15 @@ export const cutExcerpt = (
 	// prefix of it, is that word; any other term is its own group).
 	const exact = [...new Set((opts.exact ?? []).map(normalize).filter((w) => w.length > 0))];
 	const found: Array<{ at: number; end: number; group: string; weight: number }> = [];
+	// One term: every hit is the same word, so the first is as good as any (no words to tell apart).
+	const single = c.terms.length <= 1;
 	for (let m = nextHit(re, scan, c.arabic); m && found.length <= MORE_CAP; m = nextHit(re, scan, c.arabic)) {
 		const end = wordEnd(text, m.index, m.index + m[0].length);
+		// Only the hits the choice can look at are told apart by word (the rest are counted).
+		if (single || found.length >= GROUPED) {
+			found.push({ at: m.index, end, group: "", weight: 0 });
+			continue;
+		}
 		const word = normalize(text.slice(m.index, end));
 		const own = exact.find((w) => word.startsWith(w) || w.startsWith(word));
 		const term = own ?? c.terms.find((t) => word.startsWith(t)) ?? word;
@@ -196,7 +205,7 @@ export const cutExcerpt = (
 	// The best hit: the one whose line, near it, holds the most of your words; the first among equals.
 	// Hits are in text order, so each window is a run of neighbours; the first 30 hits are tried.
 	let anchor = first;
-	if (found.length > 1) {
+	if (found.length > 1 && !single) {
 		let best = -1;
 		const tries = Math.min(found.length, ANCHORS);
 		for (let i = 0; i < tries; i++) {
@@ -209,11 +218,11 @@ export const cutExcerpt = (
 			const groups = new Map<string, number>();
 			for (let j = i; j >= 0 && (found[j] as { at: number }).at >= lo; j--) {
 				const o = found[j] as (typeof found)[number];
-				groups.set(o.group, o.weight);
+				if (o.group) groups.set(o.group, o.weight);
 			}
 			for (let j = i + 1; j < found.length && (found[j] as { at: number }).at < hi; j++) {
 				const o = found[j] as (typeof found)[number];
-				groups.set(o.group, o.weight);
+				if (o.group) groups.set(o.group, o.weight);
 			}
 			// Without the typed words, each term counts as a word. With them, word forms and typos (which
 			// cannot be told apart by word) count half a word between them.

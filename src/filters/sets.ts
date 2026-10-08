@@ -75,6 +75,45 @@ export class FilterSets {
 		return set;
 	}
 
+	/** What the note has that the filter asked for, for the row's badge. */
+	reason(f: Filter, path: string): string | null {
+		const file = this.app.vault.getFileByPath(path);
+		if (!file) return null;
+		const cache = this.app.metadataCache.getFileCache(file);
+		const day = (t: number): string =>
+			new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+		switch (f.kind) {
+			case "prop": {
+				const fm = cache?.frontmatter ?? {};
+				const k = Object.keys(fm).find((x) => x.toLowerCase() === f.key.toLowerCase());
+				if (k === undefined) return null;
+				const raw: unknown = fm[k];
+				const vals = (Array.isArray(raw) ? raw : [raw]).map((v) =>
+					typeof v === "string" ? (v.replace(/^\[\[|\]\]$/g, "").split("|")[0] ?? v) : String(v),
+				);
+				const want = f.value.toLowerCase().replace(/^\[\[|\]\]$/g, "");
+				const hit = vals.find((v) => v.toLowerCase() === want) ?? vals[0];
+				return hit === undefined ? null : `${k} = ${hit}`;
+			}
+			case "tag": {
+				const t = f.tag.toLowerCase();
+				return (
+					(cache ? (getAllTags(cache) ?? []) : []).find(
+						(x) => x.toLowerCase() === t || x.toLowerCase().startsWith(`${t}/`),
+					) ?? null
+				);
+			}
+			case "edited":
+				return `edited ${day(file.stat.mtime)}`;
+			case "created":
+				return `created ${day(file.stat.ctime)}`;
+			case "links":
+				return `links to ${f.name}`;
+			default:
+				return null;
+		}
+	}
+
 	/** Only what the filter looks at (a tag filter never resolves links). */
 	private facts(file: TFile, f: Filter): FilterFacts {
 		const cache = this.app.metadataCache.getFileCache(file);
