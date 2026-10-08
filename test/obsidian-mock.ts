@@ -234,6 +234,11 @@ export class Workspace {
 	readonly layoutReadyCallbacks: (() => void)[] = [];
 	lastOpen: string[] = [];
 	readonly opened: Array<{ path: string; how: unknown }> = [];
+	readonly triggered: string[] = [];
+
+	trigger(name: string): void {
+		this.triggered.push(name);
+	}
 
 	getLastOpenFiles(): string[] {
 		return this.lastOpen;

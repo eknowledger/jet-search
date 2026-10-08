@@ -54,11 +54,13 @@ export type JetData = {
 	scopeUses: Record<string, number>;
 	/** The last scope and filters, kept when "Persist filters" is on. */
 	last: { scope?: string; filters: Filter[] } | null;
+	/** Settings imported from other plugins, once each ("jade-search"). */
+	imported: string[];
 };
 
 const HALF_LIFE = 30 * 86_400_000;
 const MAX_OPENED = 2000;
-const MAX_SEARCHES = 10;
+export const MAX_SEARCHES = 10;
 
 export const normalizeData = (raw: unknown): JetData => {
 	const r = (raw && typeof raw === "object" ? raw : {}) as Partial<JetData>;
@@ -107,6 +109,7 @@ export const normalizeData = (raw: unknown): JetData => {
 		scopes: normalizeScopes(r.scopes),
 		scopeUses,
 		last,
+		imported: Array.isArray(r.imported) ? r.imported.filter((x): x is string => typeof x === "string") : [],
 	};
 };
 

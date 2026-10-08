@@ -58,6 +58,14 @@ describe("plugin start", () => {
 		expect(workers).toBe(0);
 	});
 
+	it("tells Jade it is on at start and off at unload, so Jade's search steps aside and back", async () => {
+		const { app, plugin } = make();
+		await plugin.onload();
+		expect(app.workspace.triggered).toEqual(["jet-search:on"]);
+		plugin.onunload();
+		expect(app.workspace.triggered).toEqual(["jet-search:on", "jet-search:off"]);
+	});
+
 	it("opens the search modal from the command", async () => {
 		const { plugin } = make();
 		await plugin.onload();

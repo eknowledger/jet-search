@@ -31,7 +31,9 @@ export type JadeFeature =
 	| "layout.compact"
 	| "layout.corner"
 	| "layout.covers"
-	| "hub";
+	| "hub"
+	| "quick"
+	| "commands.tap";
 
 /** The areas a partner's controls can sit under in the J panel. */
 export type JadeArea = "write" | "find" | "organize" | "plan" | "review" | "workspace";
@@ -120,6 +122,18 @@ export type JadeControl =
 	  })
 	| (ControlBase & { type: "action"; button: string; run(): void });
 
+/** An action beside the J (the quick row): it runs when chosen. */
+export type JadeQuickAction = {
+	/** Unique within the partner. */
+	id: string;
+	/** A Lucide icon name. */
+	icon: string;
+	label: string;
+	/** Lower comes first in the row (Jade's own: 10–90). */
+	order?: number;
+	run: () => void;
+};
+
 /** A joined partner: everything it adds goes when it leaves (or its plugin unloads, or Jade does). */
 export type JadePartner = {
 	/** False once it has left, or Jade unloaded: every call is then a no-op. */
@@ -149,6 +163,29 @@ export type JadePartner = {
 	readonly hub: {
 		/** Add a control under an area of the J panel; returns the function that removes it. */
 		add(area: JadeArea, control: JadeControl): () => void;
+	};
+	/** Feature "quick": actions in the row beside the J. */
+	readonly quick: {
+		/** Add an action; returns the function that removes it. No-op without the feature. */
+		add(action: JadeQuickAction): () => void;
+	};
+	/** Feature "commands.tap": Jade's double-tap shortcuts (one key listener in the app). */
+	readonly commands: {
+		/**
+		 * The key (`KeyboardEvent.code`, "ShiftLeft") whose double tap runs this command in Jade's
+		 * command shortcuts, or null: none, or the module is off (the partner then listens itself).
+		 */
+		tapFor(commandId: string): string | null;
+		/**
+		 * Whether Jade's command shortcuts listen for a double tap of this key (whatever it runs):
+		 * a partner then does not listen for it too.
+		 */
+		owns(code: string): boolean;
+		/**
+		 * Ask the user, once, to make a double tap of `code` run `commandId` (`label` names it). Jade
+		 * never rebinds silently: it shows the offer, and does nothing if the user keeps their key.
+		 */
+		offerTap(code: string, commandId: string, label: string): void;
 	};
 	/**
 	 * Called when anything a partner may react to changes: the surface's mode or

@@ -3,9 +3,18 @@ import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
 import { JadeLink } from "./jade-link";
+import { importJadeSearch } from "./migrate";
 import { Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
-import { addCommandAs, hasCommand, openSettingsAt, removeCommand, shiftOwnedElsewhere, vaultId } from "./internals";
+import {
+	addCommandAs,
+	hasCommand,
+	openSettingsAt,
+	plugin,
+	removeCommand,
+	shiftOwnedElsewhere,
+	vaultId,
+} from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
 import { FilterSets } from "./filters/sets";
@@ -62,6 +71,9 @@ export default class JetSearchPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		this.data = normalizeData(await this.loadData());
+		// The first run: Jade's search settings, once. A file read only then.
+		if (this.data.indexedAt === null && !this.data.imported.includes("jade-search"))
+			if (importJadeSearch(this.data, await this.readJadeData())) this.save();
 		this.feeder = new Feeder(
 			this.app,
 			this.client,
@@ -157,10 +169,25 @@ export default class JetSearchPlugin extends Plugin {
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
 		this.settingTab = new JetSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
+		// Jade's search module steps aside while Jet is on, and comes back when it goes.
+		// Said before listen(): Jade frees the Omnisearch ids on its next tick, then Jet takes them.
+		this.app.workspace.trigger("jet-search:on");
 		this.app.workspace.onLayoutReady(() => this.listen());
 	}
 
+	/** Jade's saved data, or null (not installed, unreadable). */
+	private async readJadeData(): Promise<unknown> {
+		const path = `${this.app.vault.configDir}/plugins/jade/data.json`;
+		try {
+			if (!(await this.app.vault.adapter.exists(path))) return null;
+			return JSON.parse(await this.app.vault.adapter.read(path)) as unknown;
+		} catch {
+			return null;
+		}
+	}
+
 	onunload(): void {
+		this.app.workspace.trigger("jet-search:off");
 		for (const id of this.standIns) removeCommand(this.app, id);
 		this.modal?.close();
 		this.feeder.stop();
@@ -275,27 +302,33 @@ export default class JetSearchPlugin extends Plugin {
 					this.save();
 				},
 			},
+			doubleShift: () => this.data.settings.doubleShift,
+			aliases: () => (plugin(this.app, "omnisearch") ? [] : [STAND_INS.open]),
 		});
 		this.jade.start();
 		// Stand-ins for Omnisearch's ids, so its hotkeys and double-Shift bindings open Jet.
-		if (!hasCommand(this.app, STAND_INS.open))
-			if (
-				addCommandAs(this.app, {
-					id: STAND_INS.open,
-					name: "Jet Search: Search notes",
-					callback: () => this.open(),
-				})
-			)
-				this.standIns.push(STAND_INS.open);
-		if (!hasCommand(this.app, STAND_INS.inNote))
-			if (
-				addCommandAs(this.app, {
-					id: STAND_INS.inNote,
-					name: "Jet Search: Search in this note",
-					callback: () => this.openInNote(),
-				})
-			)
-				this.standIns.push(STAND_INS.inNote);
+		// A tick later: Jet turned on while Jade's search runs, Jade frees the ids first (they are its stand-ins too).
+		const standIns = window.setTimeout(() => {
+			if (!hasCommand(this.app, STAND_INS.open))
+				if (
+					addCommandAs(this.app, {
+						id: STAND_INS.open,
+						name: "Jet Search: Search notes",
+						callback: () => this.open(),
+					})
+				)
+					this.standIns.push(STAND_INS.open);
+			if (!hasCommand(this.app, STAND_INS.inNote))
+				if (
+					addCommandAs(this.app, {
+						id: STAND_INS.inNote,
+						name: "Jet Search: Search in this note",
+						callback: () => this.openInNote(),
+					})
+				)
+					this.standIns.push(STAND_INS.inNote);
+		}, 0);
+		this.register(() => window.clearTimeout(standIns));
 		// Shift-Shift, unless another plugin already owns double Shift.
 		const tap = new DoubleTap(() => this.data.settings.shiftInterval);
 		const watch = (doc: Document): void => {
@@ -305,7 +338,10 @@ export default class JetSearchPlugin extends Plugin {
 				"keyup",
 				(e) => {
 					if (!tap.keyup(e.key, e.timeStamp)) return;
-					if (this.data.settings.doubleShift && !shiftOwnedElsewhere(this.app)) this.open();
+					// One owner: Jade says whether it owns a double Shift; else its settings are read.
+					if (!this.data.settings.doubleShift) return;
+					if (this.jade?.ownsShift() ?? shiftOwnedElsewhere(this.app)) return;
+					this.open();
 				},
 				{ capture: true },
 			);
