@@ -1,7 +1,8 @@
 import { type App, getAllTags, MarkdownView, normalizePath, Notice, type TFile } from "obsidian";
 import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
-import type { Entry, HintState, ModalHost, OpenHow, ScopeCard, ScopeView, Typed } from "./modal/jet-modal";
+import type { Completion, Entry, HintState, ModalHost, OpenHow, ScopeCard, ScopeView, Typed } from "./modal/jet-modal";
+import { findFix, pieceAt, wantOf } from "./filters/complete";
 import { type Filter, filterText, findFilters } from "./filters/filter";
 import type { FilterSets } from "./filters/sets";
 import type { Rule, Scope } from "./scopes/model";
@@ -41,6 +42,10 @@ export type HostScopes = {
 
 /** Items in each of the filters bar's menus. */
 const MENU_ITEMS = 30;
+/** Rows in the autocomplete list. */
+const AC_ITEMS = 12;
+/** Rows shown dimmed for a fix. */
+const PREVIEW_ROWS = 8;
 
 /** Notes listed for a scope with nothing typed. */
 const SCOPE_RECENTS = 50;
@@ -91,7 +96,107 @@ export class JetHost implements ModalHost {
 				(a?.all() ?? [])
 					.map((s) => ({ id: s.id, name: s.name, kind: s.kind, members: a?.count(s.id) ?? 0 }))
 					.sort((x, y) => y.members - x.members),
+			complete: (text, caret, scope, filters) => this.complete(f, text, caret, scope, filters),
+			fix: (text) => {
+				const keys = [...f.propertyKeys().values()].map((k) => [k.name, k.notes] as const);
+				const x = findFix(text, keys, (k) => f.known(k));
+				return x ? { ...x, notes: f.propertyKeys().get(x.key.toLowerCase())?.notes ?? 0 } : null;
+			},
+			preview: (filter, scope, filters) => {
+				const keep = f.notes(f.resolve(filter));
+				const w = this.within(scope, filters);
+				const now = Date.now();
+				const files = this.app.vault
+					.getMarkdownFiles()
+					.filter((x) => keep.has(x.path) && (!w || w.has(x.path)))
+					.sort((x, y) => y.stat.mtime - x.stat.mtime);
+				return files.slice(0, PREVIEW_ROWS).map((x) => ({ ...this.item(x, now), dim: true }));
+			},
 		};
+	}
+
+	/** The autocomplete list for the piece at the caret. */
+	private complete(
+		f: FilterSets,
+		text: string,
+		caret: number,
+		scope?: string,
+		filters?: readonly Filter[],
+	): Completion | null {
+		const { from, to, piece } = pieceAt(text, caret);
+		const want = wantOf(piece, (k) => f.known(k));
+		if (!want) return null;
+		const starts = (v: string, prefix: string): boolean => !prefix || fold(v).startsWith(fold(prefix));
+		const quote = (v: string): string => (/\s/.test(v) ? `"${v}"` : v);
+		const where = scope !== undefined ? this.scopeAccess?.all().find((s) => s.id === scope)?.name : undefined;
+		const base = { from, to, where };
+		switch (want.kind) {
+			case "tags": {
+				const items = this.tagCounts(scope, filters)
+					.filter(([t]) => starts(t.slice(1), want.prefix))
+					.slice(0, AC_ITEMS)
+					.map(([t, n]) => ({ label: t, count: n, insert: `${t} ` }));
+				return items.length ? { ...base, title: "tags", items } : null;
+			}
+			case "values": {
+				const key = f.propertyKeys().get(want.key.toLowerCase())?.name ?? want.key;
+				const all = this.values(key, scope, filters);
+				const items = all
+					.filter(([v]) => starts(v, want.prefix))
+					.slice(0, AC_ITEMS)
+					.map(([v, n]) => ({ label: v, count: n, insert: `${key}:${quote(v)} ` }));
+				if (!items.length) return null;
+				const inside = this.files(scope, filters);
+				const set = inside.filter((x) => {
+					const fm = this.app.metadataCache.getFileCache(x)?.frontmatter;
+					return !!fm && Object.keys(fm).some((k) => k.toLowerCase() === key.toLowerCase());
+				}).length;
+				const narrowed = scope !== undefined || !!filters?.length;
+				const vault = narrowed
+					? `Vault-wide: ${this.values(key)
+							.slice(0, 3)
+							.map(([v, n]) => `${v} ${n}`)
+							.join(" · ")}`
+					: undefined;
+				return { ...base, title: key, items, set, total: inside.length, vault };
+			}
+			case "keys": {
+				const items = [...f.propertyKeys().values()]
+					.filter((k) => starts(k.name, want.prefix))
+					.sort((x, y) => y.notes - x.notes)
+					.slice(0, AC_ITEMS)
+					.map((k) => ({ label: k.name, count: k.notes, insert: `${k.name}:` }));
+				return items.length ? { ...base, title: "properties", items } : null;
+			}
+			case "windows": {
+				const key = piece.slice(0, piece.indexOf(":"));
+				const items = (
+					[
+						["Today", 1],
+						["Past 7 days", 7],
+						["Past 30 days", 30],
+						["Past 90 days", 90],
+					] as Array<[string, number]>
+				).map(([label, d]) => ({ label, insert: `${key}:${d}d ` }));
+				return { ...base, title: key, items };
+			}
+			case "folders": {
+				const counts = new Map<string, number>();
+				for (const x of this.files(scope, filters)) {
+					const parts = x.path.split("/").slice(0, -1);
+					for (let i = 1; i <= Math.min(2, parts.length); i++) {
+						const p = parts.slice(0, i).join("/");
+						counts.set(p, (counts.get(p) ?? 0) + 1);
+					}
+				}
+				const items = [...counts]
+					.filter(([p]) => starts(p, want.prefix))
+					.sort((x, y) => y[1] - x[1])
+					.slice(0, AC_ITEMS)
+					.map(([p, n]) => ({ label: p, count: n, insert: `path:${quote(p)} ` }));
+				return items.length ? { ...base, title: "folders", items } : null;
+			}
+		}
 	}
 
 	/** The notes inside the scope and filters (null: every note). */

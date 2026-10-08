@@ -56,6 +56,9 @@ const fakeHost = () => {
 				["type", 530],
 			],
 			scopes: () => [COBALT],
+			complete: () => null,
+			fix: () => null,
+			preview: () => [],
 		},
 	};
 	return { host, lists, closed };

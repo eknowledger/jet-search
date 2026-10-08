@@ -24,6 +24,8 @@ export type Entry =
 			hit?: { terms: readonly string[]; offset?: number };
 			/** In-note search: the line to jump to and the match to select. */
 			at?: { line: number; ch: number; len: number };
+			/** Shown dimmed: what a fix would find. */
+			dim?: boolean;
 	  }
 	| { type: "search"; query: string; detail?: string }
 	/** A message line (no results), not selectable. */
@@ -123,8 +125,31 @@ export type ModalHost = {
 		keys(): Array<[key: string, notes: number]>;
 		/** Every scope, for the bar's In menu. */
 		scopes(): ScopeView[];
+		/** What to list for the piece at the caret, counted inside the scope and filters. */
+		complete(text: string, caret: number, scope?: string, filters?: readonly Filter[]): Completion | null;
+		/** An unknown key a used key is two edits from (`stauts:draft`). */
+		fix(text: string): FixView | null;
+		/** The notes the fixed filter would keep, as rows (shown dimmed under the results). */
+		preview(filter: Filter, scope?: string, filters?: readonly Filter[]): Entry[];
 	};
 };
+
+/** The autocomplete list: what replaces the piece [from, to) when chosen. */
+export type Completion = {
+	from: number;
+	to: number;
+	title: string;
+	where?: string;
+	items: Array<{ label: string; count?: number; insert: string }>;
+	/** Notes with the key set, and all notes, inside the scope and filters. */
+	set?: number;
+	total?: number;
+	/** The same values across the vault, when a scope or filters narrow the counts. */
+	vault?: string;
+};
+
+/** A fix for an unknown key. */
+export type FixView = { from: number; to: number; wrong: string; key: string; value: string; notes: number };
 
 /** The selection rests this long before the preview renders. */
 const PREVIEW_REST_MS = 80;
@@ -173,6 +198,15 @@ export class JetModal extends Modal {
 	private readonly barEl: HTMLElement;
 	/** Each list request; a paint for an older one is dropped. */
 	private listSeq = 0;
+	// Autocomplete and fix-it.
+	private ac: Completion | null = null;
+	private acIndex = 0;
+	private acEl: HTMLElement | null = null;
+	/** The piece the list was closed for with Esc: not offered again until it changes. */
+	private acClosedFor: string | null = null;
+	private fix: FixView | null = null;
+	private fixPreview: Entry[] = [];
+	private readonly fixEl: HTMLElement;
 	private typing: Typed = {};
 	private readonly chipEl: HTMLElement;
 	private readonly chipLabel: HTMLElement;
@@ -212,6 +246,7 @@ export class JetModal extends Modal {
 			},
 		});
 		this.ghostEl = top.createSpan({ cls: "jet-ghostbox is-hidden" });
+		this.fixEl = top.createSpan({ cls: "jet-ghostbox is-fix is-hidden" });
 		this.ihintEl = top.createSpan({ cls: "jet-ihint is-hidden" });
 		this.statusEl = top.createSpan({ cls: "jet-status" });
 		if (host.filters) {
@@ -238,6 +273,11 @@ export class JetModal extends Modal {
 			this.refresh();
 		});
 		this.inputEl.addEventListener("scroll", () => this.placeGhost());
+		// The caret moved without typing: the list follows the piece it is in.
+		this.inputEl.addEventListener("click", () => this.updateAC());
+		this.inputEl.addEventListener("keyup", (e) => {
+			if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") this.updateAC();
+		});
 		// Any key but the chip's own keeps the chip and unselects it.
 		this.inputEl.addEventListener("keydown", (e) => {
 			if ((!this.chipSelected && !this.filterSel) || CHIP_KEYS.has(e.key)) return;
@@ -337,6 +377,17 @@ export class JetModal extends Modal {
 		const h = entries.findIndex((e) => e.type === "header");
 		const first = entries[h];
 		if (note && first?.type === "header") entries = entries.map((e, i) => (i === h ? { ...first, note } : e));
+		// A fix for an unknown key: what it would find, dimmed, under the results.
+		if (this.fix && this.fixPreview.length)
+			entries = [
+				...entries,
+				{
+					type: "header",
+					label: `With the fix — ${this.fix.key}: ${this.fix.value}`,
+					count: this.fixPreview.length,
+				},
+				...this.fixPreview,
+			];
 		this.entries = entries;
 		this.statusEl.setText(status);
 		// The selected note stays selected if it is still listed; else the first row.
@@ -367,6 +418,15 @@ export class JetModal extends Modal {
 			} else pending = found;
 		}
 		this.drawFilters();
+		const fx = this.host.filters?.fix(raw) ?? null;
+		this.fix = fx;
+		this.fixPreview = fx
+			? (this.host.filters?.preview(
+					{ kind: "prop", key: fx.key, value: fx.value },
+					this.chip?.id,
+					this.filters,
+				) ?? [])
+			: [];
 		this.typing = {};
 		if (!this.chip && this.host.scopes) {
 			const t = this.host.scopes.typed(raw);
@@ -404,6 +464,99 @@ export class JetModal extends Modal {
 			[...this.filters],
 		);
 		this.footer(shown);
+		this.updateAC();
+	}
+
+	// ── Autocomplete and fix-it ────────────────────────────────────────
+
+	private updateAC(): void {
+		const f = this.host.filters;
+		const v = this.inputEl.value;
+		const caret = this.inputEl.selectionStart ?? v.length;
+		const c = f ? f.complete(v, caret, this.chip?.id, this.filters) : null;
+		const piece = c ? v.slice(c.from, c.to) : null;
+		if (!c || piece === this.acClosedFor) {
+			this.closeAC();
+			return;
+		}
+		this.acClosedFor = null;
+		const same = this.ac && this.ac.from === c.from && this.ac.items.length === c.items.length;
+		if (!same) this.acIndex = 0;
+		this.ac = c;
+		this.drawAC();
+		this.footer(v);
+	}
+
+	private closeAC(): void {
+		const was = !!this.ac;
+		this.ac = null;
+		this.acEl?.remove();
+		this.acEl = null;
+		if (was) this.footer(this.inputEl.value);
+	}
+
+	private drawAC(): void {
+		const c = this.ac;
+		if (!c) return;
+		this.acEl?.remove();
+		const el = this.inputEl.parentElement?.createDiv({ cls: "jet-ac" });
+		if (!el) return;
+		this.acEl = el;
+		el.style.left = `${Math.max(0, this.inputEl.offsetLeft + this.textWidth(this.inputEl.value.slice(0, c.from)) - 8)}px`;
+		el.addEventListener("mousedown", (e) => e.preventDefault());
+		const h = el.createDiv({ cls: "jet-ach" });
+		h.createSpan({ text: c.where ? `${c.title} · in ${c.where}` : c.title });
+		if (c.set !== undefined && c.total !== undefined)
+			h.createSpan({ cls: "jet-acs", text: `${c.set.toLocaleString()} of ${c.total.toLocaleString()} set` });
+		const max = Math.max(1, ...c.items.map((i) => i.count ?? 0));
+		c.items.forEach((it, i) => {
+			const r = el.createDiv({ cls: `jet-acr${i === this.acIndex ? " is-selected" : ""}` });
+			r.createSpan({ cls: "jet-acl", text: it.label });
+			if (it.count !== undefined) {
+				r.createSpan({ cls: "jet-acn", text: it.count.toLocaleString() });
+				const bar = r.createSpan({ cls: "jet-acb" });
+				bar.createSpan({ cls: "jet-acbf" }).style.width = `${Math.round((100 * it.count) / max)}%`;
+			}
+			r.addEventListener("mousemove", () => {
+				if (this.acIndex === i) return;
+				this.acIndex = i;
+				this.drawAC();
+			});
+			r.addEventListener("click", () => {
+				this.acIndex = i;
+				this.acceptAC();
+			});
+		});
+		if (c.set !== undefined && c.total !== undefined && c.total > c.set)
+			el.createDiv({ cls: "jet-acf", text: `Not set · ${(c.total - c.set).toLocaleString()}` });
+		if (c.vault) el.createDiv({ cls: "jet-acv", text: c.vault });
+	}
+
+	private acceptAC(): void {
+		const c = this.ac;
+		const it = c?.items[this.acIndex];
+		if (!c || !it) return;
+		const v = this.inputEl.value;
+		const next = v.slice(0, c.from) + it.insert + v.slice(c.to).replace(/^\s+/u, "");
+		this.closeAC();
+		this.inputEl.value = next;
+		const at = c.from + it.insert.length;
+		this.inputEl.setSelectionRange(at, at);
+		this.refresh();
+		this.inputEl.focus();
+	}
+
+	/** ⇥ on a fix: the used key in place of the typed one, finished, so it becomes a chip. */
+	private applyFix(): void {
+		const f = this.fix;
+		if (!f) return;
+		const v = this.inputEl.value;
+		const end = f.to - f.wrong.length + f.key.length;
+		let next = v.slice(0, f.from) + f.key + v.slice(f.from + f.wrong.length);
+		if (!/\s/u.test(next[end] ?? "")) next = `${next.slice(0, end)} ${next.slice(end)}`;
+		this.inputEl.value = next;
+		this.inputEl.setSelectionRange(next.length, next.length);
+		this.refresh();
 	}
 
 	// ── Filters ────────────────────────────────────
@@ -695,6 +848,12 @@ export class JetModal extends Modal {
 			t.createEl("b", { text: s.scope.name });
 			t.appendText(` for “${s.rest}” · ${notes(s.scope.members)}`);
 			keys([["⇥", "Tab"]]);
+		} else if (this.fix) {
+			const t = head("lightbulb");
+			t.appendText("Did you mean ");
+			t.createEl("code", { text: `${this.fix.key}:` });
+			t.appendText(`? · on ${notes(this.fix.notes)}`);
+			keys([["⇥", "Fix"]]);
 		} else {
 			b.remove();
 			return;
@@ -704,6 +863,14 @@ export class JetModal extends Modal {
 
 	/** A dashed box around the typed name; the text itself does not move. */
 	private placeGhost(): void {
+		const f = this.fix;
+		this.fixEl.toggleClass("is-hidden", !f);
+		if (f) {
+			const raw = this.inputEl.value;
+			const left = this.inputEl.offsetLeft + this.textWidth(raw.slice(0, f.from)) - this.inputEl.scrollLeft;
+			this.fixEl.style.left = `${left}px`;
+			this.fixEl.style.width = `${this.textWidth(f.wrong)}px`;
+		}
 		const s = this.typing.suggest;
 		this.ghostEl.toggleClass("is-hidden", !s);
 		if (!s) return;
@@ -793,7 +960,20 @@ export class JetModal extends Modal {
 
 	private footer(text: string): void {
 		this.footEl.empty();
-		for (const [key, label] of this.host.hints(text, this.hintState())) {
+		const hints: Array<[string, string]> = this.ac
+			? [
+					["↑↓", "Choose value"],
+					["⇥", "Accept"],
+					["Esc", "Close list"],
+				]
+			: this.fix && !this.typing.suggest && !this.chip
+				? [
+						["⇥", `Fix to ${this.fix.key}:`],
+						["↵", "Open"],
+						["Esc", "Clear"],
+					]
+				: this.host.hints(text, this.hintState());
+		for (const [key, label] of hints) {
 			const h = this.footEl.createSpan({ cls: "jet-ht" });
 			h.createEl("kbd", { text: key });
 			h.appendText(label);
@@ -898,6 +1078,11 @@ export class JetModal extends Modal {
 		const escapes = (scope.keys ?? []).filter((k) => k.key === "Escape");
 		for (const k of escapes) scope.unregister(k);
 		this.scope.register([], "Escape", () => {
+			if (this.ac) {
+				this.acClosedFor = this.inputEl.value.slice(this.ac.from, this.ac.to);
+				this.closeAC();
+				return false;
+			}
 			if (this.filterSel) {
 				this.filterSel = false;
 				this.drawFilters();
@@ -925,6 +1110,14 @@ export class JetModal extends Modal {
 		});
 		this.scope.register([], "Tab", (e) => {
 			if (e.isComposing) return;
+			if (this.ac) {
+				this.acceptAC();
+				return false;
+			}
+			if (this.fix && !this.typing.suggest && !this.chip) {
+				this.applyFix();
+				return false;
+			}
 			if (this.chip) {
 				if (this.choices.length < 2) return;
 				this.cycle(1);
@@ -983,11 +1176,17 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register([], "ArrowDown", () => {
-			this.move(1);
+			if (this.ac) {
+				this.acIndex = (this.acIndex + 1) % this.ac.items.length;
+				this.drawAC();
+			} else this.move(1);
 			return false;
 		});
 		this.scope.register([], "ArrowUp", () => {
-			this.move(-1);
+			if (this.ac) {
+				this.acIndex = (this.acIndex - 1 + this.ac.items.length) % this.ac.items.length;
+				this.drawAC();
+			} else this.move(-1);
 			return false;
 		});
 		this.scope.register(["Ctrl"], "n", () => {
@@ -999,7 +1198,9 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register([], "Enter", (e) => {
-			if (!e.isComposing) this.choose("default");
+			if (e.isComposing) return false;
+			if (this.ac) this.acceptAC();
+			else this.choose("default");
 			return false;
 		});
 		this.scope.register(["Mod"], "Enter", () => {
@@ -1125,7 +1326,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		return;
 	}
 	const content = !!e.excerpt;
-	el.className = content ? "jet-row jet-rowc" : "jet-row jet-rowt";
+	el.className = `${content ? "jet-row jet-rowc" : "jet-row jet-rowt"}${e.dim ? " is-dim" : ""}`;
 	setIcon(el.createSpan({ cls: "jet-ic" }), e.icon);
 	const body = el.createDiv({ cls: "jet-rb" });
 	const l1 = body.createDiv({ cls: "jet-l1" });
