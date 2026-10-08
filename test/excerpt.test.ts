@@ -20,8 +20,25 @@ const cut = (text: string, terms: string[], width?: number): Excerpt => {
 	return x;
 };
 
-describe("first hit", () => {
-	it("picks the first hit in the text, whichever term it is", () => {
+describe("the best hit", () => {
+	it("picks the line with the most of the words, the first among equals", () => {
+		const text = "The stone path.\nA bridge.\nThe river runs past the stone bridge.\nThe river again.";
+		const x = cut(text, ["stone", "river"]);
+		expect(x.line).toBe(2);
+		expect(marked(x)).toEqual(["river", "stone"]);
+		expect(x.more).toBe(3);
+		expect(cut("A river.\nAnother river.", ["river"]).line).toBe(0);
+	});
+
+	it("counts a word as typed above a word form or a typo of it", () => {
+		const text = "It would take words.\nThe garden plan.";
+		const x = cutExcerpt(text, ["would", "words", "world"], { exact: ["world"] });
+		expect(x?.text).toBe("The garden plan.");
+		const y = cutExcerpt("Her studies.\nOne study, done.", ["studies", "study"], { exact: ["study"] });
+		expect(y?.line).toBe(1);
+	});
+
+	it("picks the first hit in the text when it is as good as any, whichever term it is", () => {
 		const text = "Garden notes.\nThe river runs past the stone bridge.\nA stone wall.";
 		const x = cut(text, ["stone", "river"]);
 		expect(x.offset).toBe(text.indexOf("river"));

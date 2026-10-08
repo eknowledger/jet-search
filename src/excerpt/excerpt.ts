@@ -157,10 +157,12 @@ const lineOf = (text: string, at: number): number => {
 };
 
 /**
- * One line around the first hit of any term in `text` (raw Markdown): about `width` characters,
+ * One line around the best hit in `text` (raw Markdown): the hit whose line, within a width of it,
+ * holds the most of the query's words (`exact`: the words as typed count fully, other terms, such as
+ * word forms, half), the first among equals. About `width` characters,
  * `marks` = [start, end) of highlighted words within `text` of the excerpt, `line` = 0-based line
  * of the hit in the note, `offset` = character offset of the hit in the note, `more` = number of
- * further hits after this one (counted up to a cap, e.g. 99). Null when no term occurs.
+ * other hits in the note (counted up to a cap, e.g. 99). Null when no term occurs.
  *
  * Terms are normalized index terms; each matches at a word start as a prefix (`spee` highlights
  * `speech`). The frontmatter is skipped and at most `scanLimit` characters (256 KB) are read.
@@ -168,7 +170,7 @@ const lineOf = (text: string, at: number): number => {
 export const cutExcerpt = (
 	text: string,
 	terms: readonly string[],
-	opts: { width?: number; scanLimit?: number } = {},
+	opts: { width?: number; scanLimit?: number; exact?: readonly string[] } = {},
 ): Excerpt | null => {
 	const width = Math.max(20, opts.width ?? WIDTH);
 	const scan = scanned(text, opts.scanLimit);
@@ -176,10 +178,47 @@ export const cutExcerpt = (
 	const re = patternFor(c, scan);
 	if (!re) return null;
 	re.lastIndex = frontmatterEnd(scan);
-	const first = nextHit(re, scan, c.arabic);
+	// The hits, up to the cap: where each is, and which of your words it is (a word as typed, or a
+	// prefix of it, is that word; any other term is its own group).
+	const exact = [...new Set((opts.exact ?? []).map(normalize).filter((w) => w.length > 0))];
+	const found: Array<{ at: number; end: number; group: string; weight: number }> = [];
+	for (let m = nextHit(re, scan, c.arabic); m && found.length <= MORE_CAP; m = nextHit(re, scan, c.arabic)) {
+		const end = wordEnd(text, m.index, m.index + m[0].length);
+		const word = normalize(text.slice(m.index, end));
+		const own = exact.find((w) => word.startsWith(w) || w.startsWith(word));
+		const term = own ?? c.terms.find((t) => word.startsWith(t)) ?? word;
+		found.push({ at: m.index, end, group: own ? `w:${own}` : `t:${term}`, weight: own ? 1 : 0.5 });
+	}
+	const first = found[0];
 	if (!first) return null;
-	const at = first.index;
-	const hitEnd = wordEnd(text, at, at + first[0].length);
+	// The best hit: the one whose line, near it, holds the most of your words; the first among equals.
+	let anchor = first;
+	if (found.length > 1) {
+		let best = -1;
+		for (const h of found) {
+			const ls = text.lastIndexOf("\n", h.at - 1) + 1;
+			let le = text.indexOf("\n", h.at);
+			if (le < 0) le = text.length;
+			const lo = Math.max(ls, h.at - width / 2);
+			const hi = Math.min(le, h.at + width / 2);
+			const groups = new Map<string, number>();
+			for (const o of found) if (o.at >= lo && o.at < hi) groups.set(o.group, o.weight);
+			// Without the typed words, each term counts as a word. With them, word forms and typos (which
+			// cannot be told apart by word) count half a word between them.
+			let score = 0;
+			let other = 0;
+			for (const w of groups.values())
+				if (w === 1 || !exact.length) score += 1;
+				else other += w;
+			score += Math.min(0.5, other);
+			if (score > best) {
+				best = score;
+				anchor = h;
+			}
+		}
+	}
+	const at = anchor.at;
+	const hitEnd = anchor.end;
 	const lineStart = text.lastIndexOf("\n", at - 1) + 1;
 	let lineEnd = text.indexOf("\n", at);
 	if (lineEnd < 0) lineEnd = text.length;
@@ -187,14 +226,8 @@ export const cutExcerpt = (
 	// A long line is only looked at near the hit (a whole note can be one line).
 	const from = Math.max(lineStart, clusterStart(text, Math.max(lineStart, at - REACH * width)));
 	const to = Math.min(lineEnd, clusterEnd(text, Math.min(lineEnd, hitEnd + REACH * width)));
-	const hits: Array<[number, number]> = [[at, hitEnd]];
-	let more = 0;
-	while (more < MORE_CAP) {
-		const m = nextHit(re, scan, c.arabic);
-		if (!m) break;
-		more++;
-		if (m.index < to) hits.push([m.index, wordEnd(text, m.index, m.index + m[0].length)]);
-	}
+	const hits: Array<[number, number]> = found.filter((h) => h.at >= from && h.at < to).map((h) => [h.at, h.end]);
+	const more = Math.min(MORE_CAP, found.length - 1);
 	const piece = text.slice(from, to);
 	const shown = simplify(piece, from === lineStart, [at - from, hitEnd - from]);
 	const [start, end] = cutWindow(shown.text, shown.at(at - from), shown.at(hitEnd - from), width);

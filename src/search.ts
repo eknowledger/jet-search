@@ -94,7 +94,7 @@ export class Search {
 			paint(first, this.status());
 			// Excerpts for the rows people see, cut from Obsidian's cached text, unless turned off.
 			if (!this.data().settings.excerpts) return;
-			const excerpts = await this.excerpts(first, reply.terms);
+			const excerpts = await this.excerpts(first, reply.terms, typedWords(text));
 			if (excerpts.size) paint(this.compose(tier0, reply, now, excerpts, meta), this.status());
 		})().catch((e: unknown) => console.error("Jet Search: search failed", e));
 	}
@@ -217,7 +217,11 @@ export class Search {
 		return `${f.basename}\n${await this.app.vault.cachedRead(f)}`;
 	}
 
-	private async excerpts(entries: Entry[], terms: readonly string[]): Promise<Map<string, Shown>> {
+	private async excerpts(
+		entries: Entry[],
+		terms: readonly string[],
+		exact: readonly string[],
+	): Promise<Map<string, Shown>> {
 		const out = new Map<string, Shown>();
 		if (!terms.length) return out;
 		const rows = entries
@@ -227,7 +231,9 @@ export class Search {
 			rows.map(async (r) => {
 				const file = this.app.vault.getFileByPath(r.path);
 				if (!file) return;
-				const ex = cutExcerpt(withoutTitleLine(await this.app.vault.cachedRead(file), r.title), terms);
+				const ex = cutExcerpt(withoutTitleLine(await this.app.vault.cachedRead(file), r.title), terms, {
+					exact,
+				});
 				if (ex) out.set(r.path, { text: ex.text, marks: ex.marks, more: ex.more, offset: ex.offset });
 			}),
 		);
@@ -311,6 +317,13 @@ export class Search {
 		this.names?.remove(id);
 	}
 }
+
+/** The words as typed (not excluded with a minus), for the excerpt's choice of line. */
+const typedWords = (text: string): string[] =>
+	text
+		.replace(/"/g, " ")
+		.split(/\s+/)
+		.filter((w) => w && !w.startsWith("-"));
 
 /**
  * The note's first heading blanked when it only repeats the note's name, so the excerpt shows a line
