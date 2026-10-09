@@ -33,6 +33,13 @@ export class Meaning {
 			}
 			return buf;
 		};
+		feeder.meaningCheck = async () => {
+			if (!this.installed() || (await this.app.vault.adapter.exists(this.file))) return;
+			// data.json came from another device (Sync carries it, not the model file), or the file went.
+			this.data().meaningModel = null;
+			await this.save();
+			this.onChange?.();
+		};
 		feeder.onMeaningBroken = () => {
 			void (async () => {
 				await removeModel(this.app, this.dir).catch(() => {});

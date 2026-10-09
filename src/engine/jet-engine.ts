@@ -583,6 +583,14 @@ export class JetEngine implements SearchEngine {
 		return out;
 	}
 
+	/** A live note's modified time as indexed, or undefined when the index does not have it. */
+	mtimeOf(path: string): number | undefined {
+		const p = this.pending.get(path);
+		if (p) return p.mtime;
+		const at = this.ids.get(path);
+		return at ? at.s.seg.mtime[at.d] : undefined;
+	}
+
 	/** The paths and modified times of every live note (to catch up with the vault by mtime). */
 	mtimes(): Array<[string, number]> {
 		const out: Array<[string, number]> = [];

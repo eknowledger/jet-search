@@ -7,7 +7,8 @@ export type Near = { path: string; score: number };
 export type SavedVectors = { model: string; dim: number; paths: string[]; mtimes: number[]; data: Int8Array };
 
 export class Vectors {
-	private readonly byPath = new Map<string, { v: Int8Array; mtime: number }>();
+	/** `v` null: the note was embedded and has no known word, so it is never near (and not missing). */
+	private readonly byPath = new Map<string, { v: Int8Array | null; mtime: number }>();
 	dirty = false;
 
 	constructor(
@@ -15,8 +16,11 @@ export class Vectors {
 		readonly dim: number,
 	) {}
 
+	/** Notes with a vector. */
 	get size(): number {
-		return this.byPath.size;
+		let n = 0;
+		for (const x of this.byPath.values()) if (x.v) n++;
+		return n;
 	}
 
 	paths(): string[] {
@@ -28,8 +32,10 @@ export class Vectors {
 	}
 
 	set(path: string, mtime: number, unit: Float32Array | null): void {
+		// No known word: remembered as embedded, so it is not read again at every start.
 		if (!unit) {
-			this.delete(path);
+			this.byPath.set(path, { v: null, mtime });
+			this.dirty = true;
 			return;
 		}
 		const v = new Int8Array(this.dim);
@@ -54,7 +60,7 @@ export class Vectors {
 	nearest(q: Float32Array, k: number, allow?: (path: string) => boolean): Near[] {
 		const all: Near[] = [];
 		for (const [path, { v }] of this.byPath) {
-			if (allow && !allow(path)) continue;
+			if (!v || (allow && !allow(path))) continue;
 			let s = 0;
 			for (let j = 0; j < this.dim; j++) s += (q[j] ?? 0) * (v[j] ?? 0);
 			all.push({ path, score: s / 127 });
@@ -69,7 +75,8 @@ export class Vectors {
 		paths.forEach((p, i) => {
 			const x = this.byPath.get(p);
 			if (!x) return;
-			data.set(x.v, i * this.dim);
+			// A note with no vector is saved as zeros (a real one never is: it has unit length).
+			if (x.v) data.set(x.v, i * this.dim);
 			mtimes.push(x.mtime);
 		});
 		return { model: this.model, dim: this.dim, paths, mtimes, data };
@@ -77,9 +84,10 @@ export class Vectors {
 
 	static load(s: SavedVectors): Vectors {
 		const out = new Vectors(s.model, s.dim);
-		s.paths.forEach((p, i) =>
-			out.byPath.set(p, { v: s.data.slice(i * s.dim, (i + 1) * s.dim), mtime: s.mtimes[i] ?? 0 }),
-		);
+		s.paths.forEach((p, i) => {
+			const v = s.data.slice(i * s.dim, (i + 1) * s.dim);
+			out.byPath.set(p, { v: v.some((x) => x !== 0) ? v : null, mtime: s.mtimes[i] ?? 0 });
+		});
 		return out;
 	}
 }

@@ -81,6 +81,11 @@ export class Feeder {
 		this.live = false;
 		this.building = false;
 		this.progress = null;
+		this.meaningLoaded = false;
+		if (this.meaningProgress) {
+			this.meaningProgress = null;
+			this.onMeaningProgress?.();
+		}
 	}
 
 	private notes(): TFile[] {
@@ -95,27 +100,58 @@ export class Feeder {
 			stemming: [...this.stemming()],
 		});
 		this.alive(gen);
-		// Meaning first, so the build and the catch-up give the notes they send their vectors too.
-		const meaning = await this.loadMeaning();
-		this.alive(gen);
+		// A model the data says is installed but whose file is not here (another device): forgotten.
+		await this.meaningCheck?.().catch(() => {});
+		// Removed while the worker slept: its saved vectors go now.
+		if (this.forgetOnOpen) {
+			this.forgetOnOpen = false;
+			await this.client.call({ op: "meaning:off", forget: true });
+		}
+		// The model is not read here: it loads on the first question of the session.
 		if (loaded) await this.catchUp(gen);
 		else await this.build(gen);
 		this.alive(gen);
 		this.live = true;
 		this.onReady?.();
-		if (meaning) await this.embedMissing();
+		// Turned on or off while the index was being built: done now.
+		const p = this.meaningPending;
+		this.meaningPending = null;
+		if (p)
+			void this.meaningChanged(p.on, p.forget).catch((e: unknown) =>
+				console.warn("Jet Search: search by meaning", e),
+			);
+	}
+
+	/** The model is in the worker (this session); a generation bumped by every on and off. */
+	private meaningLoaded = false;
+	private meaningGen = 0;
+	private meaningPending: { on: boolean; forget: boolean } | null = null;
+	private forgetOnOpen = false;
+
+	/**
+	 * The first question of a session: the model to the worker, then vectors for the notes
+	 * that lack one, in the background. False when meaning is off or its model cannot be had.
+	 */
+	async ensureMeaning(): Promise<boolean> {
+		if (this.meaningLoaded) return true;
+		if (!(await this.loadMeaning())) return false;
+		void this.embedMissing().catch((e: unknown) => console.warn("Jet Search: notes could not be given vectors", e));
+		return true;
 	}
 
 	/**
 	 * Send the model to the worker, if meaning is on and installed. A model file that cannot be read
 	 * (truncated, an older format, a sync conflict) turns meaning off; words carry on.
+	 * Turned off meanwhile: the model is not sent, or dropped again.
 	 */
 	private async loadMeaning(): Promise<boolean> {
-		let buf: ArrayBuffer | null = null;
+		const gen = this.meaningGen;
 		try {
-			buf = (await this.meaningModel?.()) ?? null;
-			if (!buf) return false;
+			const buf = (await this.meaningModel?.()) ?? null;
+			if (!buf || gen !== this.meaningGen) return false;
 			await this.client.call({ op: "meaning:load", buf, model: "potion-base-8M" }, [buf]);
+			if (gen !== this.meaningGen) return false;
+			this.meaningLoaded = true;
 			return true;
 		} catch (e) {
 			// The worker stopped meanwhile: that is not the model's fault.
@@ -126,37 +162,60 @@ export class Feeder {
 		}
 	}
 
+	/** Checks the installed model's file is still there; set by the plugin. */
+	meaningCheck: (() => Promise<void>) | null = null;
+
 	/** The model file could not be used (the plugin forgets it, so the settings offer it again). */
 	onMeaningBroken: (() => void) | null = null;
 
 	/**
 	 * Meaning turned on while Jet runs: the model to the worker, then vectors for every note.
-	 * Off: the worker drops them; `forget` deletes the saved vectors too.
+	 * Off: the worker drops them; `forget` deletes the saved vectors too, now or when the worker next
+	 * opens. While the index is built, the change waits for the build's end.
 	 */
 	async meaningChanged(on: boolean, forget = false): Promise<void> {
-		if (!this.client.running || !this.live) return;
+		this.meaningGen++;
+		if (!this.client.running) {
+			// Asleep: on loads at the next question; a forget is done when the worker opens.
+			if (forget) this.forgetOnOpen = true;
+			return;
+		}
+		if (!this.live) {
+			this.meaningPending = { on, forget: forget || !!this.meaningPending?.forget };
+			return;
+		}
 		if (!on) {
+			this.meaningLoaded = false;
 			await this.client.call({ op: "meaning:off", forget });
 			return;
 		}
 		if (await this.loadMeaning()) await this.embedMissing();
 	}
 
-	/** Vectors for notes that lack one or whose vector is older than the note, in batches, with progress. */
+	/**
+	 * Vectors for notes that lack one or whose vector is older than the note, newest first, in batches,
+	 * with progress. Stops when meaning is turned off meanwhile; the progress always ends.
+	 */
 	async embedMissing(): Promise<void> {
+		const gen = this.meaningGen;
 		const missing = await this.client.call({ op: "meaning:missing" });
-		if (!missing.length) return;
+		if (!missing.length || gen !== this.meaningGen) return;
 		const files = missing.map((p) => this.app.vault.getFileByPath(p)).filter((f): f is TFile => !!f);
 		const inbound = inboundCounts(this.app);
 		this.meaningProgress = { done: 0, total: files.length };
 		this.onMeaningProgress?.();
-		for (let i = 0; i < files.length; i += BATCH) {
-			await this.client.call({ op: "meaning:embed", notes: await this.read(files.slice(i, i + BATCH), inbound) });
-			this.meaningProgress = { done: Math.min(files.length, i + BATCH), total: files.length };
+		try {
+			for (let i = 0; i < files.length && gen === this.meaningGen; i += BATCH) {
+				const notes = await this.read(files.slice(i, i + BATCH), inbound);
+				if (gen !== this.meaningGen) break;
+				await this.client.call({ op: "meaning:embed", notes });
+				this.meaningProgress = { done: Math.min(files.length, i + BATCH), total: files.length };
+				this.onMeaningProgress?.();
+			}
+		} finally {
+			this.meaningProgress = null;
 			this.onMeaningProgress?.();
 		}
-		this.meaningProgress = null;
-		this.onMeaningProgress?.();
 	}
 
 	/** The first build: newest notes first, so recent work is searchable soonest. */
@@ -201,8 +260,15 @@ export class Feeder {
 
 	/** The batch's text (read in parallel), then each note gathered in slices of ≤ 8 ms. */
 	private async read(files: readonly TFile[], inbound: Map<string, number>): Promise<RawNote[]> {
-		const texts = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
-		return sliced(files, (f, i) => gather(this.app, f, texts[i] ?? "", inbound.get(f.path) ?? 0));
+		// A note deleted or synced away between the list and the read is left out, not a failure.
+		const texts = await Promise.allSettled(files.map((f) => this.app.vault.cachedRead(f)));
+		const ok = files.filter((_, i) => texts[i]?.status === "fulfilled");
+		const text = (i: number): string => {
+			const t = texts[i];
+			return t?.status === "fulfilled" ? t.value : "";
+		};
+		const at = new Map(files.map((f, i) => [f, i]));
+		return sliced(ok, (f) => gather(this.app, f, text(at.get(f) ?? -1), inbound.get(f.path) ?? 0));
 	}
 
 	// ── Freshness ──────────────────────────────────────────────

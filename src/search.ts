@@ -286,6 +286,9 @@ export class Search {
 				if (!(e instanceof Cancelled)) console.error("Jet Search: the index could not be opened", e);
 				return;
 			}
+			// The first question of the session loads the model; vectors follow in the background.
+			await this.feeder.ensureMeaning?.();
+			if (this.current?.text !== text) return;
 			const r = await this.client.nearest(text, {
 				k: 50,
 				scope: narrowed ? undefined : scope,
@@ -369,7 +372,9 @@ export class Search {
 
 	private status(): string {
 		const p = this.feeder.progress;
-		return p ? `Indexing ${p.done} of ${p.total}…` : "";
+		if (p) return `Indexing ${p.done} of ${p.total}…`;
+		const m = this.feeder.meaningProgress;
+		return m ? `Giving notes their meaning: ${m.done} of ${m.total}…` : "";
 	}
 
 	private compose(

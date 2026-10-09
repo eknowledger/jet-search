@@ -9,37 +9,40 @@ const STARTS = new Set([
 	"when",
 	"where",
 	"who",
-	"whom",
-	"whose",
 	"which",
-	"can",
-	"could",
-	"should",
-	"would",
 	"does",
 	"did",
-	"do",
+	"can",
+	"should",
 	"is",
 	"are",
 	"was",
 	"were",
-	"will",
-	"has",
-	"have",
-	"had",
+	"do",
 ]);
 
 export const isQuestion = (text: string): boolean => {
 	const t = text.trim();
-	if (!t || t.includes('"') || /(^|\s)([#@]\S|\S+:\S)/u.test(t)) return false;
+	// A filter piece is `#tag`, `@scope` or `key:value` with a key of letters: "10:30" and "https://…" are words.
+	if (!t || t.includes('"') || /(^|\s)([#@]\S|[\p{L}_-]+:(?!\/\/)\S)/u.test(t)) return false;
 	const words = t.split(/\s+/u).filter((w) => /\p{L}/u.test(w));
 	if (words.length < 3) return false;
-	return t.endsWith("?") || STARTS.has((words[0] ?? "").toLowerCase().replace(/[^\p{L}']/gu, ""));
+	// The question word only: "what's" and "what’s" are "what"; "Will Smith" is a name.
+	const first = /^\p{L}+/u.exec((words[0] ?? "").toLowerCase())?.[0] ?? "";
+	return t.endsWith("?") || STARTS.has(first);
 };
 
 /** The words a meaning row's excerpt looks for: the question's, without the small ones. */
 const SMALL = new Set([
 	...STARTS,
+	"whom",
+	"whose",
+	"could",
+	"would",
+	"will",
+	"has",
+	"have",
+	"had",
 	"a",
 	"an",
 	"the",

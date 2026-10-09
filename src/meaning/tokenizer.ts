@@ -4,11 +4,13 @@
  * characters a word at most). Checked against Hugging Face's own tokenizer on a fixture.
  */
 
+// As Hugging Face's BertNormalizer (Rust) has them: "other" characters (control, format,
+// private use, unassigned, lone surrogates) are dropped; White_Space (U+2028/2029 too) is a space.
 const isControl = (c: string): boolean => {
 	if (c === "\t" || c === "\n" || c === "\r") return false;
-	return /\p{Cc}|\p{Cf}/u.test(c);
+	return /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}]/u.test(c);
 };
-const isWhite = (c: string): boolean => c === " " || c === "\t" || c === "\n" || c === "\r" || /\p{Zs}/u.test(c);
+const isWhite = (c: string): boolean => c === "\t" || c === "\n" || c === "\r" || /\p{White_Space}/u.test(c);
 const isCjk = (cp: number): boolean =>
 	(cp >= 0x4e00 && cp <= 0x9fff) ||
 	(cp >= 0x3400 && cp <= 0x4dbf) ||
@@ -35,11 +37,9 @@ export const basicTokens = (text: string): string[] => {
 		else if (isCjk(cp)) s += ` ${c} `;
 		else s += c;
 	}
-	// Accents stripped (decomposed, combining marks dropped), then lower case.
-	s = s
-		.normalize("NFD")
-		.replace(/\p{Mn}/gu, "")
-		.toLowerCase();
+	// Accents stripped (decomposed, combining marks dropped), then lower case one character at a time,
+	// as Rust's to_lowercase does: no final-sigma rule ("ΟΔΟΣ" → "οδοσ").
+	s = [...s.normalize("NFD").replace(/\p{Mn}/gu, "")].map((c) => c.toLowerCase()).join("");
 	const out: string[] = [];
 	for (const word of s.split(" ")) {
 		if (!word) continue;

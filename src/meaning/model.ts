@@ -104,12 +104,16 @@ export const packModel = (safetensors: ArrayBuffer, tokenizerJson: string, dims:
 };
 
 export const unpackModel = (buf: ArrayBuffer, id: string = MODEL.id): MeaningModel => {
+	if (buf.byteLength < 24) throw new Error("not a Jet meaning model (the file is too short)");
 	const v = new DataView(buf);
 	if (v.getUint32(0, true) !== MAGIC || v.getUint32(4, true) !== VERSION) throw new Error("not a Jet meaning model");
 	const dim = v.getUint32(8, true);
 	const rows = v.getUint32(12, true);
 	const unk = v.getUint32(16, true);
 	const len = v.getUint32(20, true);
+	// A truncated file (a partial write, a sync placeholder) is said so, not a raw RangeError.
+	const need = 24 + len + ((4 - ((24 + len) % 4)) % 4) + rows * 4 + rows * dim;
+	if (buf.byteLength < need || dim === 0 || unk >= rows) throw new Error("the Jet meaning model file is incomplete");
 	const pieces = new TextDecoder().decode(new Uint8Array(buf, 24, len)).split("\n");
 	const vocab = new Map<string, number>();
 	pieces.forEach((p, i) => {

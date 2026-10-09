@@ -124,7 +124,9 @@ export class Router {
 				if (req.forget) await this.store?.saveVectors?.(null);
 				return { notes: this.engine.size };
 			case "meaning:embed":
-				for (const n of req.notes) this.vector(n);
+				// Only as the index has the note now: deleted or edited since the batch was read, it is
+				// left to the delete or the newer upsert.
+				for (const n of req.notes) if (this.engine.mtimeOf(n.path) === n.mtime) this.vector(n);
 				this.changed();
 				return { notes: this.meaning?.vectors.size ?? 0 };
 			case "meaning:missing":
@@ -197,9 +199,11 @@ export class Router {
 	private missing(): string[] {
 		const v = this.meaning?.vectors;
 		if (!v) return [];
+		// Newest first.
 		return this.engine
 			.mtimes()
 			.filter(([p, t]) => v.mtimeOf(p) !== t)
+			.sort((a, b) => b[1] - a[1])
 			.map(([p]) => p);
 	}
 

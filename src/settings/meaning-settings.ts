@@ -62,20 +62,25 @@ export class MeaningConfirm extends Modal {
 		const lock = (on: boolean): void => {
 			for (const b of [cancel, files, go]) b.disabled = on;
 		};
-		const run = async (task: () => Promise<void>): Promise<void> => {
-			lock(true);
-			const tick = window.setInterval(() => status.setText(this.meaning.busy ?? ""), 200);
-			try {
-				await task();
-				this.done = true;
-				this.close();
-			} catch (e) {
-				status.setText(e instanceof Error ? e.message : String(e));
-				lock(false);
-			} finally {
-				window.clearInterval(tick);
-			}
-		};
+		const run = (task: () => Promise<void>): Promise<void> =>
+			(this.task = (async () => {
+				lock(true);
+				const tick = window.setInterval(() => status.setText(this.meaning.busy ?? ""), 200);
+				try {
+					await task();
+					this.done = true;
+					if (!this.shut) this.close();
+				} catch (e) {
+					const message = e instanceof Error ? e.message : String(e);
+					// Closed meanwhile (Esc): the message would land in a dialog nobody sees.
+					if (this.shut) new Notice(`Search by meaning was not installed: ${message}`);
+					status.setText(message);
+					lock(false);
+				} finally {
+					window.clearInterval(tick);
+					this.task = null;
+				}
+			})());
 		cancel.addEventListener("click", () => this.close());
 		go.addEventListener("click", () => void run(() => this.meaning.install()));
 		files.addEventListener("click", () => picker.click());
@@ -97,9 +102,17 @@ export class MeaningConfirm extends Modal {
 		});
 	}
 
+	/** The download or install under way, if any. */
+	private task: Promise<void> | null = null;
+	private shut = false;
+
 	onClose(): void {
 		this.contentEl.empty();
-		this.closed(this.done);
+		this.shut = true;
+		// Closed (Esc, ✕) while it downloads: the outcome is told once it is known.
+		const t = this.task;
+		if (t) void t.then(() => this.closed(this.done));
+		else this.closed(this.done);
 	}
 }
 
