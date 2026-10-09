@@ -10,8 +10,10 @@ import { compact, fold } from "./names";
 export type Parsed = {
 	/** The text to search for: the input, without an explicit `in:` / `@` form. */
 	text: string;
-	/** Applied by `in:name` or `@name` (the first scope of that name). */
+	/** Applied by `in:name` or `@name`. */
 	applied?: Scope;
+	/** Every scope the explicit form names, when several share the name (the host picks the biggest). */
+	appliedAll?: Scope[];
 	/**
 	 * The explicit form is finished: quoted, or a space follows it. While `@cob` is still being typed
 	 * it may already name a scope by an alias; the modal waits for the space.
@@ -24,12 +26,14 @@ export type Parsed = {
 	suggest?: { scopes: Scope[]; name: string; rest: string; at: number };
 	/** The text is a scope's name alone. */
 	hint?: Scope;
+	/** Every scope of that name, when several share it. */
+	hintAll?: Scope[];
 };
 
 /** Words in a name: the longest name tried first is this long. */
 const MAX_NAME_WORDS = 8;
-/** `in:word`, `in:"two words"`, `@word`, `@"two words"` at the start of a word. */
-const EXPLICIT = /(^|\s)(?:in:|@)(?:"([^"]+)"|(\S+))/iu;
+/** `in:word`, `in:"two words"`, `@word`, `@"two words"` at the start of a word (every one in the text). */
+const EXPLICIT_ALL = /(^|\s)(?:in:|@)(?:"([^"]+)"|(\S+))/giu;
 
 const typed = (s: Scope): boolean => s.mode !== "in-only";
 
@@ -46,30 +50,81 @@ const namesOf = (scopes: readonly Scope[]): Map<string, Scope[]> => {
 	const byName = new Map<string, Scope[]>();
 	for (const s of scopes)
 		if (typed(s))
-			for (const n of new Set([s.name, ...s.aliases].map(fold)))
+			// A numbers-only alias ("2" from "2.Projects") is for in:/@ only: anywhere, it is just a number.
+			for (const n of new Set([s.name, ...s.aliases.filter((a) => !/^\d+$/.test(a.trim()))].map(fold)))
 				if (n) byName.set(n, [...(byName.get(n) ?? []), s]);
 	table = { key, byName };
 	return byName;
 };
 
+/** A name as the explicit forms match it: folded, no spaces, no quotes (`The "Big" Plan` → thebigplan). */
+const key = (n: string): string => compact(n.replace(/"/g, ""));
+/** What an explicit form may name: the name, an alias, or "Name Kind" for scopes that share a name. */
+const explicitNames = (x: Scope): string[] => [x.name, ...x.aliases, `${x.name} ${x.kind}`].map(key);
+
+/**
+ * `in:` / `@` forms, every one in the text until one names a scope: quoted, or the
+ * longest run of words naming one exactly (`@Amber Studio plugin`), or the start of exactly one name
+ * or alias (`@cob`). A name several scopes share gives all of them (the host picks the biggest).
+ */
+const explicitForm = (input: string, scopes: readonly Scope[]): Parsed | null => {
+	for (const m of input.matchAll(EXPLICIT_ALL)) {
+		const at = m.index ?? 0;
+		const firstEnd = at + m[0].length;
+		const exact = (k: string): Scope[] => (k ? scopes.filter((x) => explicitNames(x).includes(k)) : []);
+		let found: Scope[] = [];
+		let end = firstEnd;
+		if (m[2] !== undefined) found = exact(key(m[2]));
+		else {
+			// Unquoted: the longest run of the following words that names a scope exactly.
+			const run: Array<{ text: string; end: number }> = [{ text: m[3] ?? "", end: firstEnd }];
+			for (const w of input.slice(firstEnd).matchAll(/^\s+(\S+)|(?<=\S)\s+(\S+)/gu)) {
+				if (run.length >= MAX_NAME_WORDS) break;
+				const last = run[run.length - 1] as { end: number };
+				const word = w[1] ?? w[2] ?? "";
+				const wordAt = firstEnd + (w.index ?? 0) + w[0].length - word.length;
+				if (input.slice(last.end, wordAt).trim()) break;
+				run.push({ text: word, end: wordAt + word.length });
+			}
+			for (let k = run.length; k >= 1 && !found.length; k--) {
+				const hit = exact(
+					key(
+						run
+							.slice(0, k)
+							.map((r) => r.text)
+							.join(" "),
+					),
+				);
+				if (hit.length) {
+					found = hit;
+					end = (run[k - 1] as { end: number }).end;
+				}
+			}
+			if (!found.length) {
+				const k = key(m[3] ?? "");
+				const starts = k ? scopes.filter((x) => explicitNames(x).some((n) => n.startsWith(k))) : [];
+				const named = new Set(starts.map((x) => compact(x.name)));
+				// The start of one name (two scopes of one name count as one).
+				if (named.size === 1) found = starts;
+			}
+		}
+		if (!found.length) continue;
+		const text = `${input.slice(0, at)}${m[1] ?? ""}${input.slice(end)}`;
+		const complete = m[2] !== undefined || /\s/u.test(input[end] ?? "");
+		return {
+			text: text.replace(/\s+/g, " ").trim(),
+			applied: found[0],
+			...(found.length > 1 ? { appliedAll: found } : {}),
+			complete,
+		};
+	}
+	return null;
+};
+
 export const parseScope = (input: string, scopes: readonly Scope[]): Parsed => {
 	if (!scopes.length || !input.trim()) return { text: input };
-	const explicit = EXPLICIT.exec(input);
-	if (explicit) {
-		const key = compact(explicit[2] ?? explicit[3] ?? "");
-		const names = (x: Scope): string[] => [x.name, ...x.aliases].map(compact);
-		// The name or an alias; else the start of exactly one scope's name or alias (`@cob` → Cobalt).
-		const starts = key ? scopes.filter((x) => names(x).some((n) => n.startsWith(key))) : [];
-		const s = key
-			? (scopes.find((x) => names(x).includes(key)) ?? (starts.length === 1 ? starts[0] : undefined))
-			: undefined;
-		if (s) {
-			const end = explicit.index + explicit[0].length;
-			const text = `${input.slice(0, explicit.index)}${explicit[1] ?? ""}${input.slice(end)}`;
-			const complete = explicit[2] !== undefined || /\s/u.test(input[end] ?? "");
-			return { text: text.replace(/\s+/g, " ").trim(), applied: s, complete };
-		}
-	}
+	const explicit = explicitForm(input, scopes);
+	if (explicit) return explicit;
 	const byName = namesOf(scopes);
 	// Words outside quotes, with where each starts and ends: a name is a run of whole words, anywhere.
 	const words: Array<{ from: number; to: number }> = [];
@@ -108,7 +163,7 @@ export const parseScope = (input: string, scopes: readonly Scope[]): Parsed => {
 		const rest = `${input.slice(0, best.from)} ${input.slice(best.to)}`.replace(/\s+/g, " ").trim();
 		return rest
 			? { text: input, suggest: { scopes: best.scopes, name, rest, at: best.from } }
-			: { text: input, hint: best.scopes[0] };
+			: { text: input, hint: best.scopes[0], ...(best.scopes.length > 1 ? { hintAll: best.scopes } : {}) };
 	}
 	return { text: input };
 };

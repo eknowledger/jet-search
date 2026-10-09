@@ -196,7 +196,8 @@ describe("the host's filters", () => {
 			{ kind: "edited", days: 7 },
 			{ kind: "title" },
 		]);
-		expect(data.searches[0]).toBe("in:Cobalt status:draft edited:7d world");
+		// Title only has a typed form too, so it comes back.
+		expect(data.searches[0]).toBe("in:Cobalt status:draft edited:7d title:only world");
 	});
 });
 

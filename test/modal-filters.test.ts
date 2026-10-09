@@ -97,8 +97,9 @@ describe("filters as chips", () => {
 		expect(lists.at(-1)).toEqual(["", undefined, ["prop"]]);
 		type(m, "world #cobalt ");
 		expect(chips()).toEqual(["statusdraft", "tag#cobalt"]);
-		expect(m.inputEl.value).toBe("world");
-		expect(lists.at(-1)).toEqual(["world", undefined, ["prop", "tag"]]);
+		// The space typed after the chip stays, so the next word stays apart.
+		expect(m.inputEl.value).toBe("world ");
+		expect(lists.at(-1)).toEqual(["world ", undefined, ["prop", "tag"]]);
 		expect($(".jet-hscope")?.textContent).toBe("· 2 filters");
 	});
 

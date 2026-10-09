@@ -5,7 +5,8 @@
  * One pass over the notes per new filter (a few ms at 1,500 notes), then a lookup.
  */
 import { type App, getAllTags, type TFile } from "obsidian";
-import { type Filter, type FilterFacts, passes } from "./filter";
+import { createdAt, type Filter, type FilterFacts, passes } from "./filter";
+import { fold } from "../scopes/names";
 
 export type PropertyKey = { name: string; notes: number };
 
@@ -65,7 +66,9 @@ export class FilterSets {
 
 	/** The notes the filter keeps (every note for `title`). */
 	notes(f: Filter, now = Date.now()): ReadonlySet<string> {
-		const key = JSON.stringify(f);
+		// A window's notes change with the clock too: its key holds the hour.
+		const timed = f.kind === "edited" || f.kind === "created";
+		const key = timed ? `${JSON.stringify(f)}@${Math.floor(now / 3_600_000)}` : JSON.stringify(f);
 		const hit = this.sets.get(key);
 		if (hit) return hit;
 		const set = new Set<string>();
@@ -91,8 +94,9 @@ export class FilterSets {
 				const vals = (Array.isArray(raw) ? raw : [raw]).map((v) =>
 					typeof v === "string" ? (v.replace(/^\[\[|\]\]$/g, "").split("|")[0] ?? v) : String(v),
 				);
-				const want = f.value.toLowerCase().replace(/^\[\[|\]\]$/g, "");
-				const hit = vals.find((v) => v.toLowerCase() === want) ?? vals[0];
+				// Compared as `passes` compares, accents and case folded.
+				const want = fold(f.value.replace(/^\[\[|\]\]$/g, ""));
+				const hit = vals.find((v) => fold(v) === want) ?? vals[0];
 				return hit === undefined ? null : `${k} = ${hit}`;
 			}
 			case "tag": {
@@ -106,7 +110,7 @@ export class FilterSets {
 			case "edited":
 				return `edited ${day(file.stat.mtime)}`;
 			case "created":
-				return `created ${day(file.stat.ctime)}`;
+				return `created ${day(createdAt(cache?.frontmatter ?? {}, file.stat.ctime))}`;
 			case "links":
 				return `links to ${f.name}`;
 			default:

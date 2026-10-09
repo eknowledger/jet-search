@@ -22,15 +22,13 @@ export type OwnMode = Exclude<Mode, "default">;
 /** A scope's mode, with "default" resolved to the mode every scope follows. */
 export const modeOf = (s: Scope, every: OwnMode): OwnMode => (s.mode === "default" ? every : s.mode);
 
-/** The scopes with their modes resolved (what typing and the modal use), kept while nothing changes. */
-let resolved: { from: readonly Scope[]; key: string; out: Scope[] } | null = null;
-export const withModes = (scopes: readonly Scope[], every: OwnMode): Scope[] => {
-	const key = `${every}\u0001${scopes.map((s) => s.mode).join("\u0001")}`;
-	if (resolved?.from === scopes && resolved.key === key && resolved.out.length === scopes.length) return resolved.out;
-	const out = scopes.map((s) => (s.mode === "default" ? { ...s, mode: every } : s));
-	resolved = { from: scopes, key, out };
-	return out;
-};
+/**
+ * The scopes with their modes resolved (what typing and the modal use). Not cached: the settings edit
+ * scopes in place, and a cache keyed on the list kept their old names. A map over ~100 scopes
+ * per keystroke costs nothing next to the parse, which caches by names itself.
+ */
+export const withModes = (scopes: readonly Scope[], every: OwnMode): Scope[] =>
+	scopes.map((s) => (s.mode === "default" ? { ...s, mode: every } : s));
 
 /** Where generation found a scope: the signal, the pattern, the member in it. */
 export type Origin = { signal: string; at: string; key: string; v: number };

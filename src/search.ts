@@ -6,7 +6,7 @@ import { iconOf } from "./host";
 import type { Feeder } from "./index/feeder";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Filter } from "./filters/filter";
-import type { Entry } from "./modal/jet-modal";
+import type { Entry, Sort } from "./modal/jet-modal";
 import { type MetaField, type MetaHit, MetaIndex, type MetaNote } from "./tier0/meta";
 import { type NameHit, NameIndex } from "./tier0/names";
 import { contentWords } from "./meaning/question";
@@ -107,6 +107,7 @@ export class Search {
 		scope?: string,
 		filters: readonly Filter[] = [],
 		meaning?: { on: boolean; offered: boolean },
+		order: Sort = "best",
 	): void {
 		this.current = { text, paint, scope, filters, meaning };
 		this.why = { scope, filters };
@@ -129,14 +130,25 @@ export class Search {
 		const names = this.nameIndex();
 		const allowed: ReadonlySet<string> | null = narrowed ?? inScope;
 		if (!text.trim()) {
-			paint(this.listed(allowed ?? new Set<string>()), this.status());
+			// Title only with nothing typed yet: the notes it would search in, not "no notes match".
+			const every = titleOnly && !sets.length && !inScope;
+			paint(
+				this.listed(
+					every
+						? new Set(this.app.vault.getMarkdownFiles().map((f) => f.path))
+						: (allowed ?? new Set<string>()),
+					order,
+				),
+				this.status(),
+			);
 			return;
 		}
 		const tier0 = names.match(text, {
 			limit: 40,
 			allow: allowed ? (id) => allowed.has(this.pathOf.get(id) ?? "") : undefined,
 		});
-		const meta = this.metaHits(text, allowed);
+		// Title only means names alone: headings and properties are left out too.
+		const meta = titleOnly ? [] : this.metaHits(text, allowed);
 		const now = Date.now();
 		// Search by meaning: its own list, never merged with words.
 		if (meaning?.on && !titleOnly) {
@@ -285,13 +297,25 @@ export class Search {
 		return [{ type: "header", label: "Try instead", plain: true, mode: "meaning" }];
 	}
 
-	/** Filters with no text: the notes they keep, most recently changed first. */
-	private listed(allowed: ReadonlySet<string>): Entry[] {
+	/**
+	 * Filters with no text: the notes they keep, most recently changed first, or in the order chosen,
+	 * sorted before the first 50 are taken so "oldest first" shows the oldest.
+	 */
+	private listed(allowed: ReadonlySet<string>, order: Sort = "best"): Entry[] {
 		const now = Date.now();
+		const by: Record<Sort, (a: TFile, b: TFile) => number> = {
+			best: (a, b) => b.stat.mtime - a.stat.mtime,
+			"edited-new": (a, b) => b.stat.mtime - a.stat.mtime,
+			"edited-old": (a, b) => a.stat.mtime - b.stat.mtime,
+			"created-new": (a, b) => b.stat.ctime - a.stat.ctime,
+			"created-old": (a, b) => a.stat.ctime - b.stat.ctime,
+			title: (a, b) =>
+				titleOf(a.path).localeCompare(titleOf(b.path), undefined, { numeric: true, sensitivity: "base" }),
+		};
 		const files = [...allowed]
 			.map((p) => this.app.vault.getFileByPath(p))
 			.filter((f): f is TFile => !!f)
-			.sort((a, b) => b.stat.mtime - a.stat.mtime);
+			.sort(by[order]);
 		if (!files.length) return [{ type: "notice", title: "No notes match these filters" }];
 		return [
 			{ type: "header", label: "Results", count: files.length },

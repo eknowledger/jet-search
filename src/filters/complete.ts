@@ -9,6 +9,9 @@
 export const pieceAt = (text: string, caret: number): { from: number; to: number; piece: string } => {
 	let from = caret;
 	while (from > 0 && !/\s/u.test(text[from - 1] ?? "")) from--;
+	// Inside an open quote or `[[` the value goes on past spaces: `type:"ai n` is one piece.
+	const open = /(^|\s)([^\s:"[\]#@]+:(?:"[^"]*|\[\[[^\]]*))$/u.exec(text.slice(0, caret));
+	if (open?.[2] && caret - open[2].length < from) from = caret - open[2].length;
 	let to = caret;
 	while (to < text.length && !/\s/u.test(text[to] ?? "")) to++;
 	return { from, to, piece: text.slice(from, to) };
@@ -104,7 +107,8 @@ export const findFix = (
 	for (const m of text.matchAll(/(^|\s)([^\s:"[\]#@]+):("[^"]*"?|[^\s]+)/gu)) {
 		const wrong = m[2] ?? "";
 		const k = wrong.toLowerCase();
-		if (wrong.length < 4 || known(wrong) || OWN.has(k.replace(/^-/, ""))) continue;
+		// `-status:draft` is Obsidian's minus: "fixing" it would keep the opposite notes.
+		if (wrong.startsWith("-") || wrong.length < 4 || known(wrong) || OWN.has(k)) continue;
 		let best: { key: string; d: number; n: number } | null = null;
 		for (const [name, n] of keys) {
 			const d = editDistance(k, name.toLowerCase(), 2);

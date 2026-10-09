@@ -10,6 +10,7 @@ import {
 	type OpenHow,
 	type ScopeCard,
 	type ScopeView,
+	type Sort,
 	type Typed,
 	scopeListLabel,
 } from "./modal/jet-modal";
@@ -194,16 +195,26 @@ export class JetHost implements ModalHost {
 				const a = this.scopeAccess;
 				if (!a) return null;
 				a.ensure();
-				const items = a
-					.all()
-					.filter((s) => [s.name, ...s.aliases].some((n) => starts(n, want.prefix)))
+				const all = a.all();
+				// Typed with or without its spaces (`@amb st`, `@ambst`).
+				const tight = (v: string): string => fold(v).replace(/\s+/g, "");
+				const items = all
+					.filter((s) =>
+						[s.name, ...s.aliases].some(
+							(n) => starts(n, want.prefix) || tight(n).startsWith(tight(want.prefix)),
+						),
+					)
 					.map((s) => ({ s, n: a.count(s.id) }))
 					.sort((x, y) => y.n - x.n)
 					.slice(0, AC_ITEMS)
-					.map(({ s, n }) => ({
-						label: scopeListLabel({ id: s.id, name: s.name, kind: s.kind, members: n }),
-						insert: `@${quote(s.name)} `,
-					}));
+					.map(({ s, n }) => {
+						// A name two scopes share is inserted with its kind, so the one picked is the one applied.
+						const shared = all.some((x) => x.id !== s.id && x.name === s.name) && s.kind;
+						return {
+							label: scopeListLabel({ id: s.id, name: s.name, kind: s.kind, members: n }),
+							insert: `@${quote(shared ? `${s.name} ${s.kind}` : s.name)} `,
+						};
+					});
 				return items.length ? { ...base, where: undefined, title: "Scopes", items } : null;
 			}
 			case "folders": {
@@ -412,7 +423,12 @@ export class JetHost implements ModalHost {
 		if (!p.applied && !p.suggest && !p.hint) return {};
 		a.ensure();
 		const view = (s: Scope): ScopeView => ({ id: s.id, name: s.name, kind: s.kind, members: a.count(s.id) });
-		if (p.applied) return { applied: { scope: view(p.applied), text: p.text, complete: !!p.complete } };
+		const biggest = (xs: readonly Scope[]): Scope[] => [...xs].sort((x, y) => a.count(y.id) - a.count(x.id));
+		if (p.applied) {
+			// A name several scopes share: the biggest, the others one ⇥ away.
+			const [first = p.applied, ...others] = biggest(p.appliedAll ?? [p.applied]);
+			return { applied: { scope: view(first), text: p.text, complete: !!p.complete, others: others.map(view) } };
+		}
 		if (p.suggest) {
 			// Scopes of one name: the biggest first.
 			const [first, ...others] = [...p.suggest.scopes].sort((x, y) => a.count(y.id) - a.count(x.id));
@@ -426,12 +442,33 @@ export class JetHost implements ModalHost {
 					at: p.suggest.at,
 				},
 			};
-			// A name two scopes share never applies by itself.
-			if (!others.length && this.autoFor(first)) t.auto = true;
+			// A name two scopes share never applies by itself; nor one that starts a longer scope's name
+			// while what follows could still be the rest of it ("cobalt re…" for Cobalt Research).
+			if (
+				!others.length &&
+				this.autoFor(first) &&
+				!this.longerName(a, p.suggest.name, text.slice(p.suggest.at + p.suggest.name.length))
+			)
+				t.auto = true;
 			return t;
 		}
 		if (!p.hint) return {};
-		return this.autoFor(p.hint) ? { hint: view(p.hint), auto: true } : { hint: view(p.hint) };
+		const [first = p.hint, ...others] = biggest(p.hintAll ?? [p.hint]);
+		const t: Typed = { hint: view(first), ...(others.length ? { hintOthers: others.map(view) } : {}) };
+		if (!others.length && this.autoFor(first) && !this.longerName(a, text.trim(), "")) t.auto = true;
+		return t;
+	}
+
+	/** Whether another scope's name starts with `name` and `next` (what follows it) could still be its rest. */
+	private longerName(a: HostScopes, name: string, next: string): boolean {
+		const n = fold(name);
+		const after = fold(next.trim().split(/\s+/)[0] ?? "");
+		return a.all().some((s) =>
+			[s.name, ...s.aliases].some((x) => {
+				const f = fold(x);
+				return f.startsWith(`${n} `) && f.slice(n.length + 1).startsWith(after);
+			}),
+		);
 	}
 
 	/** Whether a scope applies at once for its name or alias as typed: when you set it to Auto, in any casing. */
@@ -565,13 +602,14 @@ export class JetHost implements ModalHost {
 		scope?: string,
 		filters: readonly Filter[] = [],
 		meaning?: { on: boolean; offered: boolean },
+		order?: Sort,
 	): void {
 		if (!text.trim() && !filters.length) {
 			paint(scope !== undefined ? this.scopeRecents(scope) : this.recents());
 			this.search().warm();
 			return;
 		}
-		this.search().list(text, paint, scope, filters, meaning);
+		this.search().list(text, paint, scope, filters, meaning, order);
 	}
 
 	/** Search by meaning, set by the plugin: available while it is on and its model is installed. */
@@ -829,7 +867,10 @@ export class JetHost implements ModalHost {
 			d.settings.persistFilters && (scope || filters.length) ? { scope: scope?.id, filters: [...filters] } : null;
 		// Remembered as typed, scope and filters included, so choosing it again applies them again.
 		const parts = [...filters.map(filterText).filter(Boolean), text.trim()].filter(Boolean).join(" ");
-		if (opened) rememberSearch(this.data(), scope ? scopedSearch(scope.name, parts) : parts);
+		// A name another scope shares is written "Name Kind", so the search finds the same scope again.
+		const shared = scope && (this.scopeAccess?.all() ?? []).some((s) => s.id !== scope.id && s.name === scope.name);
+		const named = scope ? (shared && scope.kind ? `${scope.name} ${scope.kind}` : scope.name) : "";
+		if (opened) rememberSearch(this.data(), scope ? scopedSearch(named, parts) : parts);
 		this.search().idle();
 		this.save();
 	}

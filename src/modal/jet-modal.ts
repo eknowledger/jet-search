@@ -1,5 +1,5 @@
 import { type App, Menu, Modal, setIcon } from "obsidian";
-import { type Filter, filterLabel, type Found, sameFilter, withoutPieces } from "../filters/filter";
+import { cutPieces, type Filter, filterLabel, type Found, sameFilter, withoutPieces } from "../filters/filter";
 import { isQuestion } from "../meaning/question";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
@@ -72,10 +72,11 @@ export type ScopeView = { id: string; name: string; kind: string; members: numbe
 export type Typed = {
 	/** A name at the start, then more text: `at` is where the name starts in the text. */
 	suggest?: { scope: ScopeView; others: ScopeView[]; name: string; rest: string; at: number };
-	/** The name alone. */
+	/** The name alone; `hintOthers`: the other scopes of that name, biggest first. */
 	hint?: ScopeView;
-	/** `in:name` or `@name`; `complete` once a space follows it (or it is quoted). */
-	applied?: { scope: ScopeView; text: string; complete: boolean };
+	hintOthers?: ScopeView[];
+	/** `in:name` or `@name`; `complete` once a space follows it (or it is quoted); `others` share its name. */
+	applied?: { scope: ScopeView; text: string; complete: boolean; others?: ScopeView[] };
 	/** The suggested (or hinted) scope is on Auto and may apply at once. */
 	auto?: boolean;
 };
@@ -128,18 +129,28 @@ export const sortEntries = (entries: Entry[], sort: Sort): Entry[] => {
 		"edited-old": (a, b) => (a.mtime ?? 0) - (b.mtime ?? 0),
 		"created-new": (a, b) => (b.ctime ?? 0) - (a.ctime ?? 0),
 		"created-old": (a, b) => (a.ctime ?? 0) - (b.ctime ?? 0),
-		title: (a, b) => a.title.localeCompare(b.title),
+		title: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }),
 	};
 	const sorted = [...items].sort(key[sort]);
-	const rest = entries.filter((e) => e.type !== "item" && e.type !== "header");
+	const at = entries.findIndex((e) => e.type === "header" || e.type === "item");
+	// Rows above the results (the "in Obsidian's Search" row) stay above them.
+	const lead = at > 0 ? entries.slice(0, at).filter((e) => e.type !== "item") : [];
+	const rest = entries.slice(Math.max(0, at)).filter((e) => e.type !== "item" && e.type !== "header");
 	const first = entries.find((e) => e.type === "header");
-	const head: Entry = {
-		type: "header",
-		label: "Results",
-		count: sorted.length,
-		note: first?.type === "header" ? first.note : undefined,
-	};
-	return [head, ...sorted, ...rest];
+	// The first header keeps its switch, label and total; "Titles" becomes "Results".
+	const head: Entry =
+		first?.type === "header"
+			? {
+					...first,
+					label: first.label === "Titles" ? "Results" : first.label,
+					// One header: its total (it may count more than are shown). Several: the rows merged.
+					count:
+						entries.filter((e) => e.type === "header").length > 1
+							? sorted.length
+							: (first.count ?? sorted.length),
+				}
+			: { type: "header", label: "Results", count: sorted.length };
+	return [...lead, head, ...sorted, ...rest];
 };
 
 /** How to open a note. */
@@ -157,6 +168,8 @@ export type ModalHost = {
 		scope?: string,
 		filters?: readonly Filter[],
 		meaning?: { on: boolean; offered: boolean },
+		/** The order chosen; the notes kept by filters alone are sorted by it before the first ones are taken. */
+		order?: Sort,
 	): void;
 	/** Search by meaning: whether it can answer (on, model installed), and whether questions use it by themselves. */
 	meaning?: { available(): boolean; questions(): boolean };
@@ -573,6 +586,11 @@ export class JetModal extends Modal {
 
 	private setSort(k: Sort): void {
 		this.sort = k;
+		// Filters with no text list a window of the notes they keep: ask again in the new order.
+		if (!this.inputEl.value.trim() && this.filters.length) {
+			this.refresh();
+			return;
+		}
 		this.paint(this.lastEntries, this.statusEl.textContent ?? "");
 	}
 
@@ -586,9 +604,11 @@ export class JetModal extends Modal {
 			if (done.length) {
 				for (const d of done)
 					if (!this.filters.some((x) => sameFilter(x, d.filter))) this.filters.push(d.filter);
-				raw = withoutPieces(raw, done);
+				// The space you typed after a chip stays, and so does the caret.
+				const cut = cutPieces(raw, done, this.inputEl.selectionStart ?? raw.length);
+				raw = cut.text;
 				this.inputEl.value = raw;
-				this.inputEl.setSelectionRange(raw.length, raw.length);
+				this.inputEl.setSelectionRange(cut.caret, cut.caret);
 				pending = this.host.filters.find(raw).filter((f) => !f.complete);
 			} else pending = found;
 		}
@@ -610,22 +630,23 @@ export class JetModal extends Modal {
 			const t = this.host.scopes.typed(raw);
 			const current = this.chip;
 			const same = (v: ScopeView | undefined): boolean => !!v && v.id === current?.id;
+			// The space you typed after the name stays, so the next word does not stick to the last one.
+			const keep = (rest: string): string => (rest && /\s$/u.test(raw) && !/\s$/u.test(rest) ? `${rest} ` : rest);
 			if (t.applied && (t.applied.complete || final)) {
-				this.applyChip(t.applied.scope, t.applied.text);
+				this.applyChip(t.applied.scope, keep(t.applied.text), [t.applied.scope, ...(t.applied.others ?? [])]);
 				return;
 			}
 			// Auto: once a space follows the name, the scope applies without Tab.
 			const auto = t.auto ? (t.suggest?.scope ?? t.hint) : undefined;
-			if (auto && !this.suppressAuto.has(auto.id)) {
+			// The chip's own name is just a word (it is already applied).
+			if (auto && !same(auto) && !this.suppressAuto.has(auto.id)) {
 				const s = t.suggest;
 				const spaced = s ? /\s/u.test(raw[s.at + s.name.length] ?? "") : /\s$/u.test(raw);
 				if (spaced) {
-					this.applyChip(auto, s?.rest ?? "");
-					if (!same(auto)) {
-						this.autoUndo = true;
-						this.autoPrev = current;
-						this.autoName = s ? s.name : raw.trim();
-					}
+					this.applyChip(auto, keep(s?.rest ?? ""));
+					this.autoUndo = true;
+					this.autoPrev = current;
+					this.autoName = s ? s.name : raw.trim();
 					this.drawScope();
 					this.footer(this.inputEl.value);
 					return;
@@ -649,6 +670,7 @@ export class JetModal extends Modal {
 			scope,
 			[...this.filters],
 			this.host.meaning ? { on: this.meaningNow.on, offered: this.meaningNow.offered } : undefined,
+			this.sort,
 		);
 		this.footer(shown);
 		this.updateAC();
@@ -724,7 +746,9 @@ export class JetModal extends Modal {
 		const it = c?.items[this.acIndex];
 		if (!c || !it) return;
 		const v = this.inputEl.value;
-		const next = v.slice(0, c.from) + it.insert + v.slice(c.to).replace(/^\s+/u, "");
+		// The space after is dropped only when the insert brings its own (a key is not finished).
+		const tail = v.slice(c.to);
+		const next = v.slice(0, c.from) + it.insert + (/\s$/u.test(it.insert) ? tail.replace(/^\s+/u, "") : tail);
 		this.closeAC();
 		this.inputEl.value = next;
 		const at = c.from + it.insert.length;
@@ -797,6 +821,8 @@ export class JetModal extends Modal {
 	}
 
 	private addFilter(f: Filter): void {
+		// A second Edited or Created window replaces the first: beside it, it would change nothing.
+		if (f.kind === "edited" || f.kind === "created") this.filters = this.filters.filter((x) => x.kind !== f.kind);
 		if (!this.filters.some((x) => sameFilter(x, f))) this.filters.push(f);
 		this.filterSel = false;
 		this.refresh();
@@ -1013,6 +1039,7 @@ export class JetModal extends Modal {
 	/** Empty box, no scope, no filters: a new search. */
 	private clearAll(): void {
 		this.inputEl.value = "";
+		this.widened = null;
 		this.chip = null;
 		this.choices = [];
 		this.filters = [];
@@ -1079,6 +1106,13 @@ export class JetModal extends Modal {
 			t.createEl("b", { text: chip.name });
 			t.appendText(" · Auto");
 			keys([["⌫", "Undo"]]);
+		} else if (chip && s && !s.others.length) {
+			// A scope named in the text while a chip is on: ⇥ switches to it, so the banner says that.
+			const t = head("scan-search");
+			t.appendText("Search in ");
+			t.createEl("b", { text: s.scope.name });
+			t.appendText(` instead of ${chip.name} for “${s.rest}” · ${notes(s.scope.members)}`);
+			keys([["⇥", "Tab"]]);
 		} else if (chip && this.choices.length > 1) {
 			b.addClass("is-multi");
 			head("scan-search").appendText(
@@ -1224,7 +1258,7 @@ export class JetModal extends Modal {
 					["⇥", "Accept"],
 					["Esc", "Close list"],
 				]
-			: this.fix && !this.typing.suggest && !this.chip
+			: this.fix && !this.typing.suggest
 				? [
 						["⇥", `Fix to ${this.fix.key}:`],
 						["↵", "Open"],
@@ -1380,7 +1414,7 @@ export class JetModal extends Modal {
 				this.acceptAC();
 				return false;
 			}
-			if (this.fix && !this.typing.suggest && !this.chip) {
+			if (this.fix && !this.typing.suggest) {
 				this.applyFix();
 				return false;
 			}
@@ -1404,7 +1438,7 @@ export class JetModal extends Modal {
 				return false;
 			}
 			if (this.typing.hint) {
-				this.applyChip(this.typing.hint, "");
+				this.applyChip(this.typing.hint, "", [this.typing.hint, ...(this.typing.hintOthers ?? [])]);
 				return false;
 			}
 		});

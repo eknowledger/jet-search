@@ -31,26 +31,34 @@ export type FilterFacts = NoteFacts & {
 const DAY = 86_400_000;
 const UNITS: Record<string, number> = { d: 1, w: 7, m: 30, y: 365 };
 /** Keys the syntax gives a meaning of its own (any property key counts too, when your notes use it). */
-const BUILT_IN = new Set(["tag", "path", "edited", "created", "links", "has"]);
+const BUILT_IN = new Set(["tag", "tags", "path", "edited", "created", "links", "has", "title"]);
 
 export type Found = { filter: Filter; from: number; to: number; complete: boolean };
 
 /** One piece of the text as a filter, or null (it stays text). */
 const filterOf = (key: string, value: string, known: (key: string) => boolean): Filter | null => {
 	const k = key.toLowerCase();
-	const v = value.trim();
+	// A quoted value is the text inside the quotes, for every key (`path:"Daily Notes"`).
+	const v = value
+		.trim()
+		.replace(/^"(.*)"$/u, "$1")
+		.trim();
 	if (!v) return null;
-	if (k === "tag") return { kind: "tag", tag: v.startsWith("#") ? v : `#${v}` };
+	// `tags:work` is the tag, inline ones and nested ones too.
+	if (k === "tag" || k === "tags") return { kind: "tag", tag: v.startsWith("#") ? v : `#${v}` };
 	if (k === "path") return { kind: "path", prefix: v.replace(/\/+$/, "") };
 	if (k === "edited" || k === "created") {
 		const m = /^(\d+)\s*([dwmy])$/i.exec(v);
-		if (!m) return null;
+		// `edited:0d` would keep nothing: it stays text.
+		if (!m || Number(m[1]) === 0) return null;
 		return { kind: k, days: Number(m[1]) * (UNITS[(m[2] ?? "d").toLowerCase()] ?? 1) };
 	}
 	if (k === "links") {
 		const name = /^\[\[([^\]|#]+)/.exec(v)?.[1]?.trim() ?? v.replace(/^\[\[|\]\]$/g, "").trim();
 		return name ? { kind: "links", name } : null;
 	}
+	// Title only, as a remembered search writes it.
+	if (k === "title" && v.toLowerCase() === "only") return { kind: "title" };
 	if (k === "has") return v.toLowerCase() === "link" || v.toLowerCase() === "links" ? { kind: "haslink" } : null;
 	if (k === "in" || !known(key)) return null;
 	return { kind: "prop", key, value: v.replace(/^"|"$/g, "") };
@@ -58,7 +66,7 @@ const filterOf = (key: string, value: string, known: (key: string) => boolean): 
 
 /** `key:value` (value quoted, or `[[a link]]`), `[key:value]`, `#tag`, `date>…` / `date<…`, at a word start. */
 const PIECE =
-	/(^|\s)(?:\[([^\]:\s][^\]:]*):([^\]]*)\]|#([^\s#"]+)|date([<>])(\d{4}-\d{2}-\d{2})|([^\s:"[\]#@]+):("[^"]*"?|\[\[[^\]]*(?:\]\])?|[^\s]*))/gu;
+	/(^|\s)(?:\[([^\]:\s][^\]:]*):([^\]]*)\]|#((?=[\p{L}\p{N}_\-/]*[\p{L}_\-/])[\p{L}\p{N}_\-/]+)[,;.!?)]*|date([<>])(\d{4}-\d{2}-\d{2})|([^\s:"[\]#@]+):("[^"]*"?|\[\[[^\]]*(?:\]\])?|[^\s]*))/gu;
 
 /** The filters in the text, where each is, and whether it is finished. */
 export const findFilters = (input: string, known: (key: string) => boolean): Found[] => {
@@ -85,6 +93,34 @@ export const findFilters = (input: string, known: (key: string) => boolean): Fou
 		if (filter) out.push({ filter, from, to, complete });
 	}
 	return out;
+};
+
+/**
+ * The text without the given pieces, as it stays in the box: spaces collapsed but the one you typed
+ * last kept, and the caret moved back by what was cut before it.
+ */
+export const cutPieces = (input: string, pieces: readonly Found[], caret: number): { text: string; caret: number } => {
+	let out = "";
+	let at = 0;
+	let c = caret;
+	for (const p of [...pieces].sort((a, b) => a.from - b.from)) {
+		out += input.slice(at, p.from);
+		if (caret >= p.to) c -= p.to - p.from;
+		else if (caret > p.from) c = out.length;
+		at = p.to;
+	}
+	out += input.slice(at);
+	let text = "";
+	let nc = c;
+	for (let i = 0; i < out.length; i++) {
+		const ch = out[i] ?? "";
+		if (/\s/u.test(ch) && (text === "" || /\s/u.test(text.at(-1) ?? ""))) {
+			if (i < c) nc--;
+			continue;
+		}
+		text += /\s/u.test(ch) ? " " : ch;
+	}
+	return { text, caret: Math.max(0, Math.min(nc, text.length)) };
 };
 
 /** The text without the given filters' pieces (spaces collapsed). */
@@ -118,7 +154,7 @@ export const filterText = (f: Filter): string => {
 		case "haslink":
 			return "has:link";
 		case "title":
-			return "";
+			return "title:only";
 	}
 };
 
@@ -162,6 +198,16 @@ const dayOf = (n: FilterFacts): string => {
 	return new Date(n.ctime).toISOString().slice(0, 10);
 };
 
+/**
+ * When a note was made, for `created:`: its `date` property (local midnight) when it has one, else
+ * the file's creation time. The badge uses the same.
+ */
+export const createdAt = (props: Record<string, unknown>, ctime: number): number => {
+	const d = valuesOf(props, "date")[0];
+	const m = typeof d === "string" ? /^(\d{4})-(\d{2})-(\d{2})/.exec(d) : null;
+	return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : ctime;
+};
+
 /** Whether the note passes the filter (`title` passes everything: it limits what is searched, not which notes). */
 export const passes = (f: Filter, n: FilterFacts, now: number): boolean => {
 	switch (f.kind) {
@@ -180,15 +226,16 @@ export const passes = (f: Filter, n: FilterFacts, now: number): boolean => {
 				return y === t || y.startsWith(`${t}/`);
 			});
 		}
-		case "path":
-			return lower(n.path).startsWith(lower(f.prefix));
+		case "path": {
+			// The folder and what is inside it, not a sibling that starts the same.
+			const p = lower(n.path);
+			const pre = lower(f.prefix).replace(/\/+$/, "");
+			return p === pre || p.startsWith(`${pre}/`) || (pre.endsWith(".md") && p === pre);
+		}
 		case "edited":
 			return n.mtime >= now - f.days * DAY;
-		case "created": {
-			const d = valuesOf(n.props, "date")[0];
-			const t = typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d) ? Date.parse(d.slice(0, 10)) : n.ctime;
-			return t >= now - f.days * DAY;
-		}
+		case "created":
+			return createdAt(n.props, n.ctime) >= now - f.days * DAY;
 		case "date":
 			return f.op === ">" ? dayOf(n) > f.date : dayOf(n) < f.date;
 		case "links":

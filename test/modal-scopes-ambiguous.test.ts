@@ -125,7 +125,8 @@ describe("ambiguous names, Auto, widen, empty scope, create in scope", () => {
 		m.open();
 		type(m, "Moonbridge invoices ");
 		expect(chipText()).toBe("Moonbridge");
-		expect(m.inputEl.value).toBe("invoices");
+		// The space typed after it stays: the next word does not stick to this one.
+		expect(m.inputEl.value).toBe("invoices ");
 		type(m, "invoices q");
 		expect($(".jet-ban")?.isConnected ?? false).toBe(false);
 	});

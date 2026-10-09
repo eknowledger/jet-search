@@ -168,8 +168,11 @@ const addScope = (h: ScopesHost): void => {
 	const all = h.scopes();
 	let name = "New scope";
 	for (let n = 2; all.some((s) => s.name === name); n++) name = `New scope ${n}`;
+	// Unique among the ids there are (a scope renamed from "New scope" keeps its old id).
+	let id = scopeId(name, []);
+	for (let n = 2; all.some((s) => s.id === id); n++) id = `${scopeId(name, [])}-${n}`;
 	all.push({
-		id: scopeId(name, []),
+		id,
 		name,
 		aliases: [],
 		kind: "",
