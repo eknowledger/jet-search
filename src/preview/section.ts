@@ -5,6 +5,9 @@
  */
 export const PREVIEW_CAP = 8000;
 
+/** Whether `i` is inside a fenced code block (a `# comment` there is not a heading). */
+const inFence = (text: string, i: number): boolean => (text.slice(0, i).match(/^(```|~~~)/gm) ?? []).length % 2 === 1;
+
 export const sectionAround = (
 	text: string,
 	bodyStart: number,
@@ -21,6 +24,7 @@ export const sectionAround = (
 	let from = bodyStart;
 	let level = 7;
 	for (const m of before.matchAll(re)) {
+		if (inFence(text, bodyStart + (m.index ?? 0))) continue;
 		from = bodyStart + (m.index ?? 0);
 		level = m[1]?.length ?? 7;
 	}
@@ -30,7 +34,7 @@ export const sectionAround = (
 	const after = /^(#{1,6})[ \t]/gm;
 	after.lastIndex = Math.min(text.length, at + 1);
 	for (let m = after.exec(text); m; m = after.exec(text))
-		if ((m[1]?.length ?? 7) <= level) {
+		if ((m[1]?.length ?? 7) <= level && !inFence(text, m.index)) {
 			to = m.index;
 			break;
 		}

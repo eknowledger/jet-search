@@ -316,7 +316,8 @@ export default class JetSearchPlugin extends Plugin {
 	/** Open Jet (from the command, Shift-Shift or a stand-in id); a short selection in the editor prefills it. */
 	open(text = this.selection()): void {
 		// Open already with a scope: the same keys widen the search instead.
-		if (this.modal?.shown && this.modal.widen()) return;
+		// With nothing to widen, the search you typed stays.
+		if (this.modal?.shown && (this.modal.widen() || this.modal.inputEl.value.trim())) return;
 		this.modal?.close();
 		const modal = new JetModal(this.app, this.host, text);
 		this.modal = modal;

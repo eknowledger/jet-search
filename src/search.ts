@@ -113,6 +113,8 @@ export class Search {
 		scope?: string;
 		filters?: readonly Filter[];
 		meaning?: { on: boolean; offered: boolean };
+		/** The order chosen: a live refresh keeps it. */
+		order?: Sort;
 	} | null = null;
 
 	constructor(
@@ -136,7 +138,7 @@ export class Search {
 		meaning?: { on: boolean; offered: boolean },
 		order: Sort = "best",
 	): void {
-		this.current = { text, paint, scope, filters, meaning };
+		this.current = { text, paint, scope, filters, meaning, order };
 		this.why = { scope, filters };
 		let inScope: ReadonlySet<string> | null = null;
 		if (scope !== undefined && this.scopes) {
@@ -192,7 +194,11 @@ export class Search {
 			return;
 		}
 		const words = this.compose(tier0, null, now, new Map(), meta);
-		paint(meaning?.offered ? this.offerMeaning(words) : words, this.status());
+		// Nothing yet from the names: the full text is on its way, said so.
+		paint(
+			meaning?.offered ? this.offerMeaning(words) : words,
+			this.status() || (words.length || titleOnly ? "" : "Searching…"),
+		);
 		if (titleOnly) return;
 		void (async () => {
 			try {
@@ -257,7 +263,7 @@ export class Search {
 	/** Notes changed while the modal is open: run its text again (the selection stays). */
 	refresh(): void {
 		const c = this.current;
-		if (c?.text.trim() || c?.filters?.length) this.list(c.text, c.paint, c.scope, c.filters, c.meaning);
+		if (c?.text.trim() || c?.filters?.length) this.list(c.text, c.paint, c.scope, c.filters, c.meaning, c.order);
 	}
 
 	/** A question searched by words: the first header offers By meaning (⌘J). */
@@ -279,7 +285,7 @@ export class Search {
 		now: number,
 	): void {
 		const head = (n: number): Entry => ({ type: "header", label: "By meaning", count: n, mode: "meaning" });
-		paint([head(0)], this.status());
+		paint([head(0)], this.status() || "Searching by meaning…");
 		void (async () => {
 			try {
 				await this.feeder.ensure();
@@ -307,7 +313,8 @@ export class Search {
 							badge: "by meaning",
 							meaning: true,
 							excerpt: ex ? { text: ex.text, marks: ex.marks, more: 0 } : null,
-							hit: { terms: [] },
+							// Its excerpt's line and the question's words, for the preview.
+							hit: { terms: contentWords(text), offset: ex?.offset },
 						}),
 					);
 				}

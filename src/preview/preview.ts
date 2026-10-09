@@ -41,6 +41,8 @@ export class Preview {
 		setIcon(up, "chevron-up");
 		const down = hb.createSpan({ attr: { "aria-label": "Next hit" } });
 		setIcon(down, "chevron-down");
+		// A click keeps the focus in the search box.
+		for (const b of [up, down]) b.addEventListener("mousedown", (e) => e.preventDefault());
 		up.addEventListener("click", () => this.step(-1));
 		down.addEventListener("click", () => this.step(1));
 		this.countEl = nav.createSpan({ cls: "jet-hc" });
@@ -53,6 +55,7 @@ export class Preview {
 		] as const) {
 			const b = acts.createSpan({ cls: "jet-pb", attr: { "aria-label": label } });
 			setIcon(b, icon);
+			b.addEventListener("mousedown", (e) => e.preventDefault());
 			b.addEventListener("click", () => this.path && this.act(a, this.path));
 		}
 		this.headEl.createDiv({ cls: "jet-pcr" });
@@ -98,6 +101,8 @@ export class Preview {
 		this.bodyEl.empty();
 		this.ticksEl.empty();
 		this.countEl.setText("");
+		// The title, path and properties go too: nothing of the last note is left to act on.
+		for (const c of [".jet-pcr", ".jet-pti", ".jet-ppr"]) this.headEl.querySelector<HTMLElement>(c)?.empty();
 	}
 
 	/** ⌘G / ⇧⌘G: the next or previous hit. */

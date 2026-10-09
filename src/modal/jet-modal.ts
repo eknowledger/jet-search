@@ -109,6 +109,8 @@ export type HintState = {
 	more?: true;
 	/** The search was widened from this scope: ⇧⇧ goes back. */
 	widened?: string;
+	/** Filters are on (with no text, Esc clears them first). */
+	filters?: true;
 };
 
 /** Result order. */
@@ -292,6 +294,7 @@ export class JetModal extends Modal {
 	private readonly pool: HTMLElement[] = [];
 	private opened = false;
 	private readonly preview: Preview;
+	private previewKey: string | null = null;
 	private previewTimer: number | null = null;
 	private resize: ResizeObserver | null = null;
 	// Scopes: the applied chip, what the text says, and their elements.
@@ -495,9 +498,15 @@ export class JetModal extends Modal {
 		this.inputEl.focus();
 		// The modal's own window (it may be a popout): its ResizeObserver.
 		const win = this.modalEl.win as Window & { ResizeObserver: typeof ResizeObserver };
-		const ro = new win.ResizeObserver(() =>
-			this.modalEl.toggleClass("is-narrow", this.modalEl.clientWidth < NARROW_PX),
-		);
+		const ro = new win.ResizeObserver(() => {
+			const was = this.modalEl.hasClass("is-narrow");
+			this.modalEl.toggleClass("is-narrow", this.modalEl.clientWidth < NARROW_PX);
+			// Wide enough again: the preview follows the selection.
+			if (was && !this.modalEl.hasClass("is-narrow")) {
+				this.preview.path = null;
+				this.schedulePreview();
+			}
+		});
 		ro.observe(this.modalEl);
 		this.resize = ro;
 	}
@@ -529,7 +538,10 @@ export class JetModal extends Modal {
 			}
 			const file = this.app.vault.getFileByPath(e.path);
 			if (!file) return;
-			if (this.preview.path === e.path) return;
+			// The same note with other words, or the full-text answer: drawn again.
+			const key = JSON.stringify([e.path, e.hit?.terms ?? [], e.hit?.offset ?? null]);
+			if (this.preview.path === e.path && this.previewKey === key) return;
+			this.previewKey = key;
 			void this.preview.show(file, e.hit?.terms ?? [], e.hit?.offset);
 		}, PREVIEW_REST_MS);
 	}
@@ -555,6 +567,8 @@ export class JetModal extends Modal {
 	private lastEntries: Entry[] = [];
 
 	paint(entries: Entry[], status = ""): void {
+		// An answer that arrives after Jet closed draws nothing (and loads no preview).
+		if (!this.shown) return;
 		this.lastEntries = entries;
 		// The first header says where the search runs (inside the chip's scope, or everywhere while one
 		// is suggested) and how many filters narrow it.
@@ -695,6 +709,8 @@ export class JetModal extends Modal {
 		const scope = this.chip?.id;
 		this.selectedKey = null;
 		const seq = ++this.listSeq;
+		// A new list starts at its top: the selected first row is in view.
+		this.listEl.scrollTop = 0;
 		this.host.list(
 			text,
 			(entries, status) => {
@@ -744,7 +760,8 @@ export class JetModal extends Modal {
 		const el = this.inputEl.parentElement?.createDiv({ cls: "jet-ac" });
 		if (!el) return;
 		this.acEl = el;
-		el.style.left = `${Math.max(0, this.inputEl.offsetLeft + this.textWidth(this.inputEl.value.slice(0, c.from)) - 8)}px`;
+		// Under the piece, as the box is scrolled (a long search).
+		el.style.left = `${Math.max(0, this.inputEl.offsetLeft + this.textWidth(this.inputEl.value.slice(0, c.from)) - this.inputEl.scrollLeft - 8)}px`;
 		el.addEventListener("mousedown", (e) => e.preventDefault());
 		const h = el.createDiv({ cls: "jet-ach" });
 		h.createSpan({ text: c.where ? `${c.title} · in ${c.where}` : c.title });
@@ -1072,6 +1089,9 @@ export class JetModal extends Modal {
 	/** Empty box, no scope, no filters: a new search. */
 	private clearAll(): void {
 		this.inputEl.value = "";
+		// Nothing left selected: the next Esc closes the empty search.
+		this.chipSelected = false;
+		this.filterSel = false;
 		this.widened = null;
 		this.chip = null;
 		this.choices = [];
@@ -1230,7 +1250,7 @@ export class JetModal extends Modal {
 		if (this.widened) return { widened: this.widened.chip.name };
 		if (this.typing.suggest) return { suggest: this.typing.suggest.scope.name };
 		if (this.typing.hint) return { hint: this.typing.hint.name };
-		return {};
+		return this.filters.length ? { filters: true } : {};
 	}
 
 	private cardSoon(open: boolean): void {
@@ -1352,6 +1372,8 @@ export class JetModal extends Modal {
 		if (!e || !el || !selectable(e)) {
 			this.selectedKey = null;
 			this.inputEl.removeAttribute("aria-activedescendant");
+			// No note selected: the preview lets go of the last one.
+			this.schedulePreview();
 			return;
 		}
 		this.selectedKey = keyOf(e);
@@ -1413,7 +1435,9 @@ export class JetModal extends Modal {
 		const scope = this.scope as unknown as { keys?: Array<{ key: string | null }>; unregister(h: unknown): void };
 		const escapes = (scope.keys ?? []).filter((k) => k.key === "Escape");
 		for (const k of escapes) scope.unregister(k);
-		this.scope.register([], "Escape", () => {
+		this.scope.register([], "Escape", (e) => {
+			// An input method's Esc is its own.
+			if (e.isComposing) return;
 			if (this.actPanel) {
 				this.closeActions();
 				return false;
@@ -1479,7 +1503,8 @@ export class JetModal extends Modal {
 		});
 		// ⌫ at the start selects the chip, then removes it; ← at the start opens its card.
 		this.scope.register([], "Backspace", (e) => {
-			if (e.isComposing || !this.atStart()) return;
+			// In the ⌘K panel's box, ⌫ edits that box, not the search's chips.
+			if (this.actPanel || e.isComposing || !this.atStart()) return;
 			// The last chip first: filters, then the scope.
 			if (this.filters.length) {
 				if (!this.filterSel) {
@@ -1514,14 +1539,15 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register([], "ArrowLeft", (e) => {
-			if (e.isComposing || !this.chip || !this.atStart()) return;
+			if (this.actPanel || e.isComposing || !this.chip || !this.atStart()) return;
 			this.chipSelected = true;
 			this.drawScope();
 			this.showCard();
 			this.footer(this.inputEl.value);
 			return false;
 		});
-		this.scope.register([], "ArrowDown", () => {
+		this.scope.register([], "ArrowDown", (e) => {
+			if (e.isComposing) return;
 			if (this.actPanel) {
 				this.moveAction(1);
 				return false;
@@ -1532,7 +1558,8 @@ export class JetModal extends Modal {
 			} else this.move(1);
 			return false;
 		});
-		this.scope.register([], "ArrowUp", () => {
+		this.scope.register([], "ArrowUp", (e) => {
+			if (e.isComposing) return;
 			if (this.actPanel) {
 				this.moveAction(-1);
 				return false;
@@ -1544,13 +1571,24 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register(["Ctrl"], "n", () => {
-			this.move(1);
+			if (this.actPanel) this.moveAction(1);
+			else this.move(1);
 			return false;
 		});
 		this.scope.register(["Ctrl"], "p", () => {
-			this.move(-1);
+			if (this.actPanel) this.moveAction(-1);
+			else this.move(-1);
 			return false;
 		});
+		// A page at a time.
+		const page = (step: number): false => {
+			const h = this.listEl.clientHeight;
+			const rows = h > 0 ? Math.max(1, Math.floor(h / 44) - 1) : 8;
+			for (let k = 0; k < rows; k++) this.move(step);
+			return false;
+		};
+		this.scope.register([], "PageDown", () => page(1));
+		this.scope.register([], "PageUp", () => page(-1));
 		this.scope.register([], "Enter", (e) => {
 			if (e.isComposing) return false;
 			if (this.actPanel) this.runAction();
@@ -1689,6 +1727,8 @@ export class JetModal extends Modal {
 		if (!a || !a.shown.length) return;
 		a.i = (a.i + step + a.shown.length) % a.shown.length;
 		this.drawActions();
+		// The selected action in view, as list rows are.
+		this.modalEl.querySelector<HTMLElement>(".jet-act .is-selected")?.scrollIntoView?.({ block: "nearest" });
 	}
 
 	private runAction(): void {
@@ -1856,6 +1896,8 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 			"wheel",
 			(ev) => {
 				if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
+				// Nothing to slide: the wheel scrolls the list.
+				if (row.scrollWidth - row.clientWidth <= 1) return;
 				ev.preventDefault();
 				row.scrollLeft += ev.deltaY;
 			},

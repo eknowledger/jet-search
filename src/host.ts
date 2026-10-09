@@ -665,7 +665,8 @@ export class JetHost implements ModalHost {
 			type: "scopes",
 			label: `Search in · ${chips.length} scope${chips.length === 1 ? "" : "s"}`,
 			chips,
-			more: 0,
+			// "All N" counts what its list holds: in: only scopes are listed there too.
+			more: all.length - chips.length,
 		};
 	}
 
@@ -841,7 +842,8 @@ export class JetHost implements ModalHost {
 					["↵", "Open"],
 					["↑↓", "Choose"],
 					["⌘L", "Copy link"],
-					["Esc", "Close"],
+					// With filters on, the first Esc clears them.
+					["Esc", state.filters ? "Clear" : "Close"],
 				];
 	}
 
@@ -888,7 +890,11 @@ export class JetHost implements ModalHost {
 		let name = clean(parts.at(-1) ?? "");
 		// At most 120 characters, never inside one (an emoji cut in half is not a file name).
 		if (name.length > 120) name = name.slice(0, clusterStart(name, 120)).trim();
-		if (!name) return;
+		if (!name) {
+			// Nothing a file name can hold (`???`): say so rather than closing with nothing.
+			new Notice("Nothing in this text can name a note.");
+			return;
+		}
 		// In a scope: its folder, its properties and tags filled in.
 		const s = scope !== undefined ? this.scopeAccess?.all().find((x) => x.id === scope) : undefined;
 		const target = s ? createTarget(s) : null;
@@ -957,7 +963,9 @@ class MoveModal extends FuzzySuggestModal<MoveTarget> {
 			if (t.folder) out.push({ label: `${s.name}${s.kind ? ` · ${s.kind}` : ""}`, folder: t.folder, scope: s });
 		}
 		for (const f of this.app.vault.getAllLoadedFiles())
-			if (f instanceof TFolder && f.path !== "/") out.push({ label: f.path, folder: f.path });
+			// The vault's top level too.
+			if (f instanceof TFolder)
+				out.push({ label: f.path === "/" ? "The vault's top level" : f.path, folder: f.path });
 		return out;
 	}
 

@@ -129,7 +129,18 @@ const NEEDS_COMPOSE = /[\u1100-\u11ff\uff61-\uff9f\ufb00-\ufb06]|\u3099|\u309a/;
  * a note stored decomposed (NFD 검색, テ + ゛, ﾃﾞｰﾀ) or with ligatures (ﬃ) reads as typed.
  * Null when there is nothing to compose (the common case costs one test).
  */
-const composed = (text: string): { s: string; back: (i: number) => number } | null => {
+type Composed = { s: string; back: (i: number) => number } | null;
+/** The answer per note text (the same text is excerpted at every keystroke): its scan costs once. */
+const composedCache = new Map<string, Composed>();
+const composed = (text: string): Composed => {
+	const hit = composedCache.get(text);
+	if (hit !== undefined) return hit;
+	const c = compose(text);
+	if (composedCache.size >= 64) composedCache.delete(composedCache.keys().next().value as string);
+	composedCache.set(text, c);
+	return c;
+};
+const compose = (text: string): Composed => {
 	if (!NEEDS_COMPOSE.test(text)) return null;
 	let s = "";
 	const from: number[] = [];
