@@ -6,7 +6,54 @@
  * id names, system and id-like keys, keys whose values spread thin, and the facet test (kinds of
  * notes are not topics). Pure and deterministic: the same snapshot gives the same proposals.
  */
-import { matches } from "./members";
+
+/**
+ * The notes each rule takes, looked up instead of scanned: folders (every ancestor), tags (every
+ * parent, lower case), property values (folded) and link targets, built once per generate. Gives the
+ * same sets as `matches` over every note.
+ */
+const ruleIndex = (notes: readonly NoteFacts[]): ((r: Rule) => ReadonlySet<number>) => {
+	const byFolder = new Map<string, Set<number>>();
+	const byTag = new Map<string, Set<number>>();
+	const byValue = new Map<string, Set<number>>();
+	const byLink = new Map<string, Set<number>>();
+	const add = (m: Map<string, Set<number>>, k: string, i: number): void => {
+		let s = m.get(k);
+		if (!s) m.set(k, (s = new Set()));
+		s.add(i);
+	};
+	notes.forEach((n, i) => {
+		const parts = n.path.split("/");
+		for (let k = 1; k < parts.length; k++) add(byFolder, parts.slice(0, k).join("/"), i);
+		for (const t of n.tags) {
+			const segs = t.toLowerCase().split("/");
+			for (let k = 1; k <= segs.length; k++) add(byTag, segs.slice(0, k).join("/"), i);
+		}
+		for (const [key, v] of Object.entries(n.props))
+			for (const x of Array.isArray(v) ? v : [v])
+				if (typeof x === "string") add(byValue, `${key.toLowerCase()}\u0000${fold(x)}`, i);
+		for (const [key, ts] of Object.entries(n.links))
+			for (const t of ts) add(byLink, `${key.toLowerCase()}\u0000${t}`, i);
+	});
+	const none = new Set<number>();
+	const memo = new Map<string, ReadonlySet<number>>();
+	return (r) => {
+		const k = JSON.stringify(r);
+		let s = memo.get(k);
+		if (!s) {
+			s =
+				r.kind === "folder"
+					? (byFolder.get(r.path) ?? none)
+					: r.kind === "tag"
+						? (byTag.get(r.tag.toLowerCase()) ?? none)
+						: "target" in r
+							? (byLink.get(`${r.key.toLowerCase()}\u0000${r.target}`) ?? none)
+							: (byValue.get(`${r.key.toLowerCase()}\u0000${fold(r.value)}`) ?? none);
+			memo.set(k, s);
+		}
+		return s;
+	};
+};
 import type { NoteFacts } from "./members";
 import { type Origin, type Rule, scopeId } from "./model";
 import { compact, fold, isPeriod, jdArea, jdCategory, jdId, sequenceSiblings, sharesScheme, stripName } from "./names";
@@ -235,7 +282,36 @@ export const generate = (snap: Snapshot): Generated => {
 		notProposed.push({ what: p, why: "dates or a numbered sequence: not topics" });
 
 	const groups: Group[] = [];
-	const membersUnder = (f: string): Set<string> => new Set(live.filter((n) => under(n.path, f)).map((n) => n.path));
+	// Folder notes by a shared file name (index.md, README.md): a name found in ≥ 30 % and ≥ 3 of the
+	// folders holding notes. Such a file names its folder, never a scope.
+	const namesIn = new Map<string, Set<string>>();
+	for (const n of live) {
+		const f = parentOf(n.path);
+		const set = namesIn.get(f) ?? new Set<string>();
+		set.add(fold(basename(n.path)));
+		namesIn.set(f, set);
+	}
+	const nameCount = new Map<string, number>();
+	for (const set of namesIn.values()) for (const b of set) nameCount.set(b, (nameCount.get(b) ?? 0) + 1);
+	const folderNoteNames = new Set(
+		// A numbered name (Note 1) is a series, not a folder's note.
+		[...nameCount].filter(([b, c]) => c >= 3 && c >= 0.3 * namesIn.size && !/\d/.test(b)).map(([b]) => b),
+	);
+	/** A note's name, or its folder's when it is a folder note named the shared way. */
+	const nameOfNote = (path: string): string =>
+		folderNoteNames.has(fold(basename(path))) && parentOf(path) ? basename(parentOf(path)) : basename(path);
+	// Each folder's notes (every ancestor), built once instead of a pass over the vault per folder.
+	const underIndex = new Map<string, string[]>();
+	for (const n of live) {
+		const parts = n.path.split("/");
+		for (let k = 0; k < parts.length; k++) {
+			const f = parts.slice(0, k).join("/");
+			const list = underIndex.get(f);
+			if (list) list.push(n.path);
+			else underIndex.set(f, [n.path]);
+		}
+	}
+	const membersUnder = (f: string): Set<string> => new Set(underIndex.get(f) ?? []);
 	const inbox = cfg.inbox?.replace(/\/+$/, "") ?? null;
 	const daily = cfg.daily?.replace(/\/+$/, "") ?? null;
 
@@ -461,7 +537,7 @@ export const generate = (snap: Snapshot): Generated => {
 					signal: "link-property",
 					at: s.key,
 					key: target,
-					name: basename(target),
+					name: nameOfNote(target),
 					alias: null,
 					aliases: aliasesOf(byPath.get(target)),
 					kind: s.key,
@@ -628,6 +704,18 @@ export const generate = (snap: Snapshot): Generated => {
 	const topicSets = [...sets.values()];
 	const folderGroups = groups.filter((g) => g.family === "folder" && g.signal !== "flat-tag");
 	const folderNames = new Set(folderGroups.map((g) => compact(g.name)));
+	// For each set of sibling topics: which of them each note is in (the facet test reads it).
+	const setIndex = topicSets.map((set) => {
+		const m = new Map<string, number[]>();
+		set.forEach((t, k) => {
+			for (const p of t.members) {
+				const list = m.get(p);
+				if (list) list.push(k);
+				else m.set(p, [k]);
+			}
+		});
+		return m;
+	});
 	const folderPaths = folderGroups.map((g) => g.folder ?? "").filter(Boolean);
 	for (const [id, gs] of kindKeys) {
 		// Any number of values: real `type` keys have dozens; the partition and spread tests decide.
@@ -645,40 +733,43 @@ export const generate = (snap: Snapshot): Generated => {
 		).length;
 		if (agreeing / gs.length >= 0.5) continue;
 		// Two plain values (yes/no, open/done) are a state. Two links name two notes: two topics.
+		// They are offered unticked, with the reason: area Work / Personal are topics, open / done a state,
+		// and only you can tell.
 		if (gs.length === 2) {
 			if (gs.some((g) => g.signal === "link-property")) continue;
-			for (const g of gs) kinds.add(g);
-			notProposed.push({
-				what: id.replace(/^property:/, "values of ").replace(/^tag:/, "children of #"),
-				why: "two values that split notes in two: a state, not a topic",
-			});
+			for (const g of gs) g.untick.push("two values that split the notes in two: may be a state");
 			continue;
 		}
 		// Judged within one set of sibling topics at a time (a container's children, one link key's
 		// targets, one tag root's children): big parent folders and tiny nested ones must not blur it.
 		// A kind needs at least half the sets that can judge: four big top folders alone are not enough
 		// (any topic tag turns up in all of them).
-		const verdicts = topicSets.map((set): boolean | null => {
-			const others = set.filter((t) => !gs.includes(t));
-			const touching = others.filter((t) => [...t.members].some((p) => keyNotes.has(p)));
-			const covered = new Set(touching.flatMap((t) => [...t.members].filter((p) => keyNotes.has(p)))).size;
-			if (touching.length < 3 || covered / keyNotes.size < 0.3) return null;
+		const verdicts = topicSets.map((set, si): boolean | null => {
+			// From the set's note → topics index: the same counts as scanning every topic's members.
+			const topicsOf = setIndex[si] as Map<string, number[]>;
+			const mine = new Set(gs.map((g) => set.indexOf(g)).filter((x) => x >= 0));
+			const hitBy = (paths: Iterable<string>): Set<number> => {
+				const out = new Set<number>();
+				for (const p of paths) for (const t of topicsOf.get(p) ?? []) if (!mine.has(t)) out.add(t);
+				return out;
+			};
+			const touching = hitBy(keyNotes);
+			let covered = 0;
+			for (const p of keyNotes) if ((topicsOf.get(p) ?? []).some((t) => !mine.has(t))) covered++;
+			if (touching.size < 3 || covered / keyNotes.size < 0.3) return null;
 			// Breadth: a kind turns up in most of these topics (meetings in every project); a topic that
 			// cuts across them (#topic/consensus in three courses of eleven) sits in a few. Weighted by notes.
 			const totalNotes = gs.reduce((n, g) => n + g.members.size, 0);
-			const breadth =
-				gs.reduce(
-					(n, g) =>
-						n +
-						g.members.size *
-							(touching.filter((t) => [...g.members].some((p) => t.members.has(p))).length /
-								touching.length),
-					0,
-				) / totalNotes;
+			const perTopic = new Map<number, number>();
+			let weighted = 0;
+			for (const g of gs) {
+				const hit = hitBy(g.members);
+				weighted += g.members.size * (hit.size / touching.size);
+				for (const t of hit) perTopic.set(t, (perTopic.get(t) ?? 0) + 1);
+			}
+			const breadth = weighted / totalNotes;
 			// Calibrated on the corpus: a type key 0.35 (6 values per project), topic tags 0.22 (3 per course).
-			const per = touching
-				.map((t) => gs.filter((g) => [...g.members].some((p) => t.members.has(p))).length)
-				.sort((x, y) => x - y);
+			const per = [...touching].map((t) => perTopic.get(t) ?? 0).sort((x, y) => x - y);
 			const median = per[Math.floor(per.length / 2)] ?? 0;
 			return breadth >= 0.3 || median >= 5;
 		});
@@ -716,9 +807,10 @@ export const generate = (snap: Snapshot): Generated => {
 	for (const g of candidates)
 		if (g.folder) {
 			const own = fold(g.name);
-			const fn = live.find(
-				(n) => parentOf(n.path) === g.folder && fold(stripName(basename(n.path), false).name) === own,
-			);
+			const fn =
+				live.find(
+					(n) => parentOf(n.path) === g.folder && fold(stripName(basename(n.path), false).name) === own,
+				) ?? live.find((n) => parentOf(n.path) === g.folder && folderNoteNames.has(fold(basename(n.path))));
 			if (fn) folderNote.set(g.folder, fn.path);
 		}
 	const byName = new Map<string, number[]>();
@@ -859,7 +951,9 @@ export const generate = (snap: Snapshot): Generated => {
 		return agreesAlone(g) || splitShare < 0.5;
 	};
 
-	// Name, count, default.
+	// Name, count, default. Each rule's notes from one index of the vault, not a pass over every
+	// note per rule (15k notes and hundreds of proposals took seconds on the main thread).
+	const ruleNotes = ruleIndex(live);
 	const proposals: Proposal[] = [];
 	for (const gs of merged.values()) {
 		const rules: Rule[] = [];
@@ -875,15 +969,19 @@ export const generate = (snap: Snapshot): Generated => {
 		const head = folderG ?? linkG ?? valueG ?? tagG ?? gs[0];
 		if (!head) continue;
 		const note = folderG?.folder ? folderNote.get(folderG.folder) : undefined;
-		const name = note ? basename(note) : head.name;
+		// The folder note's name, unless it is the shared kind (index, README): then the folder's.
+		const name = note && !folderNoteNames.has(fold(basename(note))) ? basename(note) : head.name;
 		const aliasList = [
 			...gs.map((g) => g.alias).filter((a): a is string => !!a),
 			...gs.flatMap((g) => g.aliases),
 			...aliasesOf(note ? byPath.get(note) : undefined),
 		];
 		const aliases = [...new Map(aliasList.filter((a) => fold(a) !== fold(name)).map((a) => [fold(a), a])).values()];
-		const counted = rules.map((rule) => ({ rule, count: live.filter((n) => matches(rule, n)).length }));
-		const members = live.filter((n) => rules.some((r) => matches(r, n))).length;
+		const sets = rules.map((rule) => ruleNotes(rule));
+		const counted = rules.map((rule, k) => ({ rule, count: (sets[k] as ReadonlySet<number>).size }));
+		const all = new Set<number>();
+		for (const set of sets) for (const i of set) all.add(i);
+		const members = all.size;
 		if (!members) continue;
 		const untick = [...new Set(gs.flatMap((g) => g.untick))];
 		if (members < TICK) untick.push(`only ${members} note${members === 1 ? "" : "s"}`);

@@ -3,6 +3,7 @@
  * side gathers from the metadata cache (`facts.ts`), with every link already resolved to the note it
  * opens, so `[[Garden]]`, `[[Projects/Garden/Garden]]` and `[[Garden|the beds]]` are the same member.
  */
+import { fold } from "./names";
 import type { Rule, Scope } from "./model";
 
 /** What membership needs to know about a note. */
@@ -39,7 +40,8 @@ export const matches = (r: Rule, n: NoteFacts): boolean => {
 		}
 		case "property":
 			if ("target" in r) return (n.links[lower(r.key)] ?? []).includes(r.target);
-			return values(n.props, r.key).some((v) => typeof v === "string" && lower(v.trim()) === lower(r.value));
+			// Folded as generation groups values: "Sci-Fi" and "Sci Fi", "Café" and "Cafe" are one.
+			return values(n.props, r.key).some((v) => typeof v === "string" && fold(v) === fold(r.value));
 	}
 };
 

@@ -7,6 +7,7 @@
 import * as obsidian from "obsidian";
 import { type App, Notice, Setting, type SettingPage } from "obsidian";
 import { generate, type Generated, type Proposal } from "../scopes/generate";
+import type { NoteFacts } from "../scopes/members";
 import type { Scope } from "../scopes/model";
 import { applyReview, type ReviewItem, review } from "../scopes/review";
 import type { Snapshot } from "../scopes/snapshot";
@@ -62,7 +63,7 @@ const generatePageClass = (Base: new () => PageBase) =>
 			});
 			void this.h
 				.snapshot()
-				.then((snap) => this.draw(generate(snap)))
+				.then((snap) => this.draw(generate(snap), snap.notes))
 				.catch((e: unknown) => {
 					console.error("Jet Search: generating scopes failed", e);
 					this.containerEl.empty();
@@ -73,10 +74,10 @@ const generatePageClass = (Base: new () => PageBase) =>
 				});
 		}
 
-		private draw(g: Generated): void {
+		private draw(g: Generated, notes?: readonly NoteFacts[]): void {
 			const el = this.containerEl;
 			el.empty();
-			this.items = review(g.proposals, this.h.scopes());
+			this.items = review(g.proposals, this.h.scopes(), notes);
 			const by = (state: ReviewItem["state"]): ReviewItem[] => this.items.filter((i) => i.state === state);
 			el.createDiv({ cls: "setting-page-desc", text: this.summary(g, by) });
 			const actions = el.createDiv({ cls: "setting-group" }).createDiv({ cls: "setting-items" });
@@ -153,6 +154,11 @@ const generatePageClass = (Base: new () => PageBase) =>
 			const s = new Setting(box);
 			if (i.state === "gone") {
 				s.setName(`${i.scope?.name ?? ""} · remove the scope`).setDesc("Where it was found no longer exists.");
+			} else if (i.state === "changed" && i.dropRules?.length) {
+				// Its folder was renamed: the scope follows it, your edits kept.
+				s.setName(`${i.scope?.name ?? ""} · follow the renamed folder`).setDesc(
+					`${(i.dropRules ?? []).map(ruleText).join(" · ")} → ${(i.addRules ?? []).map(ruleText).join(" · ")}`,
+				);
 			} else if (i.state === "changed") {
 				s.setName(`${i.scope?.name ?? ""} · add ${plural(i.addRules?.length ?? 0, "rule")}`).setDesc(
 					(i.addRules ?? []).map(ruleText).join(" · "),

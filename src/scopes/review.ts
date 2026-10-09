@@ -6,6 +6,7 @@
  * the name. Unchanged: only counted. Your edits (name, aliases, mode, rules) are kept.
  */
 import type { Proposal } from "./generate";
+import { inScope, type NoteFacts } from "./members";
 import { type Rule, type Scope, scopeId } from "./model";
 import { fold } from "./names";
 
@@ -15,13 +16,23 @@ export type ReviewItem = {
 	scope?: Scope;
 	/** Changed: the rules to add. */
 	addRules?: Rule[];
+	/** Changed by a rename (its folder renamed): the rules it replaces. */
+	dropRules?: Rule[];
 	ticked: boolean;
 };
 
 const same = (a: Rule, b: Rule): boolean => JSON.stringify(a) === JSON.stringify(b);
 const originKey = (o: { signal: string; at: string; key: string }): string => `${o.signal}|${o.at}|${o.key}`;
 
-export const review = (proposals: readonly Proposal[], scopes: readonly Scope[]): ReviewItem[] => {
+/**
+ * `notes`: the vault as generated (the snapshot's notes). With them, a scope is Gone only when no note
+ * is in it any more, not when it is no longer proposed (a container shrank, the vault grew), and a Gone scope and a New one found in the same place are one folder renamed.
+ */
+export const review = (
+	proposals: readonly Proposal[],
+	scopes: readonly Scope[],
+	notes?: readonly NoteFacts[],
+): ReviewItem[] => {
 	const byOrigin = new Map<string, Scope>();
 	for (const s of scopes) for (const o of s.origins ?? []) byOrigin.set(originKey(o), s);
 	// Offered before beside a scope you added, and no scope now: you said no (unticked, or deleted it).
@@ -53,9 +64,51 @@ export const review = (proposals: readonly Proposal[], scopes: readonly Scope[])
 		items.push({ state: "new", proposal: p, ticked: p.ticked && !turnedDown });
 	}
 	for (const s of scopes)
-		if (s.source === "generated" && s.origins?.length && !seen.has(s))
-			items.push({ state: "gone", scope: s, ticked: false });
-	return items;
+		if (s.source === "generated" && s.origins?.length && !seen.has(s)) {
+			// Still holding notes: only no longer proposed; nothing to remove.
+			if (notes?.some((n) => inScope(s, n))) items.push({ state: "unchanged", scope: s, ticked: false });
+			else items.push({ state: "gone", scope: s, ticked: false });
+		}
+	return notes ? renames(items) : items;
+};
+
+const pattern = (o: { signal: string; at: string }): string => `${o.signal}|${o.at}`;
+const folderOf = (rules: readonly Rule[]): Rule | undefined => rules.find((r) => r.kind === "folder");
+
+/**
+ * One Gone and one New from the same pattern (the same container), each holding a folder rule: the
+ * folder was renamed. They become one change that moves the scope to the new folder, keeping its id,
+ * mode, aliases and edits.
+ */
+const renames = (items: ReviewItem[]): ReviewItem[] => {
+	const gone = new Map<string, ReviewItem[]>();
+	const fresh = new Map<string, ReviewItem[]>();
+	for (const i of items) {
+		const o = i.state === "gone" ? i.scope?.origins?.[0] : i.state === "new" ? i.proposal?.origins[0] : undefined;
+		if (!o) continue;
+		const m = i.state === "gone" ? gone : fresh;
+		m.set(pattern(o), [...(m.get(pattern(o)) ?? []), i]);
+	}
+	const out = [...items];
+	for (const [k, gs] of gone) {
+		const ns = fresh.get(k) ?? [];
+		const g = gs[0];
+		const n = ns[0];
+		if (gs.length !== 1 || ns.length !== 1 || !g?.scope || !n?.proposal) continue;
+		const from = folderOf(g.scope.rules);
+		const to = folderOf(n.proposal.rules.map((r) => r.rule));
+		if (!from || !to) continue;
+		out.splice(out.indexOf(g), 1);
+		out.splice(out.indexOf(n), 1, {
+			state: "changed",
+			proposal: n.proposal,
+			scope: g.scope,
+			addRules: [to],
+			dropRules: [from],
+			ticked: true,
+		});
+	}
+	return out;
 };
 
 /** The scopes after a review: ticked new ones added, ticked changes applied, ticked gone ones removed. */
@@ -82,6 +135,9 @@ export const applyReview = (items: readonly ReviewItem[], scopes: readonly Scope
 		if (i.state === "changed" && i.proposal) {
 			const s = find(i.scope);
 			if (!s) continue;
+			const drop = i.dropRules ?? [];
+			s.rules = s.rules.filter((r) => !drop.some((d) => same(d, r)));
+			if (drop.length) s.generated = (s.generated ?? []).filter((r) => !drop.some((d) => same(d, r)));
 			s.rules.push(...(i.addRules ?? []));
 			// What generation gave it before stays known, so a rule you removed is not put back.
 			const gen = [...(s.generated ?? [])];

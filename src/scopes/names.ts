@@ -129,9 +129,25 @@ export const sequenceSiblings = (names: readonly string[]): Set<string> => {
 		}
 	}
 	const out = new Set<string>();
-	for (const [rest, group] of by)
-		if (group.length >= 2 && (rest !== "#" || group.every((g) => /^\p{L}$/u.test(g.trim()))))
-			for (const g of group) out.add(g);
+	for (const [rest, group] of by) {
+		if (group.length < 2 || (rest === "#" && !group.every((g) => /^\p{L}$/u.test(g.trim())))) continue;
+		// Numbers in a series are small or nearly consecutive (Week 1…12, Lab 3, Season 2); codes are not
+		// (CS 110, CS 210, MATH 221: courses, rooms, models stay topics).
+		const nums = group
+			.map((g) =>
+				fold(g)
+					.split(" ")
+					.find((w) => /^\d+$/.test(w)),
+			)
+			.filter((w): w is string => w !== undefined)
+			.map(Number);
+		if (nums.length === group.length) {
+			const small = nums.every((x) => x < 100);
+			const close = Math.max(...nums) - Math.min(...nums) < 2 * nums.length;
+			if (!small && !close) continue;
+		}
+		for (const g of group) out.add(g);
+	}
 	return out;
 };
 

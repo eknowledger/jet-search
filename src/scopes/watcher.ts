@@ -57,15 +57,27 @@ export class ScopeWatcher {
 		this.running = true;
 		this.last = this.h.now();
 		try {
-			const items = review(generate(await this.h.snapshot()).proposals, this.h.scopes());
+			const snap = await this.h.snapshot();
+			const items = review(generate(snap).proposals, this.h.scopes(), snap.notes);
+			// A pattern you accepted: the main origins of your scopes, never a flat tag (every flat tag is at
+			// "#"; one agreeing with one folder must not accept a whole new container).
 			const accepted = new Set(
-				this.h.scopes().flatMap((s) => (s.origins ?? []).map((o) => `${o.signal}|${o.at}`)),
+				this.h
+					.scopes()
+					.map((s) => s.origins?.[0])
+					.filter((o): o is NonNullable<typeof o> => !!o && o.signal !== "flat-tag")
+					.map((o) => `${o.signal}|${o.at}`),
 			);
-			const known = (o: { signal: string; at: string }): boolean => accepted.has(`${o.signal}|${o.at}`);
+			const known = (o: { signal: string; at: string } | undefined): boolean =>
+				!!o && o.signal !== "flat-tag" && accepted.has(`${o.signal}|${o.at}`);
 			// The item's tick, not the proposal's: one you turned down before is not new to you.
 			const fresh = items.filter((i) => i.state === "new" && i.ticked);
 			if (this.h.mode() === "add") {
-				const auto = fresh.filter((i) => i.proposal?.origins.some(known));
+				// New members of a pattern you accepted, and folders renamed (moved along, your edits kept).
+				const auto = [
+					...fresh.filter((i) => known(i.proposal?.origins[0])),
+					...items.filter((i) => i.state === "changed" && i.dropRules?.length),
+				];
 				if (auto.length) {
 					const only = items.map((i) => ({ ...i, ticked: auto.includes(i) }));
 					this.h.setScopes(applyReview(only, this.h.scopes()));
