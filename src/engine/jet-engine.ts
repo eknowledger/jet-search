@@ -1,4 +1,4 @@
-import { cjkChar, noTypos } from "./analyzer";
+import { arabicBare, cjkChar, noTypos } from "./analyzer";
 import type { NoteInput } from "./fields";
 import { FIELDS } from "./fields";
 import type { Query } from "./query";
@@ -92,7 +92,9 @@ export const rootGroup = (seg: Segment, lang: StemLanguage, stem: string): numbe
 	if (known) return known;
 	const terms = seg.terms;
 	const stemOf = STEMMERS[lang];
-	const head = stem.slice(0, Math.max(3, stem.length - 2));
+	// A short stem's words may change its end (try → trying, use → using, sky → skies): start the scan
+	// from two letters then; the 5,000-term cap bounds it.
+	const head = stem.length <= 3 ? stem.slice(0, 2) : stem.slice(0, Math.max(3, stem.length - 2));
 	const out: number[] = [];
 	for (const pre of lang === "ar" ? AR_PREFIXES : [""]) {
 		const [from, to] = prefixRange(terms, pre + head);
@@ -428,6 +430,23 @@ export class JetEngine implements SearchEngine {
 				}
 			}
 			// Exclusions: notes with an excluded word are dropped.
+			// A group goes only when the note has all of its terms.
+			for (const g of q.groups ?? []) {
+				let docs: Set<number> | null = null;
+				for (const word of g) {
+					const t = exactTerm(seg, word);
+					const has = new Set<number>();
+					if (t >= 0) {
+						for (let k = seg.metaOff[t] as number, end = seg.metaOff[t + 1] as number; k < end; k++)
+							has.add(seg.metaDocs[k] as number);
+						seg.forBody(t, (doc) => has.add(doc));
+					}
+					const prev: Set<number> | null = docs;
+					docs = prev ? new Set([...prev].filter((d: number) => has.has(d))) : has;
+					if (!docs.size) break;
+				}
+				for (const d of docs ?? []) s.xStamp[d] = s.q;
+			}
 			for (const word of q.excluded) {
 				const t = exactTerm(seg, word);
 				if (t < 0) continue;
@@ -705,6 +724,12 @@ const expand = (seg: Segment, word: string, isLast: boolean, config: EngineConfi
 	};
 	const exact = exactTerm(seg, word);
 	if (exact >= 0) put(exact, EXACT, 0);
+	// Typed with the article (المكتبة): also the word without it, which notes index.
+	const bare = arabicBare(word);
+	if (bare) {
+		const b = exactTerm(seg, bare);
+		if (b >= 0) put(b, EXACT * 0.95, 0);
+	}
 	const len = word.length;
 	if (isLast && len >= 2) {
 		const [from, to] = prefixRange(terms, word);

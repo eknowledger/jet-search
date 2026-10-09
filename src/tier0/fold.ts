@@ -24,7 +24,7 @@ const DIGIT = 4;
 const MARK = 5;
 const CJK_BIT = 8;
 
-const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]/u;
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]/u;
 const KEEP = /[\p{L}\p{M}\p{N}]/u;
 const classes = new Map<number, number>();
 const folds = new Map<number, string>();
@@ -60,6 +60,23 @@ const foldOf = (cp: number): string => {
 		f = "";
 		for (const ch of normalize(String.fromCodePoint(cp))) if (KEEP.test(ch)) f += ch;
 		folds.set(cp, f);
+	}
+	return f;
+};
+
+/** What composes onto the character before it: combining marks, Hangul vowel/final jamo, ﾞ ﾟ. */
+const joins = (cp: number): boolean =>
+	(cp >= 0x1160 && cp <= 0x11ff) || cp === 0xff9e || cp === 0xff9f || (cp >= 0x300 && (classOf(cp) & 7) === MARK);
+
+const clusters = new Map<string, string>();
+/** A cluster folded by the analyzer's `normalize` (it composes after removing accents), cached. */
+const foldCluster = (s: string): string => {
+	let f = clusters.get(s);
+	if (f === undefined) {
+		f = "";
+		for (const ch of normalize(s)) if (KEEP.test(ch)) f += ch;
+		if (clusters.size > 4096) clusters.clear();
+		clusters.set(s, f);
 	}
 	return f;
 };
@@ -146,6 +163,18 @@ export const fold = (text: string, limit = text.length): Folded => {
 		if (cp < 128) {
 			emit(c === UPPER ? cp + 32 : cp, flag | pending, from, to);
 			pending = 0;
+			continue;
+		}
+		// A base with what composes onto it (marks, Hangul vowel and final jamo, half-width voicing marks)
+		// is folded as one: a name stored decomposed (NFD Korean, テ + ゛, ﾃﾞ) folds as typed.
+		let n = 0;
+		while (k + 1 + n < cps.length && joins(cps[k + 1 + n] as number)) n++;
+		if (n > 0 && c !== MARK) {
+			const f = foldCluster(text.slice(from, at[k + 1 + n]));
+			for (let u = 0; u < f.length; u++)
+				emit(f.charCodeAt(u), u === 0 ? flag | pending : 0, from, at[k + 1 + n] as number);
+			pending = 0;
+			k += n;
 			continue;
 		}
 		const f = foldOf(cp);

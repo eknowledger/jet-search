@@ -13,7 +13,8 @@ import type { Store } from "./store";
  * The index format and text rules the saved index was made with. A saved index of another version is
  * rebuilt. Bump when the analyzer, the fields or the segment layout change.
  */
-export const INDEX_VERSION = 1;
+/** 2: hyphen joins, more folded letters, invisible joiners: an older index is built again. */
+export const INDEX_VERSION = 2;
 
 /** Quiet time before the worker merges or saves after changes. */
 const IDLE_MS = 2000;

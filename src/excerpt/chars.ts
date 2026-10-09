@@ -19,7 +19,7 @@ const SPACELESS = 6;
 
 /** Scripts written without spaces: their terms match anywhere, with no word boundary. */
 const FREE =
-	"\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\u30fc" +
+	"\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}\\u30fc" +
 	"\\p{Script=Thai}\\p{Script=Lao}\\p{Script=Khmer}\\p{Script=Myanmar}";
 const STARTS_FREE = new RegExp(`^[${FREE}]`, "u");
 

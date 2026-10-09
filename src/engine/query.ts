@@ -5,12 +5,23 @@ import { tokenize } from "./analyzer";
  * last one also as a prefix while typing), words that must not be there, and quoted phrases. Filters
  * and scopes arrive later; until then `key:value` and `#tag` contribute their value as a word.
  */
-export type Query = { words: string[]; excluded: string[]; phrases: string[]; lastIsPrefix: boolean };
+export type Query = {
+	words: string[];
+	excluded: string[];
+	/**
+	 * An excluded piece the analyzer cuts into several terms (`-北京大学`, `-covid-19`): a note goes only
+	 * when it has every one of them, not any.
+	 */
+	groups?: string[][];
+	phrases: string[];
+	lastIsPrefix: boolean;
+};
 
 export const parseQuery = (text: string): Query => {
 	const phrases: string[] = [];
 	const words: string[] = [];
 	const excluded: string[] = [];
+	const groups: string[][] = [];
 	// In order: a quoted phrase's words are words as they are (`"git push --force"`);
 	// outside quotes `-word` excludes, and `#tag` / `key:value` give their value.
 	for (const m of text.matchAll(/"([^"]*)"?|[^\s"]+/gu)) {
@@ -25,11 +36,15 @@ export const parseQuery = (text: string): Query => {
 		if (minus) piece = piece.slice(1);
 		// `-status:draft` excludes the value, not every note with the word "status".
 		piece = piece.replace(/^#/, "").replace(/^[\p{L}\p{N}_-]+:(?=.)/u, "");
-		(minus ? excluded : words).push(...tokenize(piece));
+		const terms = tokenize(piece);
+		if (!minus) words.push(...terms);
+		else if (terms.length === 1) excluded.push(...terms);
+		else if (terms.length > 1) groups.push([...new Set(terms)]);
 	}
 	return {
 		words: [...new Set(words)],
 		excluded: [...new Set(excluded)],
+		...(groups.length ? { groups } : {}),
 		phrases,
 		lastIsPrefix: !/\s$/.test(text) && !text.trim().endsWith('"'),
 	};

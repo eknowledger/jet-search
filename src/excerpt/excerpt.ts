@@ -121,12 +121,60 @@ const patternFor = (c: Compiled, scan: string): RegExp | null => {
 	return remember(c.withVariants, key, new RegExp(termsSource(c.terms, p), "gu"), VARIANT_PATTERNS);
 };
 
+/** Text the patterns cannot read as typed: decomposed Hangul or kana, half-width kana, Latin ligatures. */
+const NEEDS_COMPOSE = /[\u1100-\u11ff\uff61-\uff9f\ufb00-\ufb06]|\u3099|\u309a/;
+
+/**
+ * The text composed (NFKC, one base and what joins it at a time), and a way back to the raw offsets:
+ * a note stored decomposed (NFD 검색, テ + ゛, ﾃﾞｰﾀ) or with ligatures (ﬃ) reads as typed.
+ * Null when there is nothing to compose (the common case costs one test).
+ */
+const composed = (text: string): { s: string; back: (i: number) => number } | null => {
+	if (!NEEDS_COMPOSE.test(text)) return null;
+	let s = "";
+	const from: number[] = [];
+	const to: number[] = [];
+	let i = 0;
+	while (i < text.length) {
+		let j = i + ((text.codePointAt(i) ?? 0) > 0xffff ? 2 : 1);
+		for (;;) {
+			const cp = text.codePointAt(j) ?? -1;
+			if (
+				(cp >= 0x1160 && cp <= 0x11ff) ||
+				cp === 0x3099 ||
+				cp === 0x309a ||
+				cp === 0xff9e ||
+				cp === 0xff9f ||
+				(cp >= 0x300 && cp <= 0x36f)
+			)
+				j++;
+			else break;
+		}
+		const piece = text.slice(i, j).normalize("NFKC");
+		for (let k = 0; k < piece.length; k++) {
+			from.push(i);
+			to.push(j);
+		}
+		s += piece;
+		i = j;
+	}
+	// A start maps to its source's start; an end (k > 0) to the end of the source of the unit before it.
+	const back = (k: number): number => (k <= 0 ? 0 : k >= s.length ? text.length : (from[k] ?? text.length));
+	return { s, back };
+};
+
+/**
+ * The index after the character at `i`: a step of one code unit lands inside a surrogate pair (𠮷,
+ * an emoji), where a /u pattern matches the same character again, for ever.
+ */
+const nextChar = (s: string, i: number): number => i + ((s.codePointAt(i) ?? 0) > 0xffff ? 2 : 1);
+
 /** The next hit from `re.lastIndex`: a match that really starts a word (group 1 is a bounded term). */
 const nextHit = (re: RegExp, scan: string, arabic: boolean): RegExpExecArray | null => {
 	for (let m = re.exec(scan); m; m = re.exec(scan)) {
 		const i = m.index;
 		if (m[1] === undefined || startsWord(scan, i) || (arabic && afterArticle(scan, i))) return m;
-		re.lastIndex = i + 1;
+		re.lastIndex = nextChar(scan, i);
 	}
 	return null;
 };
@@ -182,6 +230,11 @@ export const cutExcerpt = (
 		typing?: string;
 	} = {},
 ): Excerpt | null => {
+	const cmp = composed(text);
+	if (cmp) {
+		const r = cutExcerpt(cmp.s, terms, opts);
+		return r ? { ...r, offset: cmp.back(r.offset) } : null;
+	}
 	const width = Math.max(20, opts.width ?? WIDTH);
 	const scan = scanned(text, opts.scanLimit);
 	const c = compiled(terms);
@@ -198,6 +251,9 @@ export const cutExcerpt = (
 	const single = c.terms.length <= 1 && !exact.length;
 	for (let m = nextHit(re, scan, c.arabic); m && found.length <= MORE_CAP; m = nextHit(re, scan, c.arabic)) {
 		const end = wordEnd(text, m.index, m.index + m[0].length);
+		// Chinese, Japanese and Korean pairs overlap (デー, ータ): look again from the next character,
+		// so the whole word is marked, not every other pair.
+		if (isFree(m[0])) re.lastIndex = nextChar(scan, m.index);
 		// Only the hits the choice can look at are told apart by word (the rest are counted).
 		if (single || found.length >= GROUPED) {
 			found.push({ at: m.index, end, group: "", weight: 0 });
@@ -294,6 +350,8 @@ export const findHits = (
 	terms: readonly string[],
 	opts: { limit?: number; scanLimit?: number } = {},
 ): Array<[number, number]> => {
+	const cmp = composed(text);
+	if (cmp) return findHits(cmp.s, terms, opts).map(([a, b]) => [cmp.back(a), cmp.back(b)]);
 	const cap = opts.limit ?? HIT_LIMIT;
 	const scan = scanned(text, opts.scanLimit);
 	const c = compiled(terms);
@@ -334,7 +392,7 @@ const phraseWords = (phrase: string): PhraseWord[] => {
 	for (const m of phrase.matchAll(/[\p{L}\p{M}\p{N}]+/gu)) {
 		const run = m[0];
 		let last = 0;
-		for (const c of run.matchAll(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]+/gu)) {
+		for (const c of run.matchAll(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]+/gu)) {
 			const at = c.index ?? 0;
 			if (at > last) piece(run.slice(last, at));
 			add(normalize(c[0]), true);
@@ -385,6 +443,8 @@ const phraseAt = (text: string, i: number, words: readonly PhraseWord[]): boolea
  * a phrase without words asks for nothing (true). Reads at most `scanLimit` characters (256 KB).
  */
 export const hasPhrase = (text: string, phrase: string, opts: { scanLimit?: number } = {}): boolean => {
+	const cmp = composed(text);
+	if (cmp) return hasPhrase(cmp.s, phrase, opts);
 	const words = phraseWords(phrase);
 	const first = words[0];
 	if (!first) return true;
@@ -395,7 +455,7 @@ export const hasPhrase = (text: string, phrase: string, opts: { scanLimit?: numb
 	re.lastIndex = 0;
 	for (let m = nextHit(re, scan, false); m; m = nextHit(re, scan, false)) {
 		if (phraseAt(scan, m.index, words)) return true;
-		re.lastIndex = m.index + 1;
+		re.lastIndex = nextChar(scan, m.index);
 	}
 	return false;
 };
