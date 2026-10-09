@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { App, type Scope } from "obsidian";
+import { App, Menu, type Scope } from "obsidian";
 import { type Entry, JetModal, type ModalHost, type ScopeView } from "../src/modal/jet-modal";
 
 const COBALT: ScopeView = { id: "cobalt", name: "Cobalt", kind: "Projects", members: 34 };
@@ -53,6 +53,18 @@ const $ = (sel: string) => document.querySelector<HTMLElement>(sel);
 
 describe("the empty state with scopes; persisted filters", () => {
 	afterEach(() => document.body.replaceChildren());
+
+	it("All N lists every scope as Name · [Kind] (notes); one applies it", () => {
+		const { host, lists } = fakeHost();
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		$(".jet-schip.is-all")?.click();
+		const items = (Menu as unknown as { last: { items: Array<{ title: string; click: (() => void) | null }> } })
+			.last.items;
+		expect(items.map((i) => i.title)).toEqual(["Cobalt · [Projects] (34)", "OKR · [Areas] (92)"]);
+		items[1]?.click?.();
+		expect(lists.at(-1)).toEqual(["", "okr", 0]);
+	});
 
 	it("lists scopes as chips, the open note's first with ⇥; Tab or a click applies one", () => {
 		const { host, lists } = fakeHost();
