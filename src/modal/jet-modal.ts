@@ -244,7 +244,12 @@ export class JetModal extends Modal {
 	/** Auto applied the chip just now: ⌫ at the start undoes it. */
 	private autoUndo = false;
 	/** Scopes whose Auto was undone in this search: suggested from then on. */
+	/** Auto scopes you undid or removed in this search: their names stay text until the box is cleared. */
 	private readonly suppressAuto = new Set<string>();
+	/** The chip an Auto scope replaced just now: ⌫ undoes back to it. */
+	private autoPrev: ScopeView | null = null;
+	/** The name as you typed it when Auto applied (`mb`): the undo puts that back. */
+	private autoName: string | null = null;
 	/** Widened from a chip (⇧⇧): ⇧⇧ again puts it back. */
 	private widened: { chip: ScopeView; choices: ScopeView[] } | null = null;
 	/** Between onOpen and onClose. */
@@ -553,8 +558,13 @@ export class JetModal extends Modal {
 				) ?? [])
 			: [];
 		this.typing = {};
-		if (!this.chip && this.host.scopes) {
+		// A cleared box is a new search: Auto scopes you turned off apply again.
+		if (!raw.trim() && !this.chip && !this.filters.length) this.suppressAuto.clear();
+		if (this.host.scopes) {
+			// With a chip on too: `@name`, an Auto name or a suggestion switch scopes (they were ignored).
 			const t = this.host.scopes.typed(raw);
+			const current = this.chip;
+			const same = (v: ScopeView | undefined): boolean => !!v && v.id === current?.id;
 			if (t.applied && (t.applied.complete || final)) {
 				this.applyChip(t.applied.scope, t.applied.text);
 				return;
@@ -566,13 +576,18 @@ export class JetModal extends Modal {
 				const spaced = s ? /\s/u.test(raw[s.at + s.name.length] ?? "") : /\s$/u.test(raw);
 				if (spaced) {
 					this.applyChip(auto, s?.rest ?? "");
-					this.autoUndo = true;
+					if (!same(auto)) {
+						this.autoUndo = true;
+						this.autoPrev = current;
+						this.autoName = s ? s.name : raw.trim();
+					}
 					this.drawScope();
 					this.footer(this.inputEl.value);
 					return;
 				}
 			}
-			if (!t.applied) this.typing = t;
+			// The chip's own name is just a word.
+			if (!t.applied && !same(t.suggest?.scope) && !same(t.hint)) this.typing = t;
 		}
 		this.drawScope();
 		const shown = this.inputEl.value;
@@ -869,6 +884,7 @@ export class JetModal extends Modal {
 		this.choices = choices;
 		this.widened = null;
 		this.autoUndo = false;
+		this.autoPrev = null;
 		this.chipSelected = false;
 		this.hideCard();
 		this.inputEl.value = text;
@@ -877,17 +893,22 @@ export class JetModal extends Modal {
 	}
 
 	/** × keeps the text; the second ⌫ puts the name back in front of it, as you typed it. */
-	private removeChip(nameBack: boolean): void {
+	private removeChip(nameBack: boolean, typedName?: string): void {
 		const chip = this.chip;
 		if (!chip) return;
 		this.chip = null;
 		this.choices = [];
 		this.autoUndo = false;
+		this.autoPrev = null;
 		this.chipSelected = false;
 		this.hideCard();
+		// Removed on purpose: its name, if Auto, must not re-apply it at once (for this search).
+		this.suppressAuto.add(chip.id);
+		this.autoName = null;
 		if (nameBack) {
-			this.inputEl.value = `${chip.name} ${this.inputEl.value}`;
-			this.inputEl.setSelectionRange(chip.name.length + 1, chip.name.length + 1);
+			const name = typedName ?? chip.name;
+			this.inputEl.value = `${name} ${this.inputEl.value}`;
+			this.inputEl.setSelectionRange(name.length + 1, name.length + 1);
 		}
 		this.refresh();
 	}
@@ -1005,6 +1026,7 @@ export class JetModal extends Modal {
 			const t = head("scan-search");
 			t.appendText("Search in ");
 			t.createEl("b", { text: s.scope.name });
+			if (chip) t.appendText(` instead of ${chip.name}`);
 			t.appendText(` for “${s.rest}” · ${notes(s.scope.members)}`);
 			keys([["⇥", "Tab"]]);
 		} else if (this.fix) {
@@ -1287,7 +1309,7 @@ export class JetModal extends Modal {
 				this.applyFix();
 				return false;
 			}
-			if (this.chip) {
+			if (this.chip && !this.typing.suggest && !this.typing.hint) {
 				if (this.choices.length < 2) return;
 				this.cycle(1);
 				return false;
@@ -1330,8 +1352,14 @@ export class JetModal extends Modal {
 			}
 			if (!this.chip) return;
 			if (this.autoUndo) {
-				this.suppressAuto.add(this.chip.id);
-				this.removeChip(true);
+				// Back to the chip Auto replaced, if any, with the name as text.
+				const prev = this.autoPrev;
+				this.removeChip(true, this.autoName ?? undefined);
+				if (prev) {
+					this.chip = prev;
+					this.choices = [prev];
+					this.refresh();
+				}
 				return false;
 			}
 			if (!this.chipSelected) {
