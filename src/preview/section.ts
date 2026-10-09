@@ -5,8 +5,20 @@
  */
 export const PREVIEW_CAP = 8000;
 
-/** Whether `i` is inside a fenced code block (a `# comment` there is not a heading). */
-const inFence = (text: string, i: number): boolean => (text.slice(0, i).match(/^(```|~~~)/gm) ?? []).length % 2 === 1;
+/**
+ * Whether an offset is inside a fenced code block (a `# comment` there is not a heading). The
+ * fences are found once per note, then each heading is a count over them, not a scan of the text
+ * before it (that made a long note's preview slow).
+ */
+const fenceTest = (text: string): ((i: number) => boolean) => {
+	const fences: number[] = [];
+	for (const m of text.matchAll(/^(```|~~~)/gm)) fences.push(m.index ?? 0);
+	return (i) => {
+		let n = 0;
+		while (n < fences.length && (fences[n] as number) < i) n++;
+		return n % 2 === 1;
+	};
+};
 
 export const sectionAround = (
 	text: string,
@@ -18,13 +30,14 @@ export const sectionAround = (
 	// top. A section would end at its first heading, often right after the properties: an empty body.
 	if (offset === undefined) return { from: bodyStart, to: capAt(text, bodyStart, cap) };
 	const at = Math.max(bodyStart, Math.min(offset, text.length));
+	const inFence = fenceTest(text);
 	// The heading this offset sits under (or the body start).
 	const before = text.slice(bodyStart, at);
 	const re = /^(#{1,6})[ \t]/gm;
 	let from = bodyStart;
 	let level = 7;
 	for (const m of before.matchAll(re)) {
-		if (inFence(text, bodyStart + (m.index ?? 0))) continue;
+		if (inFence(bodyStart + (m.index ?? 0))) continue;
 		from = bodyStart + (m.index ?? 0);
 		level = m[1]?.length ?? 7;
 	}
@@ -34,7 +47,7 @@ export const sectionAround = (
 	const after = /^(#{1,6})[ \t]/gm;
 	after.lastIndex = Math.min(text.length, at + 1);
 	for (let m = after.exec(text); m; m = after.exec(text))
-		if ((m[1]?.length ?? 7) <= level && !inFence(text, m.index)) {
+		if ((m[1]?.length ?? 7) <= level && !inFence(m.index)) {
 			to = m.index;
 			break;
 		}
