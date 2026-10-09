@@ -19,11 +19,14 @@ export type Want =
 	| { kind: "values"; key: string; prefix: string }
 	| { kind: "keys"; prefix: string }
 	| { kind: "windows" }
-	| { kind: "folders"; prefix: string };
+	| { kind: "folders"; prefix: string }
+	/** `@ca` or `in:ca`: the scopes whose name or alias starts so. */
+	| { kind: "scopes"; prefix: string };
 
 /** What the piece asks to list, or null (a plain word lists nothing). */
 export const wantOf = (piece: string, known: (key: string) => boolean): Want | null => {
 	if (piece.startsWith("#") && !piece.includes(" ")) return { kind: "tags", prefix: piece.slice(1) };
+	if (piece.startsWith("@")) return { kind: "scopes", prefix: piece.slice(1).replace(/^"/, "") };
 	const m = /^([^\s:"[\]#@]+):(.*)$/u.exec(piece);
 	if (!m) return null;
 	const key = m[1] ?? "";
@@ -32,7 +35,8 @@ export const wantOf = (piece: string, known: (key: string) => boolean): Want | n
 	if (k === "tag") return { kind: "tags", prefix: rest.replace(/^#/, "") };
 	if (k === "edited" || k === "created") return { kind: "windows" };
 	if (k === "path") return { kind: "folders", prefix: rest };
-	if (k === "in" || k === "has" || k === "links" || k === "http" || k === "https") return null;
+	if (k === "in") return { kind: "scopes", prefix: rest };
+	if (k === "has" || k === "links" || k === "http" || k === "https") return null;
 	if (known(key)) return { kind: "values", key, prefix: rest };
 	if (!rest) return { kind: "keys", prefix: key };
 	return null;

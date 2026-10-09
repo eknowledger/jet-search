@@ -139,6 +139,7 @@ export class JetSettingTab extends PluginSettingTab {
 		const scope = this.scopeKey(key);
 		if (scope) return scope.field === "mode" ? scope.s.mode : scope.s.combine;
 		if (key === "scopesWhenNew") return s.scopesWhenNew;
+		if (key === "scopeMode") return s.scopeMode;
 		if (key.startsWith(STEM)) return s.stemming.includes(key.slice(STEM.length));
 		switch (key) {
 			case "doubleShift":
@@ -164,12 +165,21 @@ export class JetSettingTab extends PluginSettingTab {
 		const s = this.owner.data.settings;
 		const scope = this.scopeKey(key);
 		if (scope) {
-			if (scope.field === "mode" && (value === "suggest" || value === "auto" || value === "in-only"))
+			if (
+				scope.field === "mode" &&
+				(value === "default" || value === "suggest" || value === "auto" || value === "in-only")
+			)
 				scope.s.mode = value;
 			if (scope.field === "combine") {
 				scope.s.combine = value === "all" ? "all" : "any";
 				this.owner.scopes.reset();
 			}
+			this.owner.save();
+			this.redraw();
+			return;
+		}
+		if (key === "scopeMode") {
+			s.scopeMode = value === "auto" || value === "in-only" ? value : "suggest";
 			this.owner.save();
 			this.redraw();
 			return;
@@ -368,6 +378,7 @@ export class JetSettingTab extends PluginSettingTab {
 			generatePage: () => this.generatePage() as SettingPage,
 			canOpenPages: () => !!(this.app as unknown as { setting?: { openPage?: unknown } }).setting?.openPage,
 			newCount: () => this.owner.watcher.fresh,
+			everyMode: () => this.owner.data.settings.scopeMode,
 		};
 	}
 

@@ -8,7 +8,15 @@ export type Ranges = ReadonlyArray<readonly [number, number]>;
 /** One line of the result list: a group header, a result, or a recent search. */
 export type Entry =
 	/** `note`: where the search runs ("in Cobalt", "everywhere"), set by the modal. */
-	| { type: "header"; label: string; count?: number; note?: string; sort?: string }
+	| {
+			type: "header";
+			label: string;
+			count?: number;
+			note?: string;
+			sort?: string;
+			/** A label only (the suggestions' "Try instead"): no scope note, no sort control. */
+			plain?: boolean;
+	  }
 	| {
 			type: "item";
 			path: string;
@@ -33,7 +41,14 @@ export type Entry =
 			ctime?: number;
 	  }
 	/** A recent search; `parts` shows its scope and filters as chips. */
-	| { type: "search"; query: string; detail?: string; parts?: Array<{ chip: [string, string] } | { text: string }> }
+	| {
+			type: "search";
+			query: string;
+			detail?: string;
+			parts?: Array<{ chip: [string, string] } | { text: string }>;
+			/** The spelling your notes use, offered when nothing matched: "Did you mean …?". */
+			spelling?: boolean;
+	  }
 	/** The empty state's scopes: the open note's first, with ⇥; then the most used. */
 	| { type: "scopes"; label: string; chips: Array<{ scope: ScopeView; here?: boolean }>; more: number }
 	/** A message line (no results), not selectable. */
@@ -246,6 +261,7 @@ export class JetModal extends Modal {
 	/** Scopes whose Auto was undone in this search: suggested from then on. */
 	/** Auto scopes you undid or removed in this search: their names stay text until the box is cleared. */
 	private readonly suppressAuto = new Set<string>();
+	private clearEl!: HTMLElement;
 	/** The chip an Auto scope replaced just now: ⌫ undoes back to it. */
 	private autoPrev: ScopeView | null = null;
 	/** The name as you typed it when Auto applied (`mb`): the undo puts that back. */
@@ -325,6 +341,17 @@ export class JetModal extends Modal {
 		this.fixEl = top.createSpan({ cls: "jet-ghostbox is-fix is-hidden" });
 		this.ihintEl = top.createSpan({ cls: "jet-ihint is-hidden" });
 		this.statusEl = top.createSpan({ cls: "jet-status" });
+		// × clears the text, the scope and the filters, as the first Esc does.
+		this.clearEl = top.createSpan({
+			cls: "jet-clear is-hidden",
+			attr: { "aria-label": "Clear the search, its scope and filters (Esc)", role: "button" },
+		});
+		setIcon(this.clearEl, "x-circle");
+		this.clearEl.addEventListener("mousedown", (e) => e.preventDefault());
+		this.clearEl.addEventListener("click", () => {
+			this.clearAll();
+			this.inputEl.focus();
+		});
 		if (host.filters) {
 			const fb = top.createSpan({ cls: "jet-fbtn", attr: { "aria-label": "Filters (⌘F)", role: "button" } });
 			setIcon(fb, "list-filter");
@@ -475,14 +502,14 @@ export class JetModal extends Modal {
 		const n = this.filters.length;
 		const where = this.chip ? `in ${this.chip.name}` : this.typing.suggest ? "everywhere" : "";
 		const note = [where, n ? `${n} filter${n === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") || undefined;
-		const h = entries.findIndex((e) => e.type === "header");
+		const h = entries.findIndex((e) => e.type === "header" && !e.plain);
 		const first = entries[h];
 		if (note && first?.type === "header") entries = entries.map((e, i) => (i === h ? { ...first, note } : e));
 		// Sorting is for a search (text or filters), not the recents with nothing typed.
 		const searching = !!this.inputEl.value.trim() || this.filters.length > 0;
 		if (searching) entries = sortEntries(entries, this.sort);
 		// The sort control sits on the first header, once there is something to order.
-		const hs = entries.findIndex((e) => e.type === "header");
+		const hs = entries.findIndex((e) => e.type === "header" && !e.plain);
 		const hh = entries[hs];
 		if (searching && hh?.type === "header" && entries.filter((e) => e.type === "item").length > 1)
 			entries = entries.map((e, i) =>
@@ -716,12 +743,7 @@ export class JetModal extends Modal {
 		if (el.hasClass("is-all")) {
 			const all = this.host.filters?.scopes() ?? row.chips.map((c) => c.scope);
 			const m = new Menu();
-			for (const v of all)
-				m.addItem((i) =>
-					i
-						.setTitle(`${v.name}${v.kind ? ` · ${v.kind}` : ""} · ${v.members}`)
-						.onClick(() => this.applyChip(v, "")),
-				);
+			for (const v of all) m.addItem((i) => i.setTitle(scopeListLabel(v)).onClick(() => this.applyChip(v, "")));
 			const r = el.getBoundingClientRect();
 			m.showAtPosition({ x: r.left, y: r.bottom + 4 });
 			return;
@@ -947,8 +969,18 @@ export class JetModal extends Modal {
 		return true;
 	}
 
+	/** Empty box, no scope, no filters: a new search. */
+	private clearAll(): void {
+		this.inputEl.value = "";
+		this.chip = null;
+		this.choices = [];
+		this.filters = [];
+		this.refresh();
+	}
+
 	private drawScope(): void {
 		const chip = this.chip;
+		this.clearEl?.toggleClass("is-hidden", !chip && !this.inputEl.value && !this.filters.length);
 		this.chipEl.toggleClass("is-hidden", !chip);
 		this.chipEl.toggleClass("is-selected", !!chip && this.chipSelected);
 		this.chipEl.toggleClass("is-pinned", !!chip && this.pinned());
@@ -1284,13 +1316,8 @@ export class JetModal extends Modal {
 				this.hideCard();
 				this.drawScope();
 				this.footer(this.inputEl.value);
-			} else if (this.inputEl.value || this.chip || this.filters.length) {
-				this.inputEl.value = "";
-				this.chip = null;
-				this.choices = [];
-				this.filters = [];
-				this.refresh();
-			} else this.close();
+			} else if (this.inputEl.value || this.chip || this.filters.length) this.clearAll();
+			else this.close();
 			return false;
 		});
 		// Tab accepts the suggestion, or the name alone with nothing typed yet.
@@ -1602,6 +1629,10 @@ export class JetModal extends Modal {
 	}
 }
 
+/** A scope in a list: "Cobalt · [Projects] (34)". */
+export const scopeListLabel = (v: ScopeView): string =>
+	`${v.name}${v.kind ? ` · [${v.kind}]` : ""} (${v.members.toLocaleString()})`;
+
 /** Keys the chip handles itself; any other key unselects it. */
 const CHIP_KEYS = new Set(["Backspace", "ArrowLeft", "Escape", "Tab", "Shift", "Meta", "Alt", "Control"]);
 
@@ -1639,9 +1670,19 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		return;
 	}
 	if (e.type === "scopes") {
-		el.className = "jet-scrow";
+		// One line that slides: ‹ › at the ends while there is more that way, a fade, counts.
+		el.className = "jet-scrow is-slide";
 		el.removeAttribute("role");
 		el.createSpan({ cls: "jet-scl", text: e.label });
+		const fadeL = el.createSpan({ cls: "jet-scfade is-l" });
+		const fadeR = el.createSpan({ cls: "jet-scfade is-r" });
+		const prev = el.createSpan({
+			cls: "jet-scarrow is-l",
+			attr: { role: "button", "aria-label": "Earlier scopes" },
+		});
+		const next = el.createSpan({ cls: "jet-scarrow is-r", attr: { role: "button", "aria-label": "More scopes" } });
+		setIcon(prev, "chevron-left");
+		setIcon(next, "chevron-right");
 		const row = el.createDiv({ cls: "jet-schips" });
 		e.chips.forEach((c, i) => {
 			const chip = row.createSpan({
@@ -1649,20 +1690,49 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 				attr: { "data-i": String(i), role: "button" },
 			});
 			chip.appendText(c.scope.name);
+			chip.createSpan({ cls: "jet-scn", text: c.scope.members.toLocaleString() });
 			if (c.here) chip.createEl("kbd", { text: "⇥" });
 		});
-		if (e.more > 0)
-			row.createSpan({
-				cls: "jet-schip is-all",
-				text: `All ${e.chips.length + e.more}`,
-				attr: { role: "button" },
-			});
+		row.createSpan({
+			cls: "jet-schip is-all",
+			text: `All ${(e.chips.length + e.more).toLocaleString()} ▾`,
+			attr: { role: "button" },
+		});
+		const ends = (): void => {
+			const more = row.scrollWidth - row.clientWidth > 1;
+			const atL = row.scrollLeft <= 1;
+			const atR = row.scrollLeft >= row.scrollWidth - row.clientWidth - 1;
+			prev.toggleClass("is-hidden", !more || atL);
+			fadeL.toggleClass("is-hidden", !more || atL);
+			next.toggleClass("is-hidden", !more || atR);
+			fadeR.toggleClass("is-hidden", !more || atR);
+		};
+		const slide = (dir: number) => (ev: MouseEvent) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+			row.scrollBy({ left: dir * Math.max(120, row.clientWidth * 0.7), behavior: "smooth" });
+		};
+		prev.addEventListener("mousedown", slide(-1));
+		next.addEventListener("mousedown", slide(1));
+		row.addEventListener("scroll", ends, { passive: true });
+		// A vertical wheel slides the line sideways (most mice have no sideways wheel).
+		row.addEventListener(
+			"wheel",
+			(ev) => {
+				if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
+				ev.preventDefault();
+				row.scrollLeft += ev.deltaY;
+			},
+			{ passive: false },
+		);
+		window.requestAnimationFrame(ends);
 		return;
 	}
 	if (e.type === "notice") {
-		el.className = "jet-notice";
+		// Nothing found is red, with an alert icon.
+		el.className = "jet-notice is-error";
 		el.removeAttribute("role");
-		setIcon(el.createSpan({ cls: "jet-ic" }), "search-x");
+		setIcon(el.createSpan({ cls: "jet-ic" }), "alert-circle");
 		const b = el.createDiv({ cls: "jet-rb" });
 		b.createDiv({ cls: "jet-nt", text: e.title });
 		if (e.detail) b.createDiv({ cls: "jet-nd", text: e.detail });
@@ -1670,22 +1740,20 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 	}
 	el.setAttr("role", "option");
 	el.setAttr("aria-selected", "false");
-	if (e.type === "core") {
-		el.className = "jet-row jet-rowt";
-		setIcon(el.createSpan({ cls: "jet-ic" }), "search-code");
+	// Suggestions: tinted cards, the accent on their icon and title, the key on the right.
+	const card = (icon: string, title: string, detail: string | undefined, key: string): void => {
+		el.className = "jet-row jet-rowt jet-sugg";
+		setIcon(el.createSpan({ cls: "jet-ic" }), icon);
 		const b = el.createDiv({ cls: "jet-rb" });
-		b.createDiv({ cls: "jet-l1" }).createSpan({ cls: "jet-rt", text: "Search with Obsidian Search" });
-		b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: e.detail ?? e.query });
-		return;
-	}
-	if (e.type === "widen") {
-		el.className = "jet-row jet-rowt";
-		setIcon(el.createSpan({ cls: "jet-ic" }), "globe");
-		const b = el.createDiv({ cls: "jet-rb" });
-		b.createDiv({ cls: "jet-l1" }).createSpan({ cls: "jet-rt", text: e.label });
-		if (e.detail) b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: e.detail });
-		return;
-	}
+		const l1 = b.createDiv({ cls: "jet-l1" });
+		l1.createSpan({ cls: "jet-rt", text: title });
+		l1.createSpan({ cls: `jet-skey${key === "↵" ? " is-enter" : ""}` }).createEl("kbd", { text: key });
+		if (detail) b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: detail });
+	};
+	if (e.type === "core") return card("search-code", "Search with Obsidian Search", e.detail ?? e.query, "↵");
+	if (e.type === "widen") return card("globe", e.label, e.detail, "↵");
+	if (e.type === "search" && e.spelling) return card("spell-check", `Did you mean “${e.query}”?`, e.detail, "↵");
+	if (e.type === "create" && e.detail) return card("file-plus", `Create “${e.text}”`, e.detail, "⇧↵");
 	if (e.type === "search" || e.type === "create") {
 		el.className = `jet-row ${e.detail ? "jet-rowt" : "jet-row-search"}`;
 		setIcon(el.createSpan({ cls: "jet-ic" }), e.type === "create" ? "file-plus" : e.detail ? "search" : "history");

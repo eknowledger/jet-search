@@ -3,6 +3,7 @@ import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
 import { JadeLink } from "./jade-link";
+import { withModes } from "./scopes/model";
 import { importJadeSearch } from "./migrate";
 import { Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
@@ -146,7 +147,7 @@ export default class JetSearchPlugin extends Plugin {
 			},
 			{ status: () => indexStatus(this), rebuild: () => rebuild(this) },
 			{
-				all: () => this.data.scopes,
+				all: () => withModes(this.data.scopes, this.data.settings.scopeMode),
 				ensure: () => this.scopes.ensure(),
 				count: (id) => this.scopes.count(id),
 				membersOf: (id) => this.scopes.membersOf(id),

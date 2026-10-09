@@ -54,7 +54,7 @@ describe("stored scopes", () => {
 				{ kind: "tag", tag: "#lyon" },
 			],
 			combine: "any",
-			mode: "suggest",
+			mode: "default",
 			source: "manual",
 		});
 	});

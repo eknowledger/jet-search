@@ -16,7 +16,7 @@ import {
 } from "obsidian";
 import { closeSettingPage } from "../internals";
 import { autoRisk } from "../scopes/auto";
-import { type Mode, type Rule, type Scope, scopeId } from "../scopes/model";
+import { type Mode, modeOf, type OwnMode, type Rule, type Scope, scopeId } from "../scopes/model";
 import { pickFolder, pickProperty, pickTag } from "./rule-pickers";
 
 /** What the page needs from the plugin. */
@@ -40,20 +40,27 @@ export type ScopesHost = {
 	canOpenPages(): boolean;
 	/** How many new scopes Jet has noticed since the last generation. */
 	newCount(): number;
+	/** The mode every scope follows unless it chose its own. */
+	everyMode(): OwnMode;
 };
 
 export const SCOPES_INTRO =
 	"Type a scope's name or alias at the start of a search, then ⇥ to search only its notes. " +
 	"A note is in a scope when any of its rules matches; a link counts by the note it opens.";
 
-export const MODE_LABEL: Record<Mode, string> = { suggest: "Suggest", auto: "Auto", "in-only": "in: only" };
+export const MODE_LABEL: Record<Mode, string> = {
+	default: "Like every scope",
+	suggest: "Suggest",
+	auto: "Auto",
+	"in-only": "in: only",
+};
 
 /** "18 scopes · 2 on Auto", "18 scopes · 2 new", or "None yet". */
 export const scopesSummary = (h: ScopesHost): string => {
 	const all = h.scopes();
 	if (!all.length) return "None yet";
 	const fresh = h.newCount();
-	const auto = all.filter((s) => s.mode === "auto").length;
+	const auto = all.filter((s) => modeOf(s, h.everyMode()) === "auto").length;
 	const tail = fresh ? ` · ${fresh} new` : auto ? ` · ${auto} on Auto` : "";
 	return `${all.length} scope${all.length === 1 ? "" : "s"}${tail}`;
 };
@@ -116,6 +123,17 @@ export const scopesPage = (h: ScopesHost): SettingDefinitionPage => {
 			);
 		},
 	};
+	const every: SettingDefinition = {
+		name: "When typed, for every scope",
+		desc:
+			"Suggest: ⇥ accepts. Auto: applied as soon as the name or an alias and a space are typed. " +
+			"in: only: only with in: or @. A scope can choose its own on its page.",
+		control: {
+			type: "dropdown",
+			key: "scopeMode",
+			options: { suggest: "Suggest", auto: "Auto", "in-only": "in: only" },
+		},
+	};
 	const whenNew: SettingDefinition = {
 		name: "When new ones appear",
 		desc: "Jet checks after changes in your vault (a new folder that fits a pattern, a new property value).",
@@ -131,7 +149,7 @@ export const scopesPage = (h: ScopesHost): SettingDefinitionPage => {
 		desc: SCOPES_INTRO,
 		displayValue: () => scopesSummary(h),
 		items: [
-			{ type: "group", items: [h.canOpenPages() ? find : findPage, whenNew] },
+			{ type: "group", items: [every, h.canOpenPages() ? find : findPage, whenNew] },
 			{
 				type: "list",
 				items: all.map((s) => scopePage(h, s)),
@@ -157,7 +175,7 @@ const addScope = (h: ScopesHost): void => {
 		kind: "",
 		rules: [],
 		combine: "any",
-		mode: "suggest",
+		mode: "default",
 		source: "manual",
 	});
 	h.save();
@@ -184,7 +202,12 @@ export const whenTyped = (h: ScopesHost, s: Scope): SettingDefinition => {
 		: risk === "common"
 			? `Careful with Auto: “${s.name}” is written in ${plural(m.outside)} outside it, so ordinary searches with that word would be scoped.`
 			: `“${s.name}” is rare outside it (${plural(m.outside)}): Auto is safe.`;
-	const options: Record<string, string> = { suggest: "Suggest", auto: "Auto", "in-only": "in: only" };
+	const options: Record<string, string> = {
+		default: `Like every scope (${MODE_LABEL[h.everyMode()]})`,
+		suggest: "Suggest",
+		auto: "Auto",
+		"in-only": "in: only",
+	};
 	return {
 		name: "When typed",
 		desc:
@@ -279,7 +302,7 @@ const scopePage = (h: ScopesHost, s: Scope): SettingDefinitionPage => {
 		type: "page",
 		name: s.name,
 		desc: scopeDesc(h, s),
-		displayValue: MODE_LABEL[s.mode],
+		displayValue: s.mode === "default" ? `${MODE_LABEL[h.everyMode()]} · every scope` : MODE_LABEL[s.mode],
 		items,
 	};
 };

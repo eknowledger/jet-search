@@ -84,7 +84,7 @@ export const applyReview = (items: readonly ReviewItem[], scopes: readonly Scope
 				kind: p.kind,
 				rules,
 				combine: "any",
-				mode: "suggest",
+				mode: "default",
 				source: "generated",
 				origins: p.origins,
 				generated: rules,

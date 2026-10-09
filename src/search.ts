@@ -321,12 +321,10 @@ export class Search {
 		const n = (k: number): string => `${k} note${k === 1 ? "" : "s"}`;
 		const t = text.trim();
 		const d = scope !== undefined ? (this.scopes?.describe?.(scope) ?? null) : null;
+		// The notice, then "Try instead" and the suggestions as cards.
 		const out: Entry[] = [
-			{
-				type: "notice",
-				title: d ? `No results for “${t}” in ${d.name}` : `No results for “${t}”`,
-				detail: s.text ? `Did you mean “${s.text}”? It is written that way in ${n(s.notes)}.` : undefined,
-			},
+			{ type: "notice", title: d ? `No results for “${t}” in ${d.name}` : `No results for “${t}”` },
+			{ type: "header", label: "Try instead", plain: true },
 		];
 		if (d) {
 			const all = await this.client.query(text, { limit: 50 });
@@ -336,12 +334,13 @@ export class Search {
 				label: `Search everywhere for “${t}”`,
 				detail: all
 					? k
-						? `${k >= 50 ? "50+" : k} ${k === 1 ? "note" : "notes"}`
+						? `${k >= 50 ? "50+" : k} ${k === 1 ? "note" : "notes"} outside ${d.name}`
 						: "Nothing there either"
 					: undefined,
 			});
 		}
-		if (s.text) out.push({ type: "search", query: s.text, detail: n(s.notes) });
+		if (s.text)
+			out.push({ type: "search", query: s.text, detail: `Written that way in ${n(s.notes)}`, spelling: true });
 		out.push(
 			d
 				? { type: "create", text: t, detail: `In ${d.name} · ${d.create}` }

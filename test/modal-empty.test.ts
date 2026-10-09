@@ -59,16 +59,18 @@ describe("the empty state with scopes; persisted filters", () => {
 		const m = new JetModal(new App() as never, host);
 		m.open();
 		expect([...document.querySelectorAll(".jet-schip")].map((c) => c.textContent)).toEqual([
-			"Cobalt⇥",
-			"OKR",
-			"All 5",
+			"Cobalt34⇥",
+			"OKR92",
+			"All 5 ▾",
 		]);
 		expect(press(m, "Tab")).toBe(true);
 		expect(lists.at(-1)).toEqual(["", "cobalt", 0]);
 		m.close();
 		const n = new JetModal(new App() as never, host);
 		n.open();
-		[...document.querySelectorAll<HTMLElement>(".jet-schip")].find((c) => c.textContent === "OKR")?.click();
+		[...document.querySelectorAll<HTMLElement>(".jet-schip")]
+			.find((c) => c.textContent?.startsWith("OKR"))
+			?.click();
 		expect(lists.at(-1)).toEqual(["", "okr", 0]);
 	});
 

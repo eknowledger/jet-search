@@ -24,7 +24,8 @@ describe("completing filters", () => {
 		expect(wantOf("edited:", known)).toEqual({ kind: "windows" });
 		expect(wantOf("path:2.Pro", known)).toEqual({ kind: "folders", prefix: "2.Pro" });
 		expect(wantOf("world", known)).toBeNull();
-		expect(wantOf("in:cob", known)).toBeNull();
+		expect(wantOf("in:cob", known)).toEqual({ kind: "scopes", prefix: "cob" });
+		expect(wantOf("@ca", known)).toEqual({ kind: "scopes", prefix: "ca" });
 		expect(wantOf("10:30", known)).toBeNull();
 	});
 });

@@ -1,5 +1,14 @@
 import type { Filter } from "./filters/filter";
-import { normalizeScopes, type Scope } from "./scopes/model";
+import { normalizeScopes, type OwnMode, type Scope } from "./scopes/model";
+
+/**
+ * Data saved before "every scope" existed (no `scopeMode` yet): Suggest was the default then, so a
+ * scope on Suggest was on the default. It follows "every scope" now; Auto and in: only were chosen.
+ */
+const migrateModes = (scopes: Scope[], before: boolean): Scope[] => {
+	if (before) for (const s of scopes) if (s.mode === "suggest") s.mode = "default";
+	return scopes;
+};
 
 /**
  * What Jet keeps in its data.json (settings and the frecency store): settings,
@@ -23,6 +32,8 @@ export type JetSettings = {
 	stemming: string[];
 	/** What happens when Jet notices new scopes. */
 	scopesWhenNew: "tell" | "add" | "nothing";
+	/** How typing a name behaves for every scope that did not choose its own. */
+	scopeMode: OwnMode;
 	/** Reopen with the last scope and filters (off by default). */
 	persistFilters: boolean;
 };
@@ -36,6 +47,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	exclude: [],
 	stemming: ["en"],
 	scopesWhenNew: "tell",
+	scopeMode: "suggest",
 	persistFilters: false,
 };
 
@@ -77,6 +89,7 @@ export const normalizeData = (raw: unknown): JetData => {
 		exclude: Array.isArray(s.exclude) ? s.exclude.filter((x): x is string => typeof x === "string") : [],
 		stemming: Array.isArray(s.stemming) ? s.stemming.filter((x): x is string => typeof x === "string") : ["en"],
 		scopesWhenNew: s.scopesWhenNew === "add" || s.scopesWhenNew === "nothing" ? s.scopesWhenNew : "tell",
+		scopeMode: s.scopeMode === "auto" || s.scopeMode === "in-only" ? s.scopeMode : "suggest",
 		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
 	};
 	const scopeUses: Record<string, number> = {};
@@ -106,7 +119,7 @@ export const normalizeData = (raw: unknown): JetData => {
 		opened,
 		searches: searches.slice(0, MAX_SEARCHES),
 		indexedAt,
-		scopes: normalizeScopes(r.scopes),
+		scopes: migrateModes(normalizeScopes(r.scopes), s.scopeMode === undefined),
 		scopeUses,
 		last,
 		imported: Array.isArray(r.imported) ? r.imported.filter((x): x is string => typeof x === "string") : [],

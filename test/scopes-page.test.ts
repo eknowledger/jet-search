@@ -51,10 +51,11 @@ describe("the Scopes page in settings (option C)", () => {
 
 	it("offers Generate first; once scopes were generated, finding new ones", async () => {
 		const first = (await make()).page();
-		expect(first.items?.[0]?.items?.[0]?.name).toBe("Find scopes in your vault");
+		expect(first.items?.[0]?.items?.[0]?.name).toBe("When typed, for every scope");
+		expect(first.items?.[0]?.items?.[1]?.name).toBe("Find scopes in your vault");
 		expect(first.items?.[1]?.emptyState).toContain("No scopes yet");
 		const later = (await make([{ source: "generated" }])).page();
-		expect(later.items?.[0]?.items?.[0]?.name).toBe("Find new scopes");
+		expect(later.items?.[0]?.items?.[1]?.name).toBe("Find new scopes");
 	});
 
 	it("lists each scope as a page with its rules, and its mode as the row's value", async () => {
@@ -114,19 +115,20 @@ describe("folders to leave out as a page", () => {
 describe("When typed: Auto always offered, with a warning for a common name", () => {
 	const s = (name: string, mode: "suggest" | "auto" = "suggest") =>
 		({ id: "x", name, aliases: [], kind: "", rules: [], combine: "any", mode, source: "manual" }) as const;
-	const host = (m: { value: number; outside: number } | null) => ({ mentions: () => m }) as never;
+	const host = (m: { value: number; outside: number } | null) =>
+		({ mentions: () => m, everyMode: () => "suggest" }) as never;
 	const options = (d: ReturnType<typeof whenTyped>) => Object.keys((d.control as { options: object }).options);
 
 	it("a rare name: Auto, and the page says it is safe", () => {
 		const d = whenTyped(host({ value: 0.5, outside: 27 }), { ...s("Cobalt"), aliases: [] });
-		expect(options(d)).toEqual(["suggest", "auto", "in-only"]);
+		expect(options(d)).toEqual(["default", "suggest", "auto", "in-only"]);
 		expect(d.desc).toContain("“Cobalt” is rare outside it (27 notes): Auto is safe.");
 		expect(d.desc).toContain("in any casing");
 	});
 
 	it("a common word: Auto still offered, with a warning; not measured yet: checking", () => {
 		const team = whenTyped(host({ value: 20.8, outside: 623 }), { ...s("Team"), aliases: [] });
-		expect(options(team)).toEqual(["suggest", "auto", "in-only"]);
+		expect(options(team)).toEqual(["default", "suggest", "auto", "in-only"]);
 		expect(team.desc).toContain("Careful with Auto: “Team” is written in 623 notes outside it");
 		expect(whenTyped(host(null), { ...s("Cobalt"), aliases: [] }).desc).toContain("Checking how often");
 	});

@@ -66,7 +66,7 @@ describe("when new scopes appear", () => {
 		expect(state.scopes.map((s) => [s.name, s.mode])).toEqual([
 			["Garden", "suggest"],
 			["Lyon", "suggest"],
-			["Orion", "suggest"],
+			["Orion", "default"],
 		]);
 		expect(w.fresh).toBe(0);
 		expect(state.saved).toBe(1);

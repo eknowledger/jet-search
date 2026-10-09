@@ -15,7 +15,22 @@ export type Rule =
 	/** A tag and its nested tags (case-insensitive). */
 	| { kind: "tag"; tag: string };
 
-export type Mode = "suggest" | "auto" | "in-only";
+/** How typing a scope's name behaves; "default": like every scope (the Scopes page's own setting). */
+export type Mode = "default" | "suggest" | "auto" | "in-only";
+export type OwnMode = Exclude<Mode, "default">;
+
+/** A scope's mode, with "default" resolved to the mode every scope follows. */
+export const modeOf = (s: Scope, every: OwnMode): OwnMode => (s.mode === "default" ? every : s.mode);
+
+/** The scopes with their modes resolved (what typing and the modal use), kept while nothing changes. */
+let resolved: { from: readonly Scope[]; key: string; out: Scope[] } | null = null;
+export const withModes = (scopes: readonly Scope[], every: OwnMode): Scope[] => {
+	const key = `${every}\u0001${scopes.map((s) => s.mode).join("\u0001")}`;
+	if (resolved?.from === scopes && resolved.key === key && resolved.out.length === scopes.length) return resolved.out;
+	const out = scopes.map((s) => (s.mode === "default" ? { ...s, mode: every } : s));
+	resolved = { from: scopes, key, out };
+	return out;
+};
 
 /** Where generation found a scope: the signal, the pattern, the member in it. */
 export type Origin = { signal: string; at: string; key: string; v: number };
@@ -36,7 +51,7 @@ export type Scope = {
 	generated?: Rule[];
 };
 
-const MODES: readonly Mode[] = ["suggest", "auto", "in-only"];
+const MODES: readonly Mode[] = ["default", "suggest", "auto", "in-only"];
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 
@@ -98,7 +113,7 @@ export const normalizeScopes = (raw: unknown): Scope[] => {
 			kind: str(r.kind) ?? "",
 			rules: rs,
 			combine: r.combine === "all" ? "all" : "any",
-			mode: MODES.includes(r.mode as Mode) ? (r.mode as Mode) : "suggest",
+			mode: MODES.includes(r.mode as Mode) ? (r.mode as Mode) : "default",
 			source: r.source === "generated" ? "generated" : "manual",
 		};
 		if (Array.isArray(r.origins)) {

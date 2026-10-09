@@ -1,16 +1,17 @@
 import { type App, FuzzySuggestModal, getAllTags, MarkdownView, normalizePath, Notice, TFile, TFolder } from "obsidian";
 import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
-import type {
-	Completion,
-	Entry,
-	NoteAction,
-	HintState,
-	ModalHost,
-	OpenHow,
-	ScopeCard,
-	ScopeView,
-	Typed,
+import {
+	type Completion,
+	type Entry,
+	type NoteAction,
+	type HintState,
+	type ModalHost,
+	type OpenHow,
+	type ScopeCard,
+	type ScopeView,
+	type Typed,
+	scopeListLabel,
 } from "./modal/jet-modal";
 import { findFix, pieceAt, wantOf } from "./filters/complete";
 import { type Filter, filterLabel, filterText, findFilters, withoutPieces } from "./filters/filter";
@@ -188,6 +189,22 @@ export class JetHost implements ModalHost {
 					] as Array<[string, number]>
 				).map(([label, d]) => ({ label, insert: `${key}:${d}d ` }));
 				return { ...base, title: key, items };
+			}
+			case "scopes": {
+				const a = this.scopeAccess;
+				if (!a) return null;
+				a.ensure();
+				const items = a
+					.all()
+					.filter((s) => [s.name, ...s.aliases].some((n) => starts(n, want.prefix)))
+					.map((s) => ({ s, n: a.count(s.id) }))
+					.sort((x, y) => y.n - x.n)
+					.slice(0, AC_ITEMS)
+					.map(({ s, n }) => ({
+						label: scopeListLabel({ id: s.id, name: s.name, kind: s.kind, members: n }),
+						insert: `@${quote(s.name)} `,
+					}));
+				return items.length ? { ...base, where: undefined, title: "Scopes", items } : null;
 			}
 			case "folders": {
 				const counts = new Map<string, number>();
@@ -587,11 +604,14 @@ export class JetHost implements ModalHost {
 		const rest = all
 			.filter((s) => s !== here && s.mode !== "in-only")
 			.sort((x, y) => (uses[y.id] ?? 0) - (uses[x.id] ?? 0) || a.count(y.id) - a.count(x.id));
-		const chips = [
-			...(here ? [{ scope: view(here), here: true }] : []),
-			...rest.slice(0, here ? 3 : 4).map((s) => ({ scope: view(s) })),
-		];
-		return { type: "scopes", label: "Search in", chips, more: all.length - chips.length };
+		// Every scope on one line that slides, then "All N" for the full list.
+		const chips = [...(here ? [{ scope: view(here), here: true }] : []), ...rest.map((s) => ({ scope: view(s) }))];
+		return {
+			type: "scopes",
+			label: `Search in · ${chips.length} scope${chips.length === 1 ? "" : "s"}`,
+			chips,
+			more: 0,
+		};
 	}
 
 	/** A remembered search's scope and filters as chips, the rest as text. */
