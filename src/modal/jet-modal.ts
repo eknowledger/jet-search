@@ -57,7 +57,12 @@ export type Entry =
 	/** The empty state's scopes: the open note's first, with ⇥; then the most used. */
 	| { type: "scopes"; label: string; chips: Array<{ scope: ScopeView; here?: boolean }>; more: number }
 	/** A message line (no results), not selectable. */
-	| { type: "notice"; title: string; detail?: string }
+	| {
+			type: "notice";
+			title: string;
+			detail?: string;
+			/** Not "nothing found": no red, an info icon. */ info?: boolean;
+	  }
 	/** Create a note named after the text (no-results screen). */
 	| { type: "create"; text: string; detail?: string }
 	/** Search the same text everywhere (nothing in the scope). */
@@ -156,6 +161,18 @@ export const sortEntries = (entries: Entry[], sort: Sort): Entry[] => {
 /** How to open a note. */
 export type OpenHow = "default" | "other" | "split";
 
+/** Where in the note: a line of the open note (search in this note), or a character offset in its text. */
+export type OpenAt = { line: number; ch: number; len: number } | { offset: number; len: number };
+
+/** Where a row's note should open: its line, or its first hit in the text. */
+const openAt = (e: Extract<Entry, { type: "item" }>): OpenAt | undefined => {
+	if (e.at) return e.at;
+	const off = e.hit?.offset;
+	if (off === undefined) return undefined;
+	const m = e.excerpt?.marks[0];
+	return { offset: off, len: m ? m[1] - m[0] : 0 };
+};
+
 /** What the modal needs from the plugin. */
 export type ModalHost = {
 	/**
@@ -173,7 +190,7 @@ export type ModalHost = {
 	): void;
 	/** Search by meaning: whether it can answer (on, model installed), and whether questions use it by themselves. */
 	meaning?: { available(): boolean; questions(): boolean };
-	open(path: string, how: OpenHow, at?: { line: number; ch: number; len: number }): void;
+	open(path: string, how: OpenHow, at?: OpenAt): void;
 	/** Footer hints for the current text and scope state. */
 	hints(text: string, state?: HintState): Array<[key: string, label: string]>;
 	/** The modal closed: its text, whether a note was opened, and the chip's scope if one was applied. */
@@ -182,12 +199,17 @@ export type ModalHost = {
 	/** The preview pane's setting (⌘. toggles it). */
 	previewOn(): boolean;
 	setPreviewOn(on: boolean): void;
-	/** Copy a link to the note (⌘L, the preview's link button). */
-	copyLink(path: string): void;
-	/** ⌥↵: put a link to the note where the cursor is in the note being edited. */
-	insertLink(path: string): void;
-	/** ⇧↵: create a note named after the text and open it, in the chip's scope if any. */
-	create(text: string, scope?: string): void;
+	/** Copy a link to the note (⌘L, the preview's link button). Absent: ⌘L does nothing. */
+	copyLink?(path: string): void;
+	/** ⌥↵: put a link to the note where the cursor is in the note being edited. Absent: ⌥↵ is left alone. */
+	insertLink?(path: string): void;
+	/**
+	 * ⇧↵: create a note named after the text and open it, in the chip's scope if any.
+	 * Absent (search in this note): ⇧↵ is left alone, Jet stays open.
+	 */
+	create?(text: string, scope?: string): void;
+	/** False when the list has one order only (the lines of one note): no sort control. */
+	sortable?: boolean;
 	/** The actions on a note (⌘K), each with its key. */
 	actions?(path: string): NoteAction[];
 	/** Run one; true when the modal should close. */
@@ -514,11 +536,17 @@ export class JetModal extends Modal {
 
 	private act(a: PreviewAction, path: string): void {
 		if (a === "link") {
-			this.host.copyLink(path);
+			this.host.copyLink?.(path);
 			return;
 		}
 		this.opened = true;
-		this.host.open(path, a === "split" ? "split" : "default");
+		// At the hit the preview shows, when it is the selected row's.
+		const e = this.entries[this.selected];
+		this.host.open(
+			path,
+			a === "split" ? "split" : "default",
+			e?.type === "item" && e.path === path ? openAt(e) : undefined,
+		);
 		this.close();
 	}
 
@@ -538,11 +566,16 @@ export class JetModal extends Modal {
 		if (note && first?.type === "header") entries = entries.map((e, i) => (i === h ? { ...first, note } : e));
 		// Sorting is for a search (text or filters), not the recents with nothing typed.
 		const searching = !!this.inputEl.value.trim() || this.filters.length > 0;
-		if (searching) entries = sortEntries(entries, this.sort);
+		if (searching && this.host.sortable !== false) entries = sortEntries(entries, this.sort);
 		// The sort control sits on the first header, once there is something to order.
 		const hs = entries.findIndex((e) => e.type === "header" && !e.plain);
 		const hh = entries[hs];
-		if (searching && hh?.type === "header" && entries.filter((e) => e.type === "item").length > 1)
+		if (
+			searching &&
+			this.host.sortable !== false &&
+			hh?.type === "header" &&
+			entries.filter((e) => e.type === "item").length > 1
+		)
 			entries = entries.map((e, i) =>
 				i === hs ? { ...hh, sort: SORTS.find(([k]) => k === this.sort)?.[1] ?? "" } : e,
 			);
@@ -1352,6 +1385,7 @@ export class JetModal extends Modal {
 			return;
 		}
 		if (e.type === "create") {
+			if (!this.host.create) return;
 			this.opened = true;
 			this.host.create(e.text, this.chip?.id);
 			this.close();
@@ -1369,7 +1403,8 @@ export class JetModal extends Modal {
 		}
 		if (e.type !== "item") return;
 		this.opened = true;
-		this.host.open(e.path, how, e.at);
+		// A note found by its text opens at the hit, not at the top.
+		this.host.open(e.path, how, openAt(e));
 		this.close();
 	}
 
@@ -1576,8 +1611,9 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register(["Mod"], ".", () => {
-			const on = !this.host.previewOn();
-			this.host.setPreviewOn(on);
+			this.host.setPreviewOn(!this.host.previewOn());
+			// As the host has it now: a host with no preview (search in this note) stays without.
+			const on = this.host.previewOn();
 			this.modalEl.toggleClass("is-preview-off", !on);
 			this.preview.path = null;
 			if (on) this.schedulePreview();
@@ -1585,12 +1621,12 @@ export class JetModal extends Modal {
 		});
 		this.scope.register(["Mod"], "l", () => {
 			const e = this.entries[this.selected];
-			if (e?.type === "item") this.host.copyLink(e.path);
+			if (e?.type === "item") this.host.copyLink?.(e.path);
 			return false;
 		});
 		this.scope.register(["Alt"], "Enter", () => {
 			const e = this.entries[this.selected];
-			if (e?.type !== "item") return false;
+			if (e?.type !== "item" || !this.host.insertLink) return false;
 			this.opened = true;
 			this.host.insertLink(e.path);
 			this.close();
@@ -1598,7 +1634,7 @@ export class JetModal extends Modal {
 		});
 		this.scope.register(["Shift"], "Enter", () => {
 			const text = this.inputEl.value.trim();
-			if (!text) return false;
+			if (!text || !this.host.create) return false;
 			this.opened = true;
 			this.host.create(text, this.chip?.id);
 			this.close();
@@ -1830,9 +1866,9 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 	}
 	if (e.type === "notice") {
 		// Nothing found is red, with an alert icon.
-		el.className = "jet-notice is-error";
+		el.className = e.info ? "jet-notice" : "jet-notice is-error";
 		el.removeAttribute("role");
-		setIcon(el.createSpan({ cls: "jet-ic" }), "alert-circle");
+		setIcon(el.createSpan({ cls: "jet-ic" }), e.info ? "info" : "alert-circle");
 		const b = el.createDiv({ cls: "jet-rb" });
 		b.createDiv({ cls: "jet-nt", text: e.title });
 		if (e.detail) b.createDiv({ cls: "jet-nd", text: e.detail });

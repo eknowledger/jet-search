@@ -8,7 +8,8 @@ const FIXTURE = JSON.parse(readFileSync(join(__dirname, "fixtures/potion-base-8M
 	ids: number[][];
 };
 // The model's own tokenizer.json, when it is on this machine (it is not in the repo).
-const TOKENIZER = process.env.JET_TOKENIZER ?? "models/minishlab/potion-base-8M/tokenizer.json";
+const TOKENIZER =
+	process.env.JET_TOKENIZER ?? `${process.env.HOME}/.cache/jet-search/models/potion-base-8M/tokenizer.json`;
 
 describe("BERT WordPiece", () => {
 	it("normalizes like BertNormalizer and splits like BertPreTokenizer", () => {

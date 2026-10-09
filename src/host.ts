@@ -1,4 +1,14 @@
-import { type App, FuzzySuggestModal, getAllTags, MarkdownView, normalizePath, Notice, TFile, TFolder } from "obsidian";
+import {
+	type App,
+	type EditorPosition,
+	FuzzySuggestModal,
+	getAllTags,
+	MarkdownView,
+	normalizePath,
+	Notice,
+	TFile,
+	TFolder,
+} from "obsidian";
 import { type JetData, groupRecents, rememberSearch } from "./data";
 import { age, crumb, titleOf } from "./modal/format";
 import {
@@ -7,6 +17,7 @@ import {
 	type NoteAction,
 	type HintState,
 	type ModalHost,
+	type OpenAt,
 	type OpenHow,
 	type ScopeCard,
 	type ScopeView,
@@ -18,6 +29,7 @@ import { findFix, pieceAt, wantOf } from "./filters/complete";
 import { type Filter, filterLabel, filterText, findFilters, withoutPieces } from "./filters/filter";
 import type { FilterSets } from "./filters/sets";
 import type { Rule, Scope } from "./scopes/model";
+import { clusterStart } from "./excerpt/chars";
 import { createTarget } from "./scopes/create";
 import { fold } from "./scopes/names";
 import { parseScope } from "./scopes/parse";
@@ -379,8 +391,9 @@ export class JetHost implements ModalHost {
 					);
 				return true;
 			case "in-note":
+				// As any opening: a new tab when that is your setting.
 				void this.app.workspace
-					.getLeaf(false)
+					.getLeaf(this.newTab() ? "tab" : false)
 					.openFile(file)
 					.then(() => this.inNote?.(file));
 				return true;
@@ -721,13 +734,43 @@ export class JetHost implements ModalHost {
 		};
 	}
 
-	open(path: string, how: OpenHow): void {
+	open(path: string, how: OpenHow, at?: OpenAt): void {
 		const file = this.app.vault.getFileByPath(path);
-		if (!file) return;
+		// Deleted or moved since it was listed: say so, rather than closing with nothing opened.
+		if (!file) {
+			new Notice(`“${titleOf(path)}” is no longer in the vault.`);
+			return;
+		}
 		const ws = this.app.workspace;
 		const leaf =
 			how === "split" ? ws.getLeaf("split") : ws.getLeaf((how === "other") !== this.newTab() ? "tab" : false);
-		void leaf.openFile(file);
+		void (async () => {
+			// At the hit, as Obsidian's own search opens a match: the line scrolled to, then selected.
+			let pos: { line: number; ch: number; len: number } | null = at && "line" in at ? at : null;
+			if (at && "offset" in at) {
+				const text = await this.app.vault.cachedRead(file);
+				const before = text.slice(0, Math.min(at.offset, text.length));
+				pos = {
+					line: before.split("\n").length - 1,
+					ch: before.length - (before.lastIndexOf("\n") + 1),
+					len: at.len,
+				};
+			}
+			await leaf.openFile(file, pos ? { eState: { line: pos.line } } : undefined);
+			const view = leaf.view as unknown as {
+				getMode?: () => string;
+				editor?: {
+					setSelection(a: EditorPosition, b: EditorPosition): void;
+					scrollIntoView(r: unknown, center?: boolean): void;
+				};
+			};
+			if (pos && view.editor && view.getMode?.() !== "preview") {
+				const from = { line: pos.line, ch: pos.ch };
+				const to = { line: pos.line, ch: pos.ch + pos.len };
+				view.editor.setSelection(from, to);
+				view.editor.scrollIntoView({ from, to }, true);
+			}
+		})().catch((e: unknown) => console.error("Jet Search: the note could not be opened", e));
 	}
 
 	hints(text: string, state: HintState = {}): Array<[string, string]> {
@@ -829,28 +872,46 @@ export class JetHost implements ModalHost {
 	}
 
 	create(text: string, scope?: string): void {
-		const name = text
-			.replace(/[\\/:*?"<>|#^[\]]/g, " ")
-			.replace(/\s+/g, " ")
-			.trim()
-			.slice(0, 120);
+		// "Folder/Name" makes the note in that folder, as Obsidian's quick switcher does;
+		// "Name.md" is "Name".
+		const parts = text.replace(/\.md\s*$/i, "").split("/");
+		const clean = (x: string): string =>
+			x
+				.replace(/[\\:*?"<>|#^[\]]/g, " ")
+				.replace(/\s+/g, " ")
+				.trim()
+				// A leading dot hides the file; Windows drops trailing dots and spaces.
+				.replace(/^\.+/, "")
+				.replace(/[.\s]+$/, "")
+				.trim();
+		const typedFolder = parts.slice(0, -1).map(clean).filter(Boolean).join("/");
+		let name = clean(parts.at(-1) ?? "");
+		// At most 120 characters, never inside one (an emoji cut in half is not a file name).
+		if (name.length > 120) name = name.slice(0, clusterStart(name, 120)).trim();
 		if (!name) return;
-		// In a scope: its folder, its property (or tag) filled in.
+		// In a scope: its folder, its properties and tags filled in.
 		const s = scope !== undefined ? this.scopeAccess?.all().find((x) => x.id === scope) : undefined;
 		const target = s ? createTarget(s) : null;
 		const active = this.app.workspace.getActiveFile()?.path ?? "";
 		const folder =
 			target?.folder && this.app.vault.getFolderByPath(target.folder)
 				? target.folder
-				: this.app.fileManager.getNewFileParent(active).path;
+				: typedFolder || this.app.fileManager.getNewFileParent(active).path;
 		const path = normalizePath(`${folder === "/" ? "" : `${folder}/`}${name}.md`);
-		const existing = this.app.vault.getFileByPath(path);
+		// The same name in another case is the same file on macOS and Windows: open it.
+		const low = path.toLowerCase();
+		const existing =
+			this.app.vault.getFileByPath(path) ??
+			this.app.vault.getMarkdownFiles().find((f) => f.path.toLowerCase() === low) ??
+			null;
 		void (async () => {
+			if (!existing && typedFolder && folder === typedFolder && !this.app.vault.getFolderByPath(folder))
+				await this.app.vault.createFolder(folder);
 			const file = existing ?? (await this.app.vault.create(path, ""));
-			if (!existing && (target?.prop || target?.tag))
+			if (!existing && target && (target.props.length || target.tags.length))
 				await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-					if (target.prop) fm[target.prop[0]] = target.prop[1];
-					if (target.tag) fm.tags = [target.tag.replace(/^#/, "")];
+					for (const [k, v] of target.props) fm[k] = v;
+					if (target.tags.length) fm.tags = target.tags.map((t) => t.replace(/^#/, ""));
 				});
 			await this.app.workspace.getLeaf(this.newTab() ? "tab" : false).openFile(file);
 		})().catch((e: unknown) => {
@@ -909,9 +970,9 @@ class MoveModal extends FuzzySuggestModal<MoveTarget> {
 		void (async () => {
 			if (to !== this.file.path) await this.app.fileManager.renameFile(this.file, to);
 			const target = t.scope ? createTarget(t.scope) : null;
-			if (target?.prop)
+			if (target?.props.length)
 				await this.app.fileManager.processFrontMatter(this.file, (fm: Record<string, unknown>) => {
-					if (target.prop) fm[target.prop[0]] = target.prop[1];
+					for (const [k, v] of target.props) fm[k] = v;
 				});
 			new Notice(`Moved to ${t.folder}`);
 		})().catch((e: unknown) => {

@@ -22,7 +22,7 @@ import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
 import { FilterSets } from "./filters/sets";
 import { ambiguity } from "./scopes/auto";
-import { createDetail, createTarget } from "./scopes/create";
+import { coreQuery, createDetail, createTarget } from "./scopes/create";
 import { noteFacts } from "./scopes/facts";
 import { ScopeKeeper } from "./scopes/keeper";
 import { matches } from "./scopes/members";
@@ -107,7 +107,9 @@ export default class JetSearchPlugin extends Plugin {
 				membersOf: (id) => this.scopes.membersOf(id),
 				describe: (id) => {
 					const s = this.data.scopes.find((x) => x.id === id);
-					return s ? { name: s.name, create: createDetail(createTarget(s)) } : null;
+					return s
+						? { name: s.name, create: createDetail(createTarget(s)), query: coreQuery(s) ?? undefined }
+						: null;
 				},
 				via: (id, path) => {
 					const s = this.data.scopes.find((x) => x.id === id);
@@ -331,8 +333,18 @@ export default class JetSearchPlugin extends Plugin {
 	}
 
 	private selection(): string {
-		const sel = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor.getSelection() ?? "";
-		return sel.length <= 100 && !sel.includes("\n") ? sel.trim() : "";
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) return "";
+		// Reading view: what is selected on screen, not the hidden editor's last selection.
+		let sel = "";
+		if (view.getMode() === "preview") {
+			const s = view.containerEl.ownerDocument.getSelection();
+			const node = s?.anchorNode ?? null;
+			if (s && node && view.containerEl.contains(node)) sel = s.toString();
+		} else sel = view.editor.getSelection();
+		// A triple-clicked line ends with its line break: trimmed first, it is one line.
+		sel = sel.trim();
+		return sel.length <= 100 && !sel.includes("\n") ? sel : "";
 	}
 
 	private listen(): void {
@@ -515,7 +527,8 @@ export default class JetSearchPlugin extends Plugin {
 			const cmd: Command = { id, name, callback: run };
 			if (addCommandAs(this.app, cmd)) this.standIns.set(id, cmd);
 		};
-		take(STAND_INS.open, "Jet Search: Search notes", () => this.open());
-		take(STAND_INS.inNote, "Jet Search: Search in this note", () => this.openInNote());
+		// Named apart from Jet's own two, so the palette and the Hotkeys page do not list them twice.
+		take(STAND_INS.open, "Jet Search: Search notes (Omnisearch's shortcut)", () => this.open());
+		take(STAND_INS.inNote, "Jet Search: Search in this note (Omnisearch's shortcut)", () => this.openInNote());
 	}
 }

@@ -265,8 +265,8 @@ describe("QA lifecycle: Omnisearch's ids", () => {
 		emit("layout-change");
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect([commands["omnisearch:show-modal"]?.name, commands["omnisearch:show-modal-infile"]?.name]).toEqual([
-			"Jet Search: Search notes",
-			"Jet Search: Search in this note",
+			"Jet Search: Search notes (Omnisearch's shortcut)",
+			"Jet Search: Search in this note (Omnisearch's shortcut)",
 		]);
 	});
 
@@ -276,7 +276,7 @@ describe("QA lifecycle: Omnisearch's ids", () => {
 		await plugin.onload();
 		ready();
 		await vi.advanceTimersByTimeAsync(1);
-		expect(commands["omnisearch:show-modal"]?.name).toBe("Jet Search: Search notes");
+		expect(commands["omnisearch:show-modal"]?.name).toBe("Jet Search: Search notes (Omnisearch's shortcut)");
 		// Omnisearch is turned on: Obsidian's addCommand puts its commands under the same ids.
 		plugins.omnisearch = {};
 		const open = { id: "omnisearch:show-modal", name: "Omnisearch: Vault search", callback: () => {} };

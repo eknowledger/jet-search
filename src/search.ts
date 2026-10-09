@@ -5,7 +5,7 @@ import { filterPhrases, PHRASE_CHECK_LIMIT, quotedPhrases } from "./rank";
 import { iconOf } from "./host";
 import { Cancelled, type Feeder } from "./index/feeder";
 import { age, crumb, titleOf } from "./modal/format";
-import type { Filter } from "./filters/filter";
+import { type Filter, filterLabel } from "./filters/filter";
 import type { Entry, Sort } from "./modal/jet-modal";
 import { type MetaField, type MetaHit, MetaIndex, type MetaNote } from "./tier0/meta";
 import { type NameHit, NameIndex } from "./tier0/names";
@@ -47,7 +47,7 @@ export type ScopeMembers = {
 	ensure(): void;
 	membersOf(id: string): ReadonlySet<string>;
 	/** Its name, and where a note created in it goes (the no-results screen). */
-	describe?(id: string): { name: string; create: string } | null;
+	describe?(id: string): { name: string; create: string; query?: string } | null;
 	/** Why the note is in the scope when not by its folder ("via project"), else null. */
 	via?(id: string, path: string): string | null;
 };
@@ -384,17 +384,32 @@ export class Search {
 		excerpts: Map<string, Shown>,
 		meta: readonly MetaHit[] = [],
 	): Entry[] {
-		const core: Entry[] =
-			this.current && wantsCoreSearch(this.current.text)
-				? [
-						{
-							type: "core",
-							query: this.current.text.trim(),
-							detail: `“${this.current.text.trim()}” in Obsidian's Search`,
-						},
-					]
-				: [];
+		const core: Entry[] = this.current && wantsCoreSearch(this.current.text) ? [this.coreRow(this.current)] : [];
 		return [...core, ...this.composeHits(tier0, reply, now, excerpts, meta)];
+	}
+
+	/**
+	 * "Search with Obsidian Search": the text with the chips written in Obsidian's own syntax, so the
+	 * hand-off searches what you asked, not the whole vault. Chips it has no syntax for are named.
+	 */
+	private coreRow(c: { text: string; scope?: string; filters?: readonly Filter[] }): Entry {
+		const q = (v: string): string => (/[\s"]/u.test(v) ? `"${v.replace(/"/g, "")}"` : v);
+		const parts: string[] = [];
+		const left: string[] = [];
+		const d = c.scope !== undefined ? (this.scopes?.describe?.(c.scope) ?? null) : null;
+		if (d?.query) parts.push(d.query);
+		else if (d) left.push(d.name);
+		for (const f of c.filters ?? [])
+			if (f.kind === "tag") parts.push(`tag:${f.tag}`);
+			else if (f.kind === "path") parts.push(`path:${q(f.prefix)}`);
+			else if (f.kind === "prop") parts.push(`[${f.key}:${q(f.value)}]`);
+			else if (f.kind !== "title") left.push(filterLabel(f).join(" ").trim());
+		const query = [...parts, c.text.trim()].filter(Boolean).join(" ");
+		return {
+			type: "core",
+			query,
+			detail: `“${query}” in Obsidian's Search${left.length ? ` (without ${left.join(", ")})` : ""}`,
+		};
 	}
 
 	private composeHits(

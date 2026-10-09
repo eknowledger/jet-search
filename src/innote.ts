@@ -2,7 +2,7 @@ import { type App, type MarkdownView, type TFile } from "obsidian";
 import { normalize, tokenize } from "./engine/analyzer";
 import { clusterEnd, clusterStart } from "./excerpt/chars";
 import { findHits } from "./excerpt/excerpt";
-import type { Entry, ModalHost, OpenHow } from "./modal/jet-modal";
+import type { Entry, ModalHost, OpenAt, OpenHow } from "./modal/jet-modal";
 
 const MAX_LINES = 100;
 const WIDTH = 140;
@@ -16,6 +16,8 @@ type Item = Extract<Entry, { type: "item" }>;
  */
 export class InNoteHost implements ModalHost {
 	readonly placeholder = "Search in this note…";
+	/** The lines of one note have one order: by words matched, then by place. */
+	readonly sortable = false;
 
 	constructor(
 		private readonly app: App,
@@ -42,23 +44,44 @@ export class InNoteHost implements ModalHost {
 			return;
 		}
 		const words = tokenize(text);
-		if (!words.length) {
-			paint([]);
-			return;
-		}
 		const found: Array<{ line: number; matched: number; hits: Array<[number, number]> }> = [];
-		lines.forEach((l, i) => {
-			const hits = findHits(l, words, { limit: 20 });
-			if (!hits.length) return;
-			const got = new Set<string>();
-			for (const [a, b] of hits) {
-				const w = normalize(l.slice(a, b));
-				for (const t of words) if (w.startsWith(t)) got.add(t);
-			}
-			found.push({ line: i, matched: got.size, hits });
-		});
+		if (!words.length) {
+			// One letter or only punctuation (`x`, `#`, `->`): one note is small enough to look for it
+			// as typed, case aside, instead of a blank list.
+			const t = text.trim().toLowerCase();
+			lines.forEach((l, i) => {
+				const low = l.toLowerCase();
+				const hits: Array<[number, number]> = [];
+				for (let at = low.indexOf(t); at >= 0 && hits.length < 20; at = low.indexOf(t, at + t.length))
+					hits.push([at, at + t.length]);
+				if (hits.length) found.push({ line: i, matched: 1, hits });
+			});
+		} else
+			lines.forEach((l, i) => {
+				// Words are counted over every hit; the marks shown stop at 20.
+				const all = findHits(l, words, { limit: 1000 });
+				if (!all.length) return;
+				const got = new Set<string>();
+				for (const [a, b] of all) {
+					const w = normalize(l.slice(a, b));
+					for (const t of words) if (w.startsWith(t)) got.add(t);
+					if (got.size === words.length) break;
+				}
+				found.push({ line: i, matched: got.size, hits: all.slice(0, 20) });
+			});
 		found.sort((a, b) => b.matched - a.matched || a.line - b.line);
 		const top = found.slice(0, MAX_LINES);
+		const cut: Entry[] =
+			found.length > top.length
+				? [
+						{
+							type: "notice",
+							title: `The first ${top.length} of ${found.length} lines`,
+							detail: "Type more words to narrow them",
+							info: true,
+						},
+					]
+				: [];
 		paint(
 			top.length
 				? [
@@ -67,6 +90,8 @@ export class InNoteHost implements ModalHost {
 							const first = f.hits[0] as [number, number];
 							return this.row(lines[f.line] ?? "", f.hits, f.line, first[0], first[1] - first[0]);
 						}),
+						// Past 100 lines, it says the rest is there.
+						...cut,
 					]
 				: [{ type: "notice", title: `No lines with “${text.trim()}” in this note` }],
 		);
@@ -104,8 +129,14 @@ export class InNoteHost implements ModalHost {
 		};
 	}
 
-	open(_path: string, _how: OpenHow, at?: { line: number; ch: number; len: number }): void {
-		if (!at) return;
+	open(_path: string, _how: OpenHow, where?: OpenAt): void {
+		if (!where || !("line" in where)) return;
+		const at = where;
+		// Reading view shows the rendered note, not the editor: scroll it there.
+		if (this.view.getMode?.() === "preview") {
+			this.later(() => this.view.setEphemeralState({ line: at.line }));
+			return;
+		}
 		const ed = this.view.editor;
 		const from = { line: at.line, ch: at.ch };
 		const to = { line: at.line, ch: at.ch + at.len };
@@ -130,7 +161,5 @@ export class InNoteHost implements ModalHost {
 		return false;
 	}
 	setPreviewOn(): void {}
-	copyLink(): void {}
-	insertLink(): void {}
-	create(): void {}
+	// No copyLink, insertLink or create: ⌘L, ⌥↵ and ⇧↵ are left alone here, and Jet stays open.
 }

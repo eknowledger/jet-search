@@ -53,8 +53,9 @@ describe("the meaning model, packed", () => {
 
 	it("matches the model's own ONNX export on the fixture sentences (when the model is on this machine)", () => {
 		const file =
-			process.env.JET_MODEL ?? "models/static/minishlab__potion-base-8M/model.safetensors";
-		const tok = process.env.JET_TOKENIZER ?? "models/minishlab/potion-base-8M/tokenizer.json";
+			process.env.JET_MODEL ?? `${process.env.HOME}/.cache/jet-search/models/potion-base-8M/model.safetensors`;
+		const tok =
+			process.env.JET_TOKENIZER ?? `${process.env.HOME}/.cache/jet-search/models/potion-base-8M/tokenizer.json`;
 		if (!existsSync(file) || !existsSync(tok)) return;
 		const raw = readFileSync(file);
 		const m = unpackModel(
