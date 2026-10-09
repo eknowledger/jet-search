@@ -4,6 +4,8 @@
  * vaults not opened for 90 days are deleted.
  */
 
+import type { SavedVectors } from "../meaning/vectors";
+
 export type Saved = { base: ArrayBuffer; sidecar: Uint8Array; savedAt: number; version: number };
 /** A save: without `base`, only the sidecar and meta are written (the base did not change). */
 export type Save = { base?: ArrayBuffer; sidecar: Uint8Array; savedAt: number; version: number };
@@ -13,6 +15,9 @@ export type Store = {
 	load(): Promise<Saved | null>;
 	save(s: Save): Promise<void>;
 	clear(): Promise<void>;
+	/** Search by meaning's note vectors, apart from the index: saved when they change. */
+	loadVectors?(): Promise<SavedVectors | null>;
+	saveVectors?(v: SavedVectors | null): Promise<void>;
 };
 
 const REGISTRY = "jet-search";
@@ -74,6 +79,19 @@ export const idbStore = (vaultId: string): Store => {
 			t.objectStore("index").clear();
 			await done(t);
 		},
+		async loadVectors() {
+			const d = await get();
+			const t = d.transaction("index", "readonly");
+			const v = await request(t.objectStore("index").get("vectors") as IDBRequest<SavedVectors | undefined>);
+			return v ?? null;
+		},
+		async saveVectors(v) {
+			const d = await get();
+			const t = d.transaction("index", "readwrite");
+			if (v) t.objectStore("index").put(v, "vectors");
+			else t.objectStore("index").delete("vectors");
+			await done(t);
+		},
 	};
 };
 
@@ -100,9 +118,15 @@ export const touch = async (vaultId: string, now = Date.now()): Promise<string[]
 };
 
 /** A store in memory, for tests and when IndexedDB is unavailable (search still works). */
-export const memoryStore = (): Store & { saved: Saved | null } => {
+export const memoryStore = (): Store & { saved: Saved | null; vectors: SavedVectors | null } => {
 	const m = {
 		saved: null as Saved | null,
+		vectors: null as SavedVectors | null,
+		loadVectors: () => Promise.resolve(m.vectors),
+		saveVectors: (v: SavedVectors | null) => {
+			m.vectors = v;
+			return Promise.resolve();
+		},
 		load: () => Promise.resolve(m.saved),
 		save: (s: Save) => {
 			const base = s.base ? s.base.slice(0) : m.saved?.base;

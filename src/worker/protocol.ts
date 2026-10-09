@@ -30,26 +30,46 @@ export type Request =
 	/** How many notes mention a name (its words exactly), and how many of them are in a scope. */
 	| { op: "mentions"; text: string; scope?: string }
 	/** Forget this vault's index (settings: Clear index). */
-	| { op: "clear" };
+	| { op: "clear" }
+	/**
+	 * Search by meaning: the packed model (Jet's file); from then on every note sent gets a
+	 * vector, and the saved vectors of this model are loaded. Answers how many notes still lack one.
+	 */
+	| { op: "meaning:load"; buf: ArrayBuffer; model: string }
+	/** Off: the model and vectors leave memory; `forget` also deletes the saved vectors. */
+	| { op: "meaning:off"; forget?: boolean }
+	/** Vectors for notes the index already has (turned on later, or a vector is stale). */
+	| { op: "meaning:embed"; notes: RawNote[] }
+	/** The notes whose vector is missing or older than the note. */
+	| { op: "meaning:missing" }
+	/** The notes nearest to a question, best first (`scope` / `allow` as for a query). */
+	| { op: "nearest"; seq: number; text: string; k: number; allow?: string[]; scope?: string };
 
 export type Stats = { notes: number; segments: number; pending: number; savedAt: number | null; bytes: number };
 
 export type QueryReply = { seq: number; hits: Hit[]; terms: string[]; ms: number; stale?: boolean };
+export type NearReply = { seq: number; near: Array<{ path: string; score: number }>; ms: number; stale?: boolean };
 
 /** What each request answers. */
 export type Reply<R extends Request> = R extends { op: "open" }
 	? { loaded: boolean; notes: number }
 	: R extends { op: "query" }
 		? QueryReply
-		: R extends { op: "mtimes" }
-			? Array<[string, number]>
-			: R extends { op: "suggest" }
-				? { text: string | null; notes: number }
-				: R extends { op: "stats" }
-					? Stats
-					: R extends { op: "mentions" }
-						? { notes: number; inside: number }
-						: { notes: number };
+		: R extends { op: "nearest" }
+			? NearReply
+			: R extends { op: "meaning:missing" }
+				? string[]
+				: R extends { op: "meaning:load" }
+					? { notes: number; missing: number; vectors: number }
+					: R extends { op: "mtimes" }
+						? Array<[string, number]>
+						: R extends { op: "suggest" }
+							? { text: string | null; notes: number }
+							: R extends { op: "stats" }
+								? Stats
+								: R extends { op: "mentions" }
+									? { notes: number; inside: number }
+									: { notes: number };
 
 export type Envelope = { id: number; req: Request };
 export type Answer = { id: number; result?: unknown; error?: string };

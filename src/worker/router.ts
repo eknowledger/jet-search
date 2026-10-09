@@ -2,7 +2,11 @@ import { fieldsFromRaw } from "../engine/fields";
 import { JetEngine } from "../engine/jet-engine";
 import { parseQuery } from "../engine/query";
 import { STEM_LANGUAGES, type StemLanguage } from "../engine/stem";
-import type { QueryReply, Request, Stats } from "./protocol";
+import { docText } from "../meaning/doc";
+import { embed, type MeaningModel, unpackModel } from "../meaning/model";
+import { Vectors } from "../meaning/vectors";
+import type { RawNote } from "../engine/fields";
+import type { NearReply, QueryReply, Request, Stats } from "./protocol";
 import type { Store } from "./store";
 
 /**
@@ -33,6 +37,8 @@ export class Router {
 	 * at every segment merge while paths do not, and a path set is small: under 1 MB at 15k notes).
 	 */
 	private readonly scopes = new Map<string, Set<string>>();
+	/** Search by meaning: the model and the notes' vectors, while it is on. */
+	private meaning: { model: MeaningModel; vectors: Vectors } | null = null;
 
 	constructor(
 		private readonly makeStore: (vaultId: string) => Store,
@@ -68,6 +74,7 @@ export class Router {
 				return { notes: this.engine.size };
 			case "batch":
 				this.engine.addBatch(req.notes.map(fieldsFromRaw));
+				for (const n of req.notes) this.vector(n);
 				if (req.last) {
 					this.engine.merge();
 					this.timers.set(() => this.engine.warm(), 0);
@@ -75,23 +82,55 @@ export class Router {
 				}
 				return { notes: this.engine.size };
 			case "upsert":
-				for (const n of req.notes) this.engine.upsert(fieldsFromRaw(n));
+				for (const n of req.notes) {
+					this.engine.upsert(fieldsFromRaw(n));
+					this.vector(n);
+				}
 				this.changed();
 				return { notes: this.engine.size };
 			case "delete":
 				for (const p of req.paths) {
 					this.engine.delete(p);
+					this.meaning?.vectors.delete(p);
 					for (const set of this.scopes.values()) set.delete(p);
 				}
 				this.changed();
 				return { notes: this.engine.size };
 			case "rename":
 				this.engine.rename(req.from, req.to);
+				this.meaning?.vectors.rename(req.from, req.to);
 				for (const set of this.scopes.values()) if (set.delete(req.from)) set.add(req.to);
 				this.changed();
 				return { notes: this.engine.size };
 			case "query":
 				return this.query(req);
+			case "nearest":
+				return this.nearest(req);
+			case "meaning:load": {
+				const model = unpackModel(req.buf, req.model);
+				let vectors = new Vectors(model.id, model.dim);
+				try {
+					const saved = await this.store?.loadVectors?.();
+					if (saved && saved.model === model.id && saved.dim === model.dim) vectors = Vectors.load(saved);
+				} catch (e) {
+					console.warn("Jet Search: the saved note vectors could not be read; making them again", e);
+				}
+				// Vectors of notes the index no longer has go.
+				const known = new Set(this.engine.mtimes().map(([p]) => p));
+				for (const p of vectors.paths()) if (!known.has(p)) vectors.delete(p);
+				this.meaning = { model, vectors };
+				return { notes: this.engine.size, missing: this.missing().length, vectors: vectors.size };
+			}
+			case "meaning:off":
+				this.meaning = null;
+				if (req.forget) await this.store?.saveVectors?.(null);
+				return { notes: this.engine.size };
+			case "meaning:embed":
+				for (const n of req.notes) this.vector(n);
+				this.changed();
+				return { notes: this.meaning?.vectors.size ?? 0 };
+			case "meaning:missing":
+				return this.missing();
 			case "scope:set":
 				this.scopes.set(req.id, new Set(req.paths));
 				return { notes: req.paths.length };
@@ -122,6 +161,11 @@ export class Router {
 			case "clear":
 				await this.store?.clear();
 				this.engine.build([]);
+				if (this.meaning)
+					this.meaning = {
+						...this.meaning,
+						vectors: new Vectors(this.meaning.model.id, this.meaning.model.dim),
+					};
 				this.savedAt = null;
 				this.savedBase = null;
 				return { notes: 0 };
@@ -143,6 +187,38 @@ export class Router {
 			allow: allow ? (p) => allow.has(p) : undefined,
 		});
 		return { seq: req.seq, hits: r.hits, terms: r.terms, ms: performance.now() - t0 };
+	}
+
+	/** A note's vector, when meaning is on (none for a note with no known word: it is never near). */
+	private vector(n: RawNote): void {
+		const m = this.meaning;
+		if (m) m.vectors.set(n.path, n.mtime, embed(m.model, docText(n)));
+	}
+
+	/** Notes in the index whose vector is missing or older than the note. */
+	private missing(): string[] {
+		const v = this.meaning?.vectors;
+		if (!v) return [];
+		return this.engine
+			.mtimes()
+			.filter(([p, t]) => v.mtimeOf(p) !== t)
+			.map(([p]) => p);
+	}
+
+	nearest(req: Extract<Request, { op: "nearest" }>): NearReply {
+		const t0 = performance.now();
+		const m = this.meaning;
+		if (!m) return { seq: req.seq, near: [], ms: 0 };
+		const q = embed(m.model, req.text, 64);
+		if (!q) return { seq: req.seq, near: [], ms: performance.now() - t0 };
+		const allow =
+			req.scope !== undefined
+				? (this.scopes.get(req.scope) ?? new Set<string>())
+				: req.allow
+					? new Set(req.allow)
+					: null;
+		const near = m.vectors.nearest(q, req.k, allow ? (p) => allow.has(p) : undefined);
+		return { seq: req.seq, near, ms: performance.now() - t0 };
 	}
 
 	private configure(langs: readonly string[]): void {
@@ -184,5 +260,10 @@ export class Router {
 		this.savedBase = base;
 		this.savedAt = now;
 		this.bytes = base.byteLength + sidecar.byteLength;
+		const v = this.meaning?.vectors;
+		if (v?.dirty && this.store.saveVectors) {
+			await this.store.saveVectors(v.save());
+			v.dirty = false;
+		}
 	}
 }

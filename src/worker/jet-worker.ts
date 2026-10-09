@@ -27,6 +27,10 @@ const pump = async (): Promise<void> => {
 			scope.postMessage({ id, result: { seq: req.seq, hits: [], terms: [], ms: 0, stale: true } });
 			continue;
 		}
+		if (req.op === "nearest" && queue.some((x) => x.req.op === "nearest")) {
+			scope.postMessage({ id, result: { seq: req.seq, near: [], ms: 0, stale: true } });
+			continue;
+		}
 		try {
 			scope.postMessage({ id, result: await router.handle(req) });
 		} catch (err) {
