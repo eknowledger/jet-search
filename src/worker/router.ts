@@ -126,7 +126,14 @@ export class Router {
 			case "meaning:embed":
 				// Only as the index has the note now: deleted or edited since the batch was read, it is
 				// left to the delete or the newer upsert.
-				for (const n of req.notes) if (this.engine.mtimeOf(n.path) === n.mtime) this.vector(n);
+				for (const n of req.notes) {
+					const indexed = this.engine.mtimeOf(n.path);
+					const has = this.meaning?.vectors.mtimeOf(n.path);
+					if (indexed === undefined || (has !== undefined && has > n.mtime)) continue;
+					// The index may be newer than the file (the open note, sent as typed): the vector counts
+					// as current then, or every pass would read it again.
+					this.vector({ ...n, mtime: Math.max(n.mtime, indexed) });
+				}
 				this.changed();
 				return { notes: this.meaning?.vectors.size ?? 0 };
 			case "meaning:missing":

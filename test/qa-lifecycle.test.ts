@@ -328,13 +328,21 @@ describe("QA lifecycle: Shift-Shift in popout windows", () => {
 		};
 		track(pop, "doc");
 		track(popWin, "win");
-		const { plugin, ready, emit } = make({ data: { indexedAt: 1 } });
+		const { app, plugin, ready, emit } = make({ data: { indexedAt: 1 } });
+		// The popout's leaf is in the layout while it is open (Jet follows layout changes).
+		let open = false;
+		Object.assign(app.workspace, {
+			iterateAllLeaves: (cb: (leaf: unknown) => void) => {
+				if (open) cb({ getContainer: () => ({ doc: pop, win: popWin }) });
+			},
+		});
 		await plugin.onload();
 		ready();
-		const w = { doc: pop, win: popWin };
-		emit("window-open", w, popWin);
+		open = true;
+		emit("layout-change");
 		expect(live.size).toBeGreaterThan(0);
-		emit("window-close", w, popWin);
+		open = false;
+		emit("layout-change");
 		expect([...live]).toEqual([]);
 	});
 });

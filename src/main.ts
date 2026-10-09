@@ -343,7 +343,6 @@ export default class JetSearchPlugin extends Plugin {
 		// Checked again on layout changes: Omnisearch turned off after Jet started frees them.
 		const standIns = window.setTimeout(() => this.standIn(), 0);
 		this.register(() => window.clearTimeout(standIns));
-		this.registerEvent(this.app.workspace.on("layout-change", () => this.standIn()));
 		// Shift-Shift, unless another plugin already owns double Shift.
 		const tap = new DoubleTap(() => this.data.settings.shiftInterval);
 		const watched = new Map<Document, () => void>();
@@ -376,18 +375,27 @@ export default class JetSearchPlugin extends Plugin {
 			for (const off of watched.values()) off();
 			watched.clear();
 		});
-		watch(document);
-		// Popouts open before Jet started listening (enabled or reloaded with them open).
-		this.app.workspace.iterateAllLeaves?.((leaf) => {
-			const doc = (leaf as { getContainer?: () => { doc?: Document } }).getContainer?.().doc;
-			if (doc) watch(doc);
-		});
-		this.registerEvent(this.app.workspace.on("window-open", (w) => watch(w.doc)));
-		// A closed popout is let go of at once, not held until Jet unloads.
+		// Every window with a leaf is watched: popouts already open when Jet starts too,
+		// and a closed one is let go of at once. One layout-change listener does it all,
+		// and checks Omnisearch's ids again, within the start budget of 9 listeners.
+		const windows = (): void => {
+			const docs = new Set<Document>([document]);
+			this.app.workspace.iterateAllLeaves?.((leaf) => {
+				const doc = (leaf as { getContainer?: () => { doc?: Document } }).getContainer?.().doc;
+				if (doc) docs.add(doc);
+			});
+			for (const d of docs) watch(d);
+			for (const [d, off] of watched)
+				if (!docs.has(d)) {
+					off();
+					watched.delete(d);
+				}
+		};
+		windows();
 		this.registerEvent(
-			this.app.workspace.on("window-close", (w) => {
-				watched.get(w.doc)?.();
-				watched.delete(w.doc);
+			this.app.workspace.on("layout-change", () => {
+				windows();
+				this.standIn();
 			}),
 		);
 		// Recents and frecency: every note opened, however it was opened.
