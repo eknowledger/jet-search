@@ -44,6 +44,12 @@ export class DoubleTap {
 		return false;
 	}
 
+	/** A mouse press between taps (Shift-click to select a range): no pair. */
+	cancel(): void {
+		this.dirty = true;
+		this.lastTapAt = -Infinity;
+	}
+
 	/** Forget any half tap (the window lost focus). */
 	reset(): void {
 		this.downAt = -1;

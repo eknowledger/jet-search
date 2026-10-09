@@ -35,6 +35,9 @@ export const addCommandAs = (app: App, command: Command): boolean => {
 
 export const removeCommand = (app: App, id: string): void => internals(app).commands?.removeCommand?.(id);
 
+/** The command registered under an id now (another plugin may have put its own there since). */
+export const commandAt = (app: App, id: string): unknown => internals(app).commands?.commands?.[id];
+
 export const pluginOn = (app: App, id: string): boolean => !!internals(app).plugins?.enabledPlugins?.has(id);
 
 export const plugin = (app: App, id: string): unknown => internals(app).plugins?.plugins?.[id];

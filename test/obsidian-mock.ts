@@ -71,6 +71,8 @@ export const setIcon = (el: HTMLElement, icon: string): void => {
 export const debounce = <A extends unknown[]>(fn: (...a: A) => void) => {
 	const d = (...a: A) => fn(...a);
 	d.cancel = () => d;
+	// Calls at once, so nothing is ever waiting to run.
+	d.run = () => undefined;
 	return d;
 };
 

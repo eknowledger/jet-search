@@ -1,4 +1,4 @@
-import { debounce, MarkdownView, Plugin, TFile } from "obsidian";
+import { type Command, debounce, MarkdownView, Plugin, TFile } from "obsidian";
 import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
@@ -10,6 +10,7 @@ import { Cancelled, Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
 import {
 	addCommandAs,
+	commandAt,
 	hasCommand,
 	openSettingsAt,
 	plugin,
@@ -70,14 +71,24 @@ export default class JetSearchPlugin extends Plugin {
 	/** Each scope's ambiguity, measured on demand; forgotten when scopes change. */
 	private readonly ambiguities = new Map<string, { name: string; value: number; outside: number }>();
 	private readonly measuring = new Set<string>();
-	private readonly standIns: string[] = [];
+	/** The Omnisearch ids Jet stands in for now, with the command it put there. */
+	private readonly standIns = new Map<string, Command>();
+	/** Set first thing at unload; `built` once onload has made everything onunload stops. */
+	private unloaded = false;
+	private built = false;
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
 
 	async onload(): Promise<void> {
-		this.data = normalizeData(await this.loadData());
+		const raw: unknown = await this.loadData();
+		// Turned off while its data was read: nothing is made.
+		if (this.unloaded) return;
+		this.data = normalizeData(raw);
 		// The first run: Jade's search settings, once. A file read only then.
-		if (this.data.indexedAt === null && !this.data.imported.includes("jade-search"))
-			if (importJadeSearch(this.data, await this.readJadeData())) this.save();
+		if (this.data.indexedAt === null && !this.data.imported.includes("jade-search")) {
+			const jade = await this.readJadeData();
+			if (this.unloaded) return;
+			if (importJadeSearch(this.data, jade)) this.save();
+		}
 		this.feeder = new Feeder(
 			this.app,
 			this.client,
@@ -206,6 +217,7 @@ export default class JetSearchPlugin extends Plugin {
 		this.meaning.onChange = show;
 		this.feeder.onMeaningProgress = show;
 		this.register(() => later !== null && window.clearTimeout(later));
+		this.built = true;
 		// Jade's search module steps aside while Jet is on, and comes back when it goes.
 		// Said before listen(): Jade frees the Omnisearch ids on its next tick, then Jet takes them.
 		this.app.workspace.trigger("jet-search:on");
@@ -224,8 +236,14 @@ export default class JetSearchPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.unloaded = true;
 		this.app.workspace.trigger("jet-search:off");
-		for (const id of this.standIns) removeCommand(this.app, id);
+		if (!this.built) return;
+		// A change still waiting is written now, not a second later from a plugin that is gone.
+		this.save.run();
+		// Only the ids that still hold Jet's command: Omnisearch, turned on since, keeps its own.
+		for (const [id, cmd] of this.standIns) if (commandAt(this.app, id) === cmd) removeCommand(this.app, id);
+		this.standIns.clear();
 		this.modal?.close();
 		this.feeder.stop();
 		this.watcher.stop();
@@ -244,6 +262,8 @@ export default class JetSearchPlugin extends Plugin {
 				.call({ op: "save" })
 				.catch(() => {})
 				.finally(() => {
+					// A search came while it saved: it woke Jet again, so the worker stays.
+					if (this.sleepTimer !== null || this.unloaded) return;
 					this.client.stop();
 					this.feeder.reset();
 				});
@@ -316,77 +336,60 @@ export default class JetSearchPlugin extends Plugin {
 	}
 
 	private listen(): void {
-		// Jade's partner API: its J panel and floating bar, whichever loads first.
-		this.jade = new JadeLink(this.app, this, {
-			open: (text) => this.open(text),
-			status: () => {
-				const p = this.feeder.progress;
-				if (p) return `Indexing ${p.done} of ${p.total}…`;
-				return this.data.indexedAt === null ? "Not built yet" : "Ready · it follows your edits";
-			},
-			rebuild: () => void rebuild(this),
-			excerpts: {
-				get: () => this.data.settings.excerpts,
-				set: (v) => {
-					this.data.settings.excerpts = v;
-					this.save();
-				},
-			},
-			persist: {
-				get: () => this.data.settings.persistFilters,
-				set: (v) => {
-					this.data.settings.persistFilters = v;
-					if (!v) this.data.last = null;
-					this.save();
-				},
-			},
-			doubleShift: () => this.data.settings.doubleShift,
-			aliases: () => (plugin(this.app, "omnisearch") ? [] : [STAND_INS.open]),
-		});
-		this.jade.start();
+		// The layout got ready after Jet was turned off (Obsidian's startup queue): nothing to do.
+		if (this.unloaded) return;
 		// Stand-ins for Omnisearch's ids, so its hotkeys and double-Shift bindings open Jet.
 		// A tick later: Jet turned on while Jade's search runs, Jade frees the ids first (they are its stand-ins too).
-		const standIns = window.setTimeout(() => {
-			if (!hasCommand(this.app, STAND_INS.open))
-				if (
-					addCommandAs(this.app, {
-						id: STAND_INS.open,
-						name: "Jet Search: Search notes",
-						callback: () => this.open(),
-					})
-				)
-					this.standIns.push(STAND_INS.open);
-			if (!hasCommand(this.app, STAND_INS.inNote))
-				if (
-					addCommandAs(this.app, {
-						id: STAND_INS.inNote,
-						name: "Jet Search: Search in this note",
-						callback: () => this.openInNote(),
-					})
-				)
-					this.standIns.push(STAND_INS.inNote);
-		}, 0);
+		// Checked again on layout changes: Omnisearch turned off after Jet started frees them.
+		const standIns = window.setTimeout(() => this.standIn(), 0);
 		this.register(() => window.clearTimeout(standIns));
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.standIn()));
 		// Shift-Shift, unless another plugin already owns double Shift.
 		const tap = new DoubleTap(() => this.data.settings.shiftInterval);
+		const watched = new Map<Document, () => void>();
 		const watch = (doc: Document): void => {
-			this.registerDomEvent(doc, "keydown", (e) => tap.keydown(e.key, e.repeat, e.timeStamp), { capture: true });
-			this.registerDomEvent(
-				doc,
-				"keyup",
-				(e) => {
-					if (!tap.keyup(e.key, e.timeStamp)) return;
-					// One owner: Jade says whether it owns a double Shift; else its settings are read.
-					if (!this.data.settings.doubleShift) return;
-					if (this.jade?.ownsShift() ?? shiftOwnedElsewhere(this.app)) return;
-					this.open();
-				},
-				{ capture: true },
-			);
-			this.registerDomEvent(doc.defaultView ?? window, "blur", () => tap.reset());
+			if (watched.has(doc)) return;
+			const win: EventTarget = doc.defaultView ?? window;
+			const down = (e: KeyboardEvent): void => tap.keydown(e.key, e.repeat, e.timeStamp);
+			const up = (e: KeyboardEvent): void => {
+				if (!tap.keyup(e.key, e.timeStamp)) return;
+				// One owner: Jade says whether it owns a double Shift; else its settings are read.
+				if (!this.data.settings.doubleShift) return;
+				if (this.jade?.ownsShift() ?? shiftOwnedElsewhere(this.app)) return;
+				this.open();
+			};
+			// A mouse press between taps is a Shift-click (selecting a range), not a double tap.
+			const press = (): void => tap.cancel();
+			const blur = (): void => tap.reset();
+			doc.addEventListener("keydown", down, { capture: true });
+			doc.addEventListener("keyup", up, { capture: true });
+			doc.addEventListener("mousedown", press, { capture: true });
+			win.addEventListener("blur", blur);
+			watched.set(doc, () => {
+				doc.removeEventListener("keydown", down, { capture: true });
+				doc.removeEventListener("keyup", up, { capture: true });
+				doc.removeEventListener("mousedown", press, { capture: true });
+				win.removeEventListener("blur", blur);
+			});
 		};
+		this.register(() => {
+			for (const off of watched.values()) off();
+			watched.clear();
+		});
 		watch(document);
+		// Popouts open before Jet started listening (enabled or reloaded with them open).
+		this.app.workspace.iterateAllLeaves?.((leaf) => {
+			const doc = (leaf as { getContainer?: () => { doc?: Document } }).getContainer?.().doc;
+			if (doc) watch(doc);
+		});
 		this.registerEvent(this.app.workspace.on("window-open", (w) => watch(w.doc)));
+		// A closed popout is let go of at once, not held until Jet unloads.
+		this.registerEvent(
+			this.app.workspace.on("window-close", (w) => {
+				watched.get(w.doc)?.();
+				watched.delete(w.doc);
+			}),
+		);
 		// Recents and frecency: every note opened, however it was opened.
 		this.registerEvent(
 			this.app.workspace.on("file-open", (file) => {
@@ -450,13 +453,61 @@ export default class JetSearchPlugin extends Plugin {
 		);
 		this.registerEvent(this.app.workspace.on("editor-change", () => this.feeder.typing()));
 		// The first time Jet is enabled the index is built without waiting for a search.
-		if (this.data.indexedAt === null)
-			window.setTimeout(() => {
-				if (this.data.indexedAt !== null) return;
+		// The timer goes with the plugin: turned off within the delay, nothing is built.
+		if (this.data.indexedAt === null) {
+			const first = window.setTimeout(() => {
+				if (this.unloaded || this.data.indexedAt !== null) return;
 				this.wake();
 				void this.feeder.ensure().catch((e: unknown) => {
 					if (!(e instanceof Cancelled)) console.error("Jet Search: the first build failed", e);
 				});
 			}, FIRST_BUILD_DELAY_MS);
+			this.register(() => window.clearTimeout(first));
+		}
+		// Jade's partner API: its J panel and floating bar, whichever loads first.
+		this.jade = new JadeLink(this.app, this, {
+			open: (text) => this.open(text),
+			status: () => {
+				const p = this.feeder.progress;
+				if (p) return `Indexing ${p.done} of ${p.total}…`;
+				return this.data.indexedAt === null ? "Not built yet" : "Ready · it follows your edits";
+			},
+			rebuild: () => void rebuild(this),
+			excerpts: {
+				get: () => this.data.settings.excerpts,
+				set: (v) => {
+					this.data.settings.excerpts = v;
+					this.save();
+				},
+			},
+			persist: {
+				get: () => this.data.settings.persistFilters,
+				set: (v) => {
+					this.data.settings.persistFilters = v;
+					if (!v) this.data.last = null;
+					this.save();
+				},
+			},
+			doubleShift: () => this.data.settings.doubleShift,
+			aliases: () => (plugin(this.app, "omnisearch") ? [] : [STAND_INS.open]),
+		});
+		// Last, and never in the way: a Jade that throws must not stop Jet listening.
+		try {
+			this.jade.start();
+		} catch (e) {
+			console.error("Jet Search: Jade could not be joined", e);
+		}
+	}
+
+	/** Omnisearch's ids, taken while nothing holds them (Omnisearch off). */
+	private standIn(): void {
+		if (this.unloaded || plugin(this.app, "omnisearch")) return;
+		const take = (id: string, name: string, run: () => void): void => {
+			if (hasCommand(this.app, id)) return;
+			const cmd: Command = { id, name, callback: run };
+			if (addCommandAs(this.app, cmd)) this.standIns.set(id, cmd);
+		};
+		take(STAND_INS.open, "Jet Search: Search notes", () => this.open());
+		take(STAND_INS.inNote, "Jet Search: Search in this note", () => this.openInNote());
 	}
 }

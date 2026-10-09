@@ -69,7 +69,27 @@ export class JadeLink {
 			return;
 		}
 		this.partner = p;
-		const has = (f: string): boolean => api.features.includes(f as never);
+		// A Jade that throws while Jet joins (or has no feature list) must not stop Jet: Jet keeps its own
+		// UI as the fallback.
+		try {
+			this.offer(api, p);
+		} catch (e) {
+			console.error("Jet Search: joining Jade failed", e);
+			try {
+				p.leave();
+			} catch {
+				// Leaving a broken Jade: nothing more to do.
+			}
+			this.partner = null;
+			this.taps = false;
+		}
+	}
+
+	/** What Jet adds to Jade once joined: its entries, the Shift offer, the floating action. */
+	private offer(api: JadeApi, p: JadePartner): void {
+		// A Jade with no feature list offers nothing beyond joining.
+		const features: readonly string[] = Array.isArray(api.features) ? api.features : [];
+		const has = (f: string): boolean => features.includes(f);
 		if (has("hub")) {
 			p.hub.add("find", {
 				id: "open",
@@ -109,7 +129,8 @@ export class JadeLink {
 		if (this.taps && this.host.doubleShift()) {
 			const owned = SHIFTS.find((c) => p.commands.owns(c));
 			// Jade remembers the answer; an offer for a tap that already opens Jet is never made.
-			const opensJet = [OPEN, ...this.host.aliases()].some((c) => p.commands.tapFor(c) !== null);
+			// The Shift tap Jade owns, not any tap: Ctrl-Ctrl opening Jet leaves Shift-Shift elsewhere.
+			const opensJet = [OPEN, ...this.host.aliases()].some((c) => p.commands.tapFor(c) === owned);
 			if (owned && !opensJet) p.commands.offerTap(owned, OPEN, "Jet Search");
 		}
 		if (has("surface"))
