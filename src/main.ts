@@ -255,11 +255,16 @@ export default class JetSearchPlugin extends Plugin {
 	}
 
 	/** A search is coming: keep the worker awake, and let it sleep after a quiet while. */
-	private wake(): void {
+	wake(): void {
 		if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
 		this.sleepTimer = window.setTimeout(() => {
 			this.sleepTimer = null;
 			if (!this.client.running) return;
+			// A first build, a Rebuild or a catch-up still running is not stopped: wait for it.
+			if (this.feeder.busy) {
+				this.wake();
+				return;
+			}
 			void this.client
 				.call({ op: "save" })
 				.catch(() => {})
@@ -290,6 +295,7 @@ export default class JetSearchPlugin extends Plugin {
 		if (!s || this.measuring.has(id)) return;
 		this.measuring.add(id);
 		try {
+			this.wake();
 			await this.feeder.ensure();
 			this.scopes.ensure();
 			const m = await this.client.call({ op: "mentions", text: s.name, scope: id });

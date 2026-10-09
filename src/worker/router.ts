@@ -18,6 +18,7 @@ export const INDEX_VERSION = 2;
 
 /** Quiet time before the worker merges or saves after changes. */
 const IDLE_MS = 2000;
+const BUILD_SAVE_MS = 20_000;
 
 /** Timers, passed in: the worker's own (it has no window), or manual ones in tests. */
 export type Timers = { set: (fn: () => void, ms: number) => unknown; clear: (h: unknown) => void };
@@ -44,13 +45,18 @@ export class Router {
 	constructor(
 		private readonly makeStore: (vaultId: string) => Store,
 		private readonly timers: Timers,
+		/** How often a long first build saves what it has, so an interrupted one resumes. */
+		private readonly buildSaveMs = BUILD_SAVE_MS,
 	) {}
+
+	private buildSavedAt = 0;
 
 	async handle(req: Request): Promise<unknown> {
 		switch (req.op) {
 			case "open": {
 				this.configure(req.stemming);
 				this.store = this.makeStore(req.vaultId);
+				this.buildSavedAt = Date.now();
 				let loaded = false;
 				try {
 					const saved = await this.store.load();
@@ -62,8 +68,11 @@ export class Router {
 						loaded = true;
 					}
 				} catch (e) {
-					// A broken or unreadable index is rebuilt, never fatal.
+					// A broken or unreadable index is rebuilt, never fatal; nothing half-loaded
+					// is kept (a base whose sidecar failed would keep notes deleted since).
 					console.warn("Jet Search: the saved index could not be read; rebuilding", e);
+					this.engine.build([]);
+					loaded = false;
 				}
 				// Root groups for word forms are built while the worker waits for the first query.
 				this.timers.set(() => this.engine.warm(), 0);
@@ -76,10 +85,21 @@ export class Router {
 			case "batch":
 				this.engine.addBatch(req.notes.map(fieldsFromRaw));
 				for (const n of req.notes) this.vector(n);
+				// A long first build keeps what it has every 20 s: closed or killed (a phone in the background),
+				// the next start catches up from there instead of note 1.
+				if (!req.last && Date.now() - this.buildSavedAt >= this.buildSaveMs) {
+					this.buildSavedAt = Date.now();
+					this.engine.merge();
+					await this.save().catch((e: unknown) => console.warn("Jet Search: could not save the index", e));
+				}
 				if (req.last) {
 					this.engine.merge();
 					this.timers.set(() => this.engine.warm(), 0);
-					await this.save();
+					// A save that fails (a full disk) leaves the index working from memory, saved later.
+					await this.save().catch((e: unknown) => {
+						console.warn("Jet Search: could not save the index; trying again later", e);
+						this.changed();
+					});
 				}
 				return { notes: this.engine.size };
 			case "upsert":
@@ -167,6 +187,7 @@ export class Router {
 			case "stats":
 				return this.stats();
 			case "clear":
+				if (!this.store && req.vaultId !== undefined) this.store = this.makeStore(req.vaultId);
 				await this.store?.clear();
 				this.engine.build([]);
 				if (this.meaning)
@@ -181,6 +202,19 @@ export class Router {
 	}
 
 	query(req: Extract<Request, { op: "query" }>): QueryReply {
+		try {
+			return this.queryOnce(req);
+		} catch (e) {
+			// A damaged saved index (a flipped byte) answers nothing, is dropped from the device, and the
+			// plugin builds it again.
+			console.warn("Jet Search: the index is damaged; building it again", e);
+			this.engine.build([]);
+			void this.store?.clear().catch(() => {});
+			return { seq: req.seq, hits: [], terms: [], ms: 0, broken: true };
+		}
+	}
+
+	private queryOnce(req: Extract<Request, { op: "query" }>): QueryReply {
 		const t0 = performance.now();
 		// A scope that is not (or no longer) known answers nothing, never everything.
 		const allow =

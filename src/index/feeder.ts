@@ -93,6 +93,7 @@ export class Feeder {
 		this.ready = null;
 		this.live = false;
 		this.building = false;
+		this.starting = false;
 		this.progress = null;
 		this.meaningLoaded = false;
 		if (this.meaningProgress) {
@@ -106,7 +107,19 @@ export class Feeder {
 		return this.app.vault.getMarkdownFiles().filter((f) => !excluded(f.path));
 	}
 
+	/** True from the start of an open until the index is live (or the start failed). */
+	private starting = false;
+
 	private async start(gen: number): Promise<void> {
+		this.starting = true;
+		try {
+			await this.open(gen);
+		} finally {
+			if (gen === this.gen) this.starting = false;
+		}
+	}
+
+	private async open(gen: number): Promise<void> {
 		const { loaded } = await this.client.call({
 			op: "open",
 			vaultId: this.vaultId,
@@ -248,6 +261,20 @@ export class Feeder {
 
 	/** The first build: newest notes first, so recent work is searchable soonest. */
 	private async build(gen: number): Promise<void> {
+		try {
+			await this.building_(gen);
+		} catch (e) {
+			// A failed build leaves no "Building: 0 of N" behind.
+			if (gen === this.gen) {
+				this.progress = null;
+				this.building = false;
+				this.onProgress?.();
+			}
+			throw e;
+		}
+	}
+
+	private async building_(gen: number): Promise<void> {
 		this.building = true;
 		const files = this.notes().sort((a, b) => b.stat.mtime - a.stat.mtime);
 		const inbound = inboundCounts(this.app);
@@ -309,19 +336,58 @@ export class Feeder {
 	}
 
 	rename(file: TAbstractFile, from: string): void {
-		if (!(file instanceof TFile) || file.extension !== "md") return;
-		// During the first build: the old path out and the new one in, queued like any change.
-		// Before the index is open at all, the start's catch-up finds it.
-		if (!this.live) {
-			if (!this.building) return;
+		if (!(file instanceof TFile)) return;
+		// Renamed to another extension (.md → .txt): it is no longer a note.
+		if (file.extension !== "md") {
+			if (from.toLowerCase().endsWith(".md")) {
+				this.dirty.set(from, "delete");
+				this.schedule(COALESCE_MS);
+			}
+			return;
+		}
+		// During the first build or a catch-up: the old path out and the new one in, queued like any change
+		// Before the index is opened at all, the start's catch-up finds it.
+		// Moved into an excluded folder: out, not renamed.
+		if (!this.live || excluder(this.app, this.excludedFolders())(file.path)) {
+			if (!this.live && !this.busy) return;
 			this.dirty.set(from, "delete");
 			this.touch(file, "upsert");
 			return;
 		}
+		// A delete waiting for the path it moves to goes first: a sync's "delete B, rename A to B".
+		const pending = this.dirty.get(file.path) === "delete";
 		this.dirty.delete(from);
-		void this.client.call({ op: "rename", from, to: file.path }).catch(() => {});
+		this.dirty.delete(file.path);
+		void (async () => {
+			if (pending) await this.client.call({ op: "delete", paths: [file.path] });
+			await this.client.call({ op: "rename", from, to: file.path });
+		})().catch(() => {});
 		// The name's terms changed with the path: index it again.
 		this.touch(file, "upsert");
+	}
+
+	/** The worker found the index damaged and dropped it: build it again from the vault. */
+	async recover(): Promise<void> {
+		if (this.busy) return;
+		this.reset();
+		await this.ensure().catch((e: unknown) => {
+			if (!(e instanceof Cancelled)) console.error("Jet Search: the index could not be built again", e);
+		});
+	}
+
+	/** A first build or a catch-up is running (changes wait for it; the sleep waits for it too). */
+	get busy(): boolean {
+		return this.building || this.starting;
+	}
+
+	/** The notes Jet indexes: excluded folders left out (the status's total). */
+	indexable(): number {
+		return this.notes().length;
+	}
+
+	/** This vault's id (Clear and Rebuild reach its saved index even while the worker sleeps). */
+	get vault(): string {
+		return this.vaultId;
 	}
 
 	/** A key in the editor: only a timer is reset; the text is read when typing pauses. */
@@ -335,6 +401,8 @@ export class Feeder {
 	}
 
 	private async sendOpenNote(): Promise<void> {
+		// The worker went to sleep since the key: the next start's catch-up reads the file.
+		if (!this.live) return;
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		const file = view?.file;
 		if (!view || !file || file.extension !== "md" || excluder(this.app, this.excludedFolders())(file.path)) return;
@@ -356,16 +424,18 @@ export class Feeder {
 	}
 
 	private async flush(): Promise<void> {
-		// Before the index is open, changes are found by the catch-up; during a build, sent after it.
+		// Before the index is opened, changes are found by the catch-up; during a build or a catch-up,
+		// sent after it (they happen after its listing of the vault).
 		if (!this.live || this.building) {
-			if (this.building) this.schedule(500);
+			if (this.busy) this.schedule(500);
 			else this.dirty.clear();
 			return;
 		}
 		const batch = [...this.dirty];
 		this.dirty.clear();
 		const excluded = excluder(this.app, this.excludedFolders());
-		const deletes = batch.filter(([, k]) => k === "delete").map(([p]) => p);
+		// An excluded path (moved there, or the setting changed) leaves the index.
+		const deletes = batch.filter(([p, k]) => k === "delete" || excluded(p)).map(([p]) => p);
 		const upserts = batch
 			.filter(([p, k]) => k === "upsert" && !excluded(p))
 			.map(([p]) => this.app.vault.getFileByPath(p))
@@ -373,8 +443,14 @@ export class Feeder {
 		if (deletes.length) await this.client.call({ op: "delete", paths: deletes });
 		// In batches, so a search typed meanwhile is answered between them, not after all of them.
 		const inbound = upserts.length ? inboundCounts(this.app) : new Map<string, number>();
-		for (let i = 0; i < upserts.length; i += BATCH)
-			await this.client.call({ op: "upsert", notes: await this.read(upserts.slice(i, i + BATCH), inbound) });
+		for (let i = 0; i < upserts.length; i += BATCH) {
+			const notes = await this.read(upserts.slice(i, i + BATCH), inbound);
+			// Deleted (or deleted again) while its text was read: the delete stands.
+			const live = notes.filter(
+				(n) => this.dirty.get(n.path) !== "delete" && this.app.vault.getFileByPath(n.path),
+			);
+			if (live.length) await this.client.call({ op: "upsert", notes: live });
+		}
 		if (deletes.length || upserts.length) this.onChanged?.();
 	}
 

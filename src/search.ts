@@ -212,6 +212,7 @@ export class Search {
 				allow: narrowed ? [...narrowed] : undefined,
 			});
 			if (!reply) return;
+			if (reply.broken) void this.feeder.recover();
 			if (phrases.length) {
 				const hits = await filterPhrases(reply.hits, phrases, (p) => this.read(p));
 				if (this.current?.text !== text) return;

@@ -30,7 +30,8 @@ export type Request =
 	/** How many notes mention a name (its words exactly), and how many of them are in a scope. */
 	| { op: "mentions"; text: string; scope?: string }
 	/** Forget this vault's index (settings: Clear index). */
-	| { op: "clear" }
+	/** The vault's id: a worker that was never opened (asleep) still clears what is saved. */
+	| { op: "clear"; vaultId?: string }
 	/**
 	 * Search by meaning: the packed model (Jet's file); from then on every note sent gets a
 	 * vector, and the saved vectors of this model are loaded. Answers how many notes still lack one.
@@ -47,7 +48,15 @@ export type Request =
 
 export type Stats = { notes: number; segments: number; pending: number; savedAt: number | null; bytes: number };
 
-export type QueryReply = { seq: number; hits: Hit[]; terms: string[]; ms: number; stale?: boolean };
+export type QueryReply = {
+	seq: number;
+	hits: Hit[];
+	terms: string[];
+	ms: number;
+	stale?: boolean;
+	/** The index could not be read: it was dropped, and the plugin builds it again. */
+	broken?: boolean;
+};
 export type NearReply = { seq: number; near: Array<{ path: string; score: number }>; ms: number; stale?: boolean };
 
 /** What each request answers. */

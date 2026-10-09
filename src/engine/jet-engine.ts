@@ -274,6 +274,12 @@ export class JetEngine implements SearchEngine {
 
 	/** Move a note's path. Its name terms change too, so the caller also sends the renamed note (upsert). */
 	rename(from: string, to: string): void {
+		// A note already at `to` (deleted, then another renamed there, as a sync applies them) goes first:
+		// it must not stay live and unknown to `ids`.
+		if (to !== from) {
+			this.kill(to);
+			if (this.pending.delete(to)) this.rebuildDelta();
+		}
 		const p = this.pending.get(from);
 		if (p) {
 			this.pending.delete(from);

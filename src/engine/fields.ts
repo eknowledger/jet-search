@@ -113,6 +113,8 @@ export type RawNote = {
 
 /** Body text indexed per note, at most (a huge note never stalls the index). */
 export const MAX_BODY_CHARS = 2_000_000;
+/** A heading is a line: anything longer is pasted text, not a heading to rank by. */
+const MAX_HEADING_CHARS = 2_000;
 
 /** A note's fields from what Obsidian gathered (the worker's side of `RawNote`). */
 export const fieldsFromRaw = (r: RawNote): NoteInput => {
@@ -128,7 +130,11 @@ export const fieldsFromRaw = (r: RawNote): NoteInput => {
 		links: terms(r.links.join(" ")),
 		body: terms(r.text.slice(r.bodyStart, r.bodyStart + MAX_BODY_CHARS).replace(/\]\([^)\s]*\)/g, "]")),
 	};
-	for (const h of r.headings)
-		(h.level === 1 ? fields.h1 : h.level === 2 ? fields.h2 : fields.h3).push(...terms(h.text));
+	// One term at a time, and a heading capped like the body: a pasted blob as a heading must not
+	// overflow the stack and fail the whole build.
+	for (const h of r.headings) {
+		const to = h.level === 1 ? fields.h1 : h.level === 2 ? fields.h2 : fields.h3;
+		for (const t of terms(h.text.slice(0, MAX_HEADING_CHARS))) to.push(t);
+	}
 	return { path: r.path, mtime: r.mtime, fields, linkTargets: r.links, inLinks: r.inLinks };
 };

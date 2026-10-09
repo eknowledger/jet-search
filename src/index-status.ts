@@ -22,7 +22,8 @@ let lastStats: { notes: number; bytes: number; savedAt: number | null; pending: 
  */
 export const statusNow = (plugin: JetSearchPlugin): IndexStatus => {
 	const p = plugin.feeder.progress;
-	const total = plugin.app.vault.getMarkdownFiles().length;
+	// The notes Jet indexes: excluded folders left out.
+	const total = plugin.feeder.indexable();
 	if (p)
 		return {
 			state: `Building: ${p.done} of ${p.total} notes`,
@@ -64,7 +65,8 @@ const refreshStats = async (plugin: JetSearchPlugin): Promise<void> => {
 
 export const indexStatus = async (plugin: JetSearchPlugin): Promise<IndexStatus> => {
 	const p = plugin.feeder.progress;
-	const total = plugin.app.vault.getMarkdownFiles().length;
+	// The notes Jet indexes: excluded folders left out.
+	const total = plugin.feeder.indexable();
 	if (p)
 		return {
 			state: `Building: ${p.done} of ${p.total} notes`,
@@ -96,7 +98,8 @@ export const indexStatus = async (plugin: JetSearchPlugin): Promise<IndexStatus>
 
 /** Throw the index away and build it again (Rebuild). */
 export const rebuild = async (plugin: JetSearchPlugin): Promise<void> => {
-	await plugin.client.call({ op: "clear" });
+	plugin.wake();
+	await plugin.client.call({ op: "clear", vaultId: plugin.feeder.vault });
 	plugin.feeder.reset();
 	plugin.data.indexedAt = null;
 	plugin.save();
@@ -105,7 +108,7 @@ export const rebuild = async (plugin: JetSearchPlugin): Promise<void> => {
 
 /** Forget the index on this device (Clear index); it is built again on the next search. */
 export const clearIndex = async (plugin: JetSearchPlugin): Promise<void> => {
-	await plugin.client.call({ op: "clear" });
+	await plugin.client.call({ op: "clear", vaultId: plugin.feeder.vault });
 	plugin.client.stop();
 	plugin.feeder.reset();
 	plugin.data.indexedAt = null;

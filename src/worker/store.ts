@@ -71,7 +71,10 @@ export const idbStore = (vaultId: string): Store => {
 			s.put(x.sidecar, "sidecar");
 			s.put({ savedAt: x.savedAt, version: x.version }, "meta");
 			await done(t);
-			await touch(vaultId);
+			// The registry is bookkeeping: its failure must not fail a save that is done.
+			await touch(vaultId).catch((e: unknown) =>
+				console.warn("Jet Search: the vault registry was not updated", e),
+			);
 		},
 		async clear() {
 			const d = await get();
