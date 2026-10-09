@@ -9,20 +9,23 @@ export type Query = { words: string[]; excluded: string[]; phrases: string[]; la
 
 export const parseQuery = (text: string): Query => {
 	const phrases: string[] = [];
-	const rest = text.replace(/"([^"]*)"?/g, (_, p: string) => {
-		if (p.trim()) phrases.push(p.trim());
-		return ` ${p} `;
-	});
 	const words: string[] = [];
 	const excluded: string[] = [];
-	for (let piece of rest.split(/\s+/)) {
-		if (!piece) continue;
-		if (piece.startsWith("-") && piece.length > 1) {
-			excluded.push(...tokenize(piece.slice(1)));
+	// In order: a quoted phrase's words are words as they are (`"git push --force"`);
+	// outside quotes `-word` excludes, and `#tag` / `key:value` give their value.
+	for (const m of text.matchAll(/"([^"]*)"?|[^\s"]+/gu)) {
+		if (m[1] !== undefined) {
+			const p = m[1].trim();
+			if (p) phrases.push(p);
+			words.push(...tokenize(p));
 			continue;
 		}
+		let piece = m[0];
+		const minus = piece.startsWith("-") && piece.length > 1;
+		if (minus) piece = piece.slice(1);
+		// `-status:draft` excludes the value, not every note with the word "status".
 		piece = piece.replace(/^#/, "").replace(/^[\p{L}\p{N}_-]+:(?=.)/u, "");
-		words.push(...tokenize(piece));
+		(minus ? excluded : words).push(...tokenize(piece));
 	}
 	return {
 		words: [...new Set(words)],

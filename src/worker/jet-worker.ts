@@ -23,7 +23,8 @@ const pump = async (): Promise<void> => {
 	busy = true;
 	while (queue.length) {
 		const { id, req } = queue.shift() as Envelope;
-		if (req.op === "query" && queue.some((x) => x.req.op === "query")) {
+		// seq 0 is a side count (never stale, never makes another stale).
+		if (req.op === "query" && req.seq !== 0 && queue.some((x) => x.req.op === "query" && x.req.seq !== 0)) {
 			scope.postMessage({ id, result: { seq: req.seq, hits: [], terms: [], ms: 0, stale: true } });
 			continue;
 		}

@@ -110,4 +110,7 @@ const word = (run: string, out: string[], opts: TokenizeOptions): void => {
 };
 
 /** Whether a term is from a script where typos are not tolerated (CJK pairs, segmented scripts). */
+/** One Chinese or Japanese character: indexed inside pairs, so it is looked up as the pairs that hold it. */
+export const cjkChar = (term: string): boolean => term.length === 1 && CJK.test(term);
+
 export const noTypos = (term: string): boolean => CJK.test(term) || SEGMENTED.test(term);

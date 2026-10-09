@@ -9,6 +9,33 @@ import type { Filter } from "./filters/filter";
 import type { Entry, Sort } from "./modal/jet-modal";
 import { type MetaField, type MetaHit, MetaIndex, type MetaNote } from "./tier0/meta";
 import { type NameHit, NameIndex } from "./tier0/names";
+import { foldWord } from "./tier0/fold";
+
+/**
+ * The text as names are matched against it: `-word` taken out (and names holding it
+ * left out), quotes dropped, `#tag` and `key:value` as their value, as the engine reads a query.
+ */
+export const namesQuery = (text: string): { text: string; excluded: Set<string> } => {
+	const kept: string[] = [];
+	const excluded = new Set<string>();
+	for (const m of text.matchAll(/"([^"]*)"?|[^\s"]+/gu)) {
+		if (m[1] !== undefined) {
+			kept.push(m[1]);
+			continue;
+		}
+		const piece = m[0];
+		if (piece.startsWith("-") && piece.length > 1) {
+			for (const w of piece
+				.slice(1)
+				.replace(/^[\p{L}\p{N}_-]+:(?=.)/u, "")
+				.split(/[^\p{L}\p{N}]+/u))
+				if (w) excluded.add(foldWord(w));
+			continue;
+		}
+		kept.push(piece.replace(/^#/, "").replace(/^[\p{L}\p{N}_-]+:(?=.)/u, ""));
+	}
+	return { text: kept.join(" ") + (/\s$/u.test(text) ? " " : ""), excluded };
+};
 import { contentWords } from "./meaning/question";
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
@@ -143,12 +170,21 @@ export class Search {
 			);
 			return;
 		}
-		const tier0 = names.match(text, {
+		const nq = namesQuery(text);
+		const named = (id: number): boolean => {
+			const path = this.pathOf.get(id) ?? "";
+			if (allowed && !allowed.has(path)) return false;
+			if (!nq.excluded.size) return true;
+			return !titleOf(path)
+				.split(/[^\p{L}\p{N}]+/u)
+				.some((w) => w && nq.excluded.has(foldWord(w)));
+		};
+		const tier0 = names.match(nq.text, {
 			limit: 40,
-			allow: allowed ? (id) => allowed.has(this.pathOf.get(id) ?? "") : undefined,
+			allow: allowed || nq.excluded.size ? named : undefined,
 		});
 		// Title only means names alone: headings and properties are left out too.
-		const meta = titleOnly ? [] : this.metaHits(text, allowed);
+		const meta = titleOnly ? [] : this.metaHits(nq.text, allowed);
 		const now = Date.now();
 		// Search by meaning: its own list, never merged with words.
 		if (meaning?.on && !titleOnly) {
@@ -188,7 +224,13 @@ export class Search {
 			paint(offer(first), this.status());
 			// Excerpts for the rows people see, cut from Obsidian's cached text, unless turned off.
 			if (!this.data().settings.excerpts) return;
-			const excerpts = await this.excerpts(first, reply.terms, typedWords(text));
+			const typed = typedWords(text);
+			const excerpts = await this.excerpts(
+				first,
+				reply.terms,
+				typed,
+				/\s$/u.test(text) ? undefined : typed.at(-1),
+			);
 			if (excerpts.size) paint(offer(this.compose(tier0, reply, now, excerpts, meta)), this.status());
 		})().catch((e: unknown) => console.error("Jet Search: search failed", e));
 	}
@@ -444,6 +486,8 @@ export class Search {
 	 */
 	private async recovery(text: string, scope?: string): Promise<Entry[]> {
 		const s = await this.client.call({ op: "suggest", text });
+		// Typed on meanwhile: this text's recovery is not shown, so it asks nothing more.
+		if (this.current?.text !== text) return [];
 		const n = (k: number): string => `${k} note${k === 1 ? "" : "s"}`;
 		const t = text.trim();
 		const d = scope !== undefined ? (this.scopes?.describe?.(scope) ?? null) : null;
@@ -453,7 +497,7 @@ export class Search {
 			{ type: "header", label: "Try instead", plain: true },
 		];
 		if (d) {
-			const all = await this.client.query(text, { limit: 50 });
+			const all = await this.client.count(text, { limit: 50 });
 			const k = all?.hits.length ?? 0;
 			out.push({
 				type: "widen",
@@ -486,6 +530,7 @@ export class Search {
 		entries: Entry[],
 		terms: readonly string[],
 		exact: readonly string[],
+		typing?: string,
 	): Promise<Map<string, Shown>> {
 		const out = new Map<string, Shown>();
 		if (!terms.length) return out;
@@ -498,6 +543,7 @@ export class Search {
 				if (!file) return;
 				const ex = cutExcerpt(withoutTitleLine(await this.app.vault.cachedRead(file), r.title), terms, {
 					exact,
+					typing,
 				});
 				if (ex) {
 					out.set(r.path, { text: ex.text, marks: ex.marks, more: ex.more, offset: ex.offset });
@@ -506,7 +552,7 @@ export class Search {
 				// Not in the body: a property holds it (the "summary" badge).
 				for (const f of properties(this.app.metadataCache.getFileCache(file) ?? {})) {
 					const value = f.text.slice(f.text.indexOf(": ") + 2);
-					const px = cutExcerpt(value, terms, { exact });
+					const px = cutExcerpt(value, terms, { exact, typing });
 					if (!px) continue;
 					out.set(r.path, {
 						text: px.text,

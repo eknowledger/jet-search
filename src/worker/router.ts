@@ -82,10 +82,8 @@ export class Router {
 				}
 				return { notes: this.engine.size };
 			case "upsert":
-				for (const n of req.notes) {
-					this.engine.upsert(fieldsFromRaw(n));
-					this.vector(n);
-				}
+				this.engine.upsertMany(req.notes.map(fieldsFromRaw));
+				for (const n of req.notes) this.vector(n);
 				this.changed();
 				return { notes: this.engine.size };
 			case "delete":

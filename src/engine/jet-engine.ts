@@ -1,4 +1,4 @@
-import { noTypos } from "./analyzer";
+import { cjkChar, noTypos } from "./analyzer";
 import type { NoteInput } from "./fields";
 import { FIELDS } from "./fields";
 import type { Query } from "./query";
@@ -21,6 +21,7 @@ export type QueryOptions = {
 export type SearchEngine = {
 	build(notes: readonly NoteInput[]): void;
 	upsert(note: NoteInput): void;
+	upsertMany(notes: readonly NoteInput[]): void;
 	delete(path: string): void;
 	rename(from: string, to: string): void;
 	query(q: Query, opts?: QueryOptions): QueryResult;
@@ -42,6 +43,9 @@ const FUZZY_PREFIX = 0.4;
  */
 const TYPOS_BELOW = 3;
 const FUZZY_LIMIT = 200;
+/** Pending notes past which the delta is frozen into a segment, and segments past which they are merged at once. */
+const FREEZE = 256;
+const MAX_SEGMENTS = 24;
 /** Word forms: a word's root group, below the exact word. */
 const STEM = 0.8;
 const STEM_LIMIT = 32;
@@ -222,18 +226,43 @@ export class JetEngine implements SearchEngine {
 	 */
 	addBatch(notes: readonly NoteInput[]): void {
 		if (!notes.length) return;
+		let had = false;
 		for (const n of notes) {
 			this.kill(n.path);
-			if (this.pending.delete(n.path)) this.rebuildDelta();
+			had = this.pending.delete(n.path) || had;
 		}
+		if (had) this.rebuildDelta();
 		const inbound = this.inbound();
 		this.addPart(new Segment(buildSegment(notes, inbound, this.segs[0]?.seg.averages)));
 	}
 
 	upsert(note: NoteInput): void {
-		this.kill(note.path);
-		this.pending.set(note.path, note);
-		this.rebuildDelta();
+		this.upsertMany([note]);
+	}
+
+	/**
+	 * Notes changed together: the delta is built once for all of them, not once per note (it holds every
+	 * pending note, so per note was quadratic: a fresh vault's metadata arriving after the first build
+	 * sent 15,000 at once and the worker answered nothing for minutes). Past FREEZE pending notes the
+	 * delta becomes a frozen segment, so each change costs its own notes only; the idle merge folds
+	 * the segments together, or now when there are many.
+	 */
+	upsertMany(notes: readonly NoteInput[]): void {
+		if (!notes.length) return;
+		for (const n of notes) {
+			this.kill(n.path);
+			this.pending.set(n.path, n);
+		}
+		if (this.pending.size < FREEZE) {
+			this.rebuildDelta();
+			return;
+		}
+		const frozen = [...this.pending.values()];
+		this.pending.clear();
+		this.delta = null;
+		this.deltaScratch = null;
+		this.addPart(new Segment(buildSegment(frozen, this.inbound(), this.segs[0]?.seg.averages)));
+		if (this.segs.length > MAX_SEGMENTS) this.merge();
 	}
 
 	delete(path: string): void {
@@ -272,6 +301,31 @@ export class JetEngine implements SearchEngine {
 		this.addPart(merged);
 	}
 
+	/**
+	 * In how many live notes word `i`'s own expansions occur, counted up to TYPOS_BELOW: notes, not
+	 * postings, so a dead copy or three word forms in one note count once.
+	 */
+	private liveNotes(parts: Part[], own: Array<Array<Array<{ t: number }>>>, i: number): number {
+		let sum = 0;
+		for (const [p, exps] of own.entries())
+			for (const x of exps[i] ?? []) sum += (parts[p] as Part).seg.df[x.t] as number;
+		if (sum < TYPOS_BELOW) return sum;
+		const seen = new Set<number>();
+		for (const [p, exps] of own.entries()) {
+			const { seg, dead } = parts[p] as Part;
+			const add = (d: number): boolean => {
+				if (!dead?.[d]) seen.add(p * 0x1000000 + d);
+				return seen.size >= TYPOS_BELOW;
+			};
+			for (const x of exps[i] ?? []) {
+				for (let k = seg.metaOff[x.t] as number, end = seg.metaOff[x.t + 1] as number; k < end; k++)
+					if (add(seg.metaDocs[k] as number)) return seen.size;
+				if (seg.someBody(x.t, add)) return seen.size;
+			}
+		}
+		return seen.size;
+	}
+
 	query(q: Query, opts: QueryOptions = {}): QueryResult {
 		const limit = opts.limit ?? 50;
 		const now = opts.now ?? Date.now();
@@ -284,14 +338,7 @@ export class JetEngine implements SearchEngine {
 		// Each word's own expansions in every part, and in how many notes they occur (for TYPOS_BELOW).
 		const isLast = (i: number): boolean => q.lastIsPrefix && i === n - 1;
 		const own = parts.map((part) => q.words.map((w, i) => expand(part.seg, w, isLast(i), this.config, false)));
-		const typos = q.words.map(
-			(_, i) =>
-				own.reduce(
-					(sum, exps, p) =>
-						sum + (exps[i] ?? []).reduce((m, x) => m + ((parts[p] as Part).seg.df[x.t] as number), 0),
-					0,
-				) < TYPOS_BELOW,
-		);
+		const typos = q.words.map((_, i) => this.liveNotes(parts, own, i) < TYPOS_BELOW);
 		for (const [p, part] of parts.entries()) {
 			const { seg, dead, scratch: s } = part;
 			s.q++;
@@ -364,7 +411,7 @@ export class JetEngine implements SearchEngine {
 						}
 					}
 				}
-				const bit = 1 << Math.min(i, 31);
+				// Counted, not a bit per word: a pasted paragraph of 33 words keeps AND.
 				for (const doc of touchedW) {
 					if (s.qStamp[doc] !== s.q) {
 						s.qStamp[doc] = s.q;
@@ -374,9 +421,9 @@ export class JetEngine implements SearchEngine {
 						s.edits[doc] = 0;
 						touchedQ.push(doc);
 					}
-					if (s.wInName[doc]) s.inName[doc] = (s.inName[doc] as number) | bit;
+					if (s.wInName[doc]) s.inName[doc] = (s.inName[doc] as number) + 1;
 					s.total[doc] = (s.total[doc] as number) + (s.best[doc] as number);
-					s.matched[doc] = (s.matched[doc] as number) | bit;
+					s.matched[doc] = (s.matched[doc] as number) + 1;
 					s.edits[doc] = (s.edits[doc] as number) + (s.bestEdits[doc] as number);
 				}
 			}
@@ -388,17 +435,16 @@ export class JetEngine implements SearchEngine {
 					s.xStamp[seg.metaDocs[k] as number] = s.q;
 				seg.forBody(t, (doc) => (s.xStamp[doc] = s.q));
 			}
-			const allBits = n >= 32 ? 0xffffffff : (1 << n) - 1;
 			for (const d of touchedQ) {
 				if (s.xStamp[d] === s.q) continue;
 				if (opts.allow && !opts.allow(part.path(d))) continue;
 				candidates.push({
 					part,
 					d,
-					matched: popcount(s.matched[d] as number),
+					matched: s.matched[d] as number,
 					edits: s.edits[d] as number,
 					score: s.total[d] as number,
-					allInName: s.inName[d] === allBits,
+					allInName: s.inName[d] === n,
 				});
 			}
 		}
@@ -451,8 +497,14 @@ export class JetEngine implements SearchEngine {
 			renamed: Array<[number, string]>;
 			pending: NoteInput[];
 		};
-		for (const id of side.dead) this.markDead(part, id);
+		// A dead note is not indexed any more: out of `ids` too, or catch-up would skip it.
+		for (const id of side.dead) {
+			this.markDead(part, id);
+			const p = part.seg.paths[id];
+			if (p !== undefined && this.ids.get(p)?.d === id) this.ids.delete(p);
+		}
 		for (const [id, path] of side.renamed) {
+			if (part.dead[id]) continue;
 			const old = part.seg.paths[id];
 			if (old !== undefined) this.ids.delete(old);
 			this.ids.set(path, { s: part, d: id });
@@ -467,18 +519,20 @@ export class JetEngine implements SearchEngine {
 	 * spelling the index has (up to two edits, the most used one), and how many notes that finds.
 	 */
 	suggest(q: Query): { text: string | null; notes: number } {
-		const base = this.segs[0]?.seg;
-		if (!base || !q.words.length) return { text: null, notes: 0 };
+		// Every part, not the first segment alone: a word only a new note has is suggested too.
+		const segs = this.parts().map((p) => p.seg);
+		if (!segs.length || !q.words.length) return { text: null, notes: 0 };
 		let changed = false;
 		const words = q.words.map((w) => {
-			if (exactTerm(base, w) >= 0 || noTypos(w) || w.length < 3) return w;
+			if (segs.some((seg) => exactTerm(seg, w) >= 0) || noTypos(w) || w.length < 3) return w;
 			let best: { t: string; df: number; e: number } | null = null;
-			for (const m of typoMatches(base.terms, w, 2, { limit: 200 })) {
-				if (m.prefix) continue;
-				const df = base.df[m.index] as number;
-				if (!best || m.edits < best.e || (m.edits === best.e && df > best.df))
-					best = { t: base.terms[m.index] as string, df, e: m.edits };
-			}
+			for (const seg of segs)
+				for (const m of typoMatches(seg.terms, w, 2, { limit: 200 })) {
+					if (m.prefix) continue;
+					const df = seg.df[m.index] as number;
+					if (!best || m.edits < best.e || (m.edits === best.e && df > best.df))
+						best = { t: seg.terms[m.index] as string, df, e: m.edits };
+				}
 			if (!best) return w;
 			changed = true;
 			return best.t;
@@ -627,12 +681,6 @@ export class JetEngine implements SearchEngine {
 	}
 }
 
-const popcount = (x: number): number => {
-	let v = x - ((x >>> 1) & 0x55555555);
-	v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
-	return (((v + (v >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
-};
-
 const exactTerm = (seg: Segment, word: string): number => {
 	const terms = seg.terms;
 	const i = lowerBound(terms, word);
@@ -656,6 +704,18 @@ const expand = (seg: Segment, word: string, isLast: boolean, config: EngineConfi
 		if (range.length > PREFIX_LIMIT)
 			range = range.sort((a, b) => (seg.df[b] as number) - (seg.df[a] as number)).slice(0, PREFIX_LIMIT);
 		for (const t of range) put(t, PREFIX * Math.sqrt(len / (terms[t] as string).length), 0);
+	}
+	// One Chinese or Japanese character: the pairs that start or end with it (猫 in 我的猫很可爱).
+	if (cjkChar(word)) {
+		const [from, to] = prefixRange(terms, word);
+		for (let t = from; t < to && t < from + PREFIX_LIMIT; t++) if (t !== exact) put(t, EXACT, 0);
+		const rev = reversedTerms(seg);
+		let k = 0;
+		for (let lo = lowerBound(rev.keys, word); lo < rev.keys.length && k < PREFIX_LIMIT; lo++, k++) {
+			if (!(rev.keys[lo] as string).startsWith(word)) break;
+			const t = rev.ids[lo] as number;
+			if (t !== exact && (terms[t] as string).length === 2) put(t, EXACT, 0);
+		}
 	}
 	const budget = !typos || noTypos(word) ? 0 : typoBudget(word);
 	if (budget > 0) {

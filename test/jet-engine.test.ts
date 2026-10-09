@@ -43,7 +43,8 @@ describe("segment (index v4)", () => {
 		const docs: number[] = [];
 		seg.forBody(t, (d) => docs.push(d));
 		expect(docs).toEqual([0, 1]);
-		expect(seg.names[3]).toBe("nebulasdk nebula sdk");
+		// The name as whole words, for the exact-name boost (its compound parts are in the terms).
+		expect(seg.names[3]).toBe("nebulasdk");
 	});
 
 	it("refuses a buffer that is not an index", () => {

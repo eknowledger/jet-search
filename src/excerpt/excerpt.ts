@@ -174,7 +174,13 @@ const lineOf = (text: string, at: number): number => {
 export const cutExcerpt = (
 	text: string,
 	terms: readonly string[],
-	opts: { width?: number; scanLimit?: number; exact?: readonly string[] } = {},
+	opts: {
+		width?: number;
+		scanLimit?: number;
+		exact?: readonly string[];
+		/** The last word while it is still being typed: a longer word that starts with it counts fully. */
+		typing?: string;
+	} = {},
 ): Excerpt | null => {
 	const width = Math.max(20, opts.width ?? WIDTH);
 	const scan = scanned(text, opts.scanLimit);
@@ -186,8 +192,10 @@ export const cutExcerpt = (
 	// prefix of it, is that word; any other term is its own group).
 	const exact = [...new Set((opts.exact ?? []).map(normalize).filter((w) => w.length > 0))];
 	const found: Array<{ at: number; end: number; group: string; weight: number }> = [];
-	// One term: every hit is the same word, so the first is as good as any (no words to tell apart).
-	const single = c.terms.length <= 1;
+	const typing = opts.typing ? normalize(opts.typing) : null;
+	// One term and no words as typed: every hit is the same word, so the first is as good as any. With
+	// words as typed, "world" is still told from its form "worlds".
+	const single = c.terms.length <= 1 && !exact.length;
 	for (let m = nextHit(re, scan, c.arabic); m && found.length <= MORE_CAP; m = nextHit(re, scan, c.arabic)) {
 		const end = wordEnd(text, m.index, m.index + m[0].length);
 		// Only the hits the choice can look at are told apart by word (the rest are counted).
@@ -196,9 +204,12 @@ export const cutExcerpt = (
 			continue;
 		}
 		const word = normalize(text.slice(m.index, end));
+		// The word as typed counts fully; "category" for `cat` or "worlds" for `world` is a form of it and
+		// counts half, unless `cat` is the word still being typed.
 		const own = exact.find((w) => word.startsWith(w) || w.startsWith(word));
+		const full = own !== undefined && (word === own || (typing === own && word.startsWith(own)));
 		const term = own ?? c.terms.find((t) => word.startsWith(t)) ?? word;
-		found.push({ at: m.index, end, group: own ? `w:${own}` : `t:${term}`, weight: own ? 1 : 0.5 });
+		found.push({ at: m.index, end, group: own ? `w:${own}` : `t:${term}`, weight: full ? 1 : 0.5 });
 	}
 	const first = found[0];
 	if (!first) return null;

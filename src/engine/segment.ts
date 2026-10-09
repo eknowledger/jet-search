@@ -1,3 +1,4 @@
+import { tokenize } from "./analyzer";
 import { FIELDS, type NoteInput, WEIGHTS } from "./fields";
 import { ByteWriter, readVarint } from "./varint";
 
@@ -103,7 +104,8 @@ export const buildSegment = (
 	});
 	const docs = notes.map((n) => ({
 		path: n.path,
-		name: n.fields.name.join(" "),
+		// The name as typed words (no compound parts), for the exact-name boost.
+		name: tokenize(nameOf(n.path)).join(" "),
 		mtime: n.mtime,
 		bodyLen: n.fields.body.length,
 		inLinks: n.inLinks ?? inbound(nameOf(n.path)),
@@ -337,6 +339,19 @@ export class Segment {
 	}
 
 	/** Call `fn(doc, tf)` for each body posting of term `t`. */
+	/** Like forBody, stopping (and answering true) once `fn` answers true. */
+	someBody(t: number, fn: (doc: number) => boolean): boolean {
+		const end = this.bodyOff[t + 1] as number;
+		const at = { pos: this.bodyOff[t] as number };
+		let doc = -1;
+		while (at.pos < end) {
+			doc += readVarint(this.body, at) + 1;
+			readVarint(this.body, at);
+			if (fn(doc)) return true;
+		}
+		return false;
+	}
+
 	forBody(t: number, fn: (doc: number, tf: number) => void): void {
 		const end = this.bodyOff[t + 1] as number;
 		const at = { pos: this.bodyOff[t] as number };

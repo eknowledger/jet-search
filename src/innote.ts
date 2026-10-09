@@ -1,5 +1,6 @@
 import { type App, type MarkdownView, type TFile } from "obsidian";
 import { normalize, tokenize } from "./engine/analyzer";
+import { clusterEnd, clusterStart } from "./excerpt/chars";
 import { findHits } from "./excerpt/excerpt";
 import type { Entry, ModalHost, OpenHow } from "./modal/jet-modal";
 
@@ -83,7 +84,9 @@ export class InNoteHost implements ModalHost {
 		const lead = t.length - t.trimStart().length;
 		let from = Math.max(lead, ch - Math.floor(WIDTH / 3));
 		if (t.length - from < WIDTH) from = Math.max(lead, t.length - WIDTH);
-		const to = Math.min(t.length, from + WIDTH);
+		// Never inside a character: an emoji cut in half shows as �.
+		from = clusterStart(t, from);
+		const to = clusterEnd(t, Math.min(t.length, from + WIDTH));
 		const pre = from > lead ? "…" : "";
 		const shown = pre + t.slice(from, to) + (to < t.length ? "…" : "");
 		const shift = pre.length - from;

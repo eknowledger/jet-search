@@ -48,6 +48,14 @@ export class JetClient {
 		return r.stale || r.seq !== this.seq ? null : r;
 	}
 
+	/**
+	 * A side count (how many notes outside a scope): answered in turn, outside latest-wins, so it never
+	 * cancels the query you typed after it.
+	 */
+	async count(text: string, opts: { limit?: number } = {}): Promise<QueryReply> {
+		return this.call({ op: "query", seq: 0, text, limit: opts.limit ?? 50, now: Date.now() });
+	}
+
 	/** The notes nearest a question; null if a newer query or question was asked meanwhile. */
 	async nearest(
 		text: string,

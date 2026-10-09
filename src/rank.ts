@@ -1,6 +1,10 @@
 import type { Hit } from "./engine/jet-engine";
 import { tokenize } from "./engine/analyzer";
+import { MAX_BODY_CHARS } from "./engine/fields";
 import { hasPhrase } from "./excerpt/excerpt";
+
+/** As far as the index reads a note (its body to 2 MB, plus room for the frontmatter). */
+const PHRASE_SCAN = MAX_BODY_CHARS + 64_000;
 
 /** Notes checked for a quoted phrase, in rank order. */
 export const PHRASE_CHECK_LIMIT = 500;
@@ -25,7 +29,7 @@ export const filterPhrases = async (
 	const out: Hit[] = [];
 	for (const h of hits.slice(0, PHRASE_CHECK_LIMIT)) {
 		const t = await text(h.path);
-		if (t !== null && phrases.every((p) => hasPhrase(t, p))) out.push(h);
+		if (t !== null && phrases.every((p) => hasPhrase(t, p, { scanLimit: PHRASE_SCAN }))) out.push(h);
 		if (out.length >= PHRASE_CONFIRM_LIMIT) break;
 	}
 	return out;

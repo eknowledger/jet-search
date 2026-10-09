@@ -170,7 +170,14 @@ export class Feeder {
 
 	rename(file: TAbstractFile, from: string): void {
 		if (!(file instanceof TFile) || file.extension !== "md") return;
-		if (!this.live) return;
+		// During the first build: the old path out and the new one in, queued like any change.
+		// Before the index is open at all, the start's catch-up finds it.
+		if (!this.live) {
+			if (!this.building) return;
+			this.dirty.set(from, "delete");
+			this.touch(file, "upsert");
+			return;
+		}
 		this.dirty.delete(from);
 		void this.client.call({ op: "rename", from, to: file.path }).catch(() => {});
 		// The name's terms changed with the path: index it again.
@@ -224,8 +231,10 @@ export class Feeder {
 			.map(([p]) => this.app.vault.getFileByPath(p))
 			.filter((f): f is TFile => !!f);
 		if (deletes.length) await this.client.call({ op: "delete", paths: deletes });
-		if (upserts.length)
-			await this.client.call({ op: "upsert", notes: await this.read(upserts, inboundCounts(this.app)) });
+		// In batches, so a search typed meanwhile is answered between them, not after all of them.
+		const inbound = upserts.length ? inboundCounts(this.app) : new Map<string, number>();
+		for (let i = 0; i < upserts.length; i += BATCH)
+			await this.client.call({ op: "upsert", notes: await this.read(upserts.slice(i, i + BATCH), inbound) });
 		if (deletes.length || upserts.length) this.onChanged?.();
 	}
 
