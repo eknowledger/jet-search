@@ -24,6 +24,8 @@ const originKey = (o: { signal: string; at: string; key: string }): string => `$
 export const review = (proposals: readonly Proposal[], scopes: readonly Scope[]): ReviewItem[] => {
 	const byOrigin = new Map<string, Scope>();
 	for (const s of scopes) for (const o of s.origins ?? []) byOrigin.set(originKey(o), s);
+	// Offered before beside a scope you added, and no scope now: you said no (unticked, or deleted it).
+	const declined = new Set(scopes.flatMap((s) => s.offered ?? []));
 	const names = new Map<string, Scope>();
 	for (const s of scopes) for (const n of [s.name, ...s.aliases]) names.set(fold(n), s);
 	const items: ReviewItem[] = [];
@@ -47,7 +49,8 @@ export const review = (proposals: readonly Proposal[], scopes: readonly Scope[])
 			items.push({ state: "covered", proposal: p, scope: covered, ticked: false });
 			continue;
 		}
-		items.push({ state: "new", proposal: p, ticked: p.ticked });
+		const turnedDown = p.origins.length > 0 && p.origins.every((o) => declined.has(originKey(o)));
+		items.push({ state: "new", proposal: p, ticked: p.ticked && !turnedDown });
 	}
 	for (const s of scopes)
 		if (s.source === "generated" && s.origins?.length && !seen.has(s))
@@ -58,6 +61,20 @@ export const review = (proposals: readonly Proposal[], scopes: readonly Scope[])
 /** The scopes after a review: ticked new ones added, ticked changes applied, ticked gone ones removed. */
 export const applyReview = (items: readonly ReviewItem[], scopes: readonly Scope[]): Scope[] => {
 	const out = scopes.map((s) => ({ ...s, rules: [...s.rules] }));
+	// Every proposal of this review, by its patterns: a scope added remembers its siblings.
+	const byPattern = new Map<string, Set<string>>();
+	for (const i of items)
+		for (const o of i.proposal?.origins ?? []) {
+			const k = `${o.signal}|${o.at}`;
+			const set = byPattern.get(k) ?? new Set<string>();
+			set.add(originKey(o));
+			byPattern.set(k, set);
+		}
+	const offeredBeside = (p: Proposal, had: readonly string[] = []): string[] => {
+		const keys = new Set(had);
+		for (const o of p.origins) for (const k of byPattern.get(`${o.signal}|${o.at}`) ?? []) keys.add(k);
+		return [...keys];
+	};
 	const find = (s: Scope | undefined): Scope | undefined => (s ? out.find((x) => x.id === s.id) : undefined);
 	const ids = new Set(out.map((s) => s.id));
 	for (const i of items) {
@@ -66,8 +83,12 @@ export const applyReview = (items: readonly ReviewItem[], scopes: readonly Scope
 			const s = find(i.scope);
 			if (!s) continue;
 			s.rules.push(...(i.addRules ?? []));
-			s.generated = i.proposal.rules.map((r) => r.rule);
+			// What generation gave it before stays known, so a rule you removed is not put back.
+			const gen = [...(s.generated ?? [])];
+			for (const r of i.proposal.rules.map((x) => x.rule)) if (!gen.some((g) => same(g, r))) gen.push(r);
+			s.generated = gen;
 			s.origins = i.proposal.origins;
+			s.offered = offeredBeside(i.proposal, s.offered);
 		} else if (i.state === "gone") {
 			const s = find(i.scope);
 			if (s) out.splice(out.indexOf(s), 1);
@@ -88,6 +109,7 @@ export const applyReview = (items: readonly ReviewItem[], scopes: readonly Scope
 				source: "generated",
 				origins: p.origins,
 				generated: rules,
+				offered: offeredBeside(p),
 			});
 		}
 	}

@@ -47,6 +47,11 @@ export type Scope = {
 	origins?: Origin[];
 	/** The rules generation gave it, to tell its own rules from your edits when generated again. */
 	generated?: Rule[];
+	/**
+	 * Where generation found the scopes offered beside it, in its own patterns, when you added it: one
+	 * of them with no scope now was turned down or deleted, so it is not offered ticked again.
+	 */
+	offered?: string[];
 };
 
 const MODES: readonly Mode[] = ["default", "suggest", "auto", "in-only"];
@@ -125,6 +130,10 @@ export const normalizeScopes = (raw: unknown): Scope[] => {
 			if (origins.length) s.origins = origins;
 		}
 		if (Array.isArray(r.generated)) s.generated = rules(r.generated);
+		if (Array.isArray(r.offered)) {
+			const offered = r.offered.filter((x): x is string => typeof x === "string");
+			if (offered.length) s.offered = offered;
+		}
 		out.push(s);
 	}
 	return out;

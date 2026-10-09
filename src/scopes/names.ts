@@ -4,7 +4,12 @@
  * ids and Johnny.Decimal levels apart. Pure; no word lists (month names come from `Intl`).
  */
 
-const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
+/**
+ * Emoji, whole: pictographs, flags (regional indicators, subdivision tags), skin tones and keycaps
+ * ("🇫🇷 France", "👍🏽 Reviews", "1️⃣ Inbox" are France, Reviews, Inbox).
+ */
+const EMOJI =
+	/[0-9#*]\u{FE0F}?\u{20E3}|\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier}|[\u{E0020}-\u{E007F}]|\u{FE0F}|\u{200D}|\u{20E3}/gu;
 const NOTION_ID = /\s*[0-9a-f]{32}$/i;
 const MARKS = /\p{M}/gu;
 

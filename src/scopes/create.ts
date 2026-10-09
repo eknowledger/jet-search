@@ -15,6 +15,19 @@ export type CreateTarget = {
 	tags: string[];
 };
 
+/**
+ * A link to the scope's note: its name alone, or its path when the name is a folder note's (index,
+ * README) that other notes share, so the link opens this one.
+ */
+const SHARED = /^(index|readme|_index|overview|home|main)$/i;
+const linkTo = (target: string): string => {
+	const path = target.replace(/\.md$/i, "");
+	const name = path.split("/").pop() ?? path;
+	return SHARED.test(name) && path.includes("/")
+		? `[[${path}|${path.split("/").slice(-2, -1)[0] ?? name}]]`
+		: `[[${name}]]`;
+};
+
 export const createTarget = (s: Scope): CreateTarget => {
 	let folder: string | null = null;
 	const props: Array<[string, string]> = [];
@@ -22,12 +35,7 @@ export const createTarget = (s: Scope): CreateTarget => {
 	for (const r of s.rules) {
 		if (r.kind === "folder") folder ??= r.path;
 		else if (r.kind === "tag") tags.push(r.tag);
-		else
-			props.push(
-				"target" in r
-					? [r.key, `[[${(r.target.split("/").pop() ?? r.target).replace(/\.md$/i, "")}]]`]
-					: [r.key, r.value],
-			);
+		else props.push("target" in r ? [r.key, linkTo(r.target)] : [r.key, r.value]);
 	}
 	const prop = props[0] ?? null;
 	const tag = prop ? null : (tags[0] ?? null);

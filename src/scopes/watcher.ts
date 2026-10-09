@@ -62,7 +62,8 @@ export class ScopeWatcher {
 				this.h.scopes().flatMap((s) => (s.origins ?? []).map((o) => `${o.signal}|${o.at}`)),
 			);
 			const known = (o: { signal: string; at: string }): boolean => accepted.has(`${o.signal}|${o.at}`);
-			const fresh = items.filter((i) => i.state === "new" && i.proposal?.ticked);
+			// The item's tick, not the proposal's: one you turned down before is not new to you.
+			const fresh = items.filter((i) => i.state === "new" && i.ticked);
 			if (this.h.mode() === "add") {
 				const auto = fresh.filter((i) => i.proposal?.origins.some(known));
 				if (auto.length) {
