@@ -16,6 +16,7 @@ import { STEM_LANGUAGES } from "./engine/stem";
 import { clearIndex, rebuild, statusNow } from "./index-status";
 import { createGeneratePage } from "./settings/generate-page";
 import { pickFolder } from "./settings/rule-pickers";
+import { MeaningConfirm, meaningGroup } from "./settings/meaning-settings";
 import { type ScopesHost, scopesPage } from "./settings/scopes-page";
 import type JetSearchPlugin from "./main";
 
@@ -101,6 +102,12 @@ export class JetSettingTab extends PluginSettingTab {
 					},
 				],
 			},
+			meaningGroup(
+				this.owner.meaning,
+				() => this.owner.feeder.meaningProgress,
+				() => this.owner.app.vault.getMarkdownFiles().length,
+				() => this.redraw(),
+			),
 			{
 				type: "group",
 				heading: "Word forms",
@@ -140,6 +147,8 @@ export class JetSettingTab extends PluginSettingTab {
 		if (scope) return scope.field === "mode" ? scope.s.mode : scope.s.combine;
 		if (key === "scopesWhenNew") return s.scopesWhenNew;
 		if (key === "scopeMode") return s.scopeMode;
+		if (key === "meaning") return s.meaning && this.owner.meaning.installed();
+		if (key === "meaningQuestions") return s.meaningQuestions;
 		if (key.startsWith(STEM)) return s.stemming.includes(key.slice(STEM.length));
 		switch (key) {
 			case "doubleShift":
@@ -176,6 +185,21 @@ export class JetSettingTab extends PluginSettingTab {
 			}
 			this.owner.save();
 			this.redraw();
+			return;
+		}
+		if (key === "meaning") {
+			const m = this.owner.meaning;
+			if (value === true && !m.installed()) {
+				// Nothing is fetched before you confirm.
+				new MeaningConfirm(this.app, m, this.app.vault.getMarkdownFiles().length, () => this.redraw()).open();
+				return;
+			}
+			void m.set(value === true).then(() => this.redraw());
+			return;
+		}
+		if (key === "meaningQuestions") {
+			s.meaningQuestions = value === true;
+			this.owner.save();
 			return;
 		}
 		if (key === "scopeMode") {

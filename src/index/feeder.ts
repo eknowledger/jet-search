@@ -24,6 +24,11 @@ export class Feeder {
 	private flushTimer: number | null = null;
 	private typingTimer: number | null = null;
 	progress: Progress = null;
+	/** Search by meaning's packed model while it is on; null: off. Read when the worker opens. */
+	meaningModel: (() => Promise<ArrayBuffer | null>) | null = null;
+	/** Notes given vectors so far, while that runs (settings show it). */
+	meaningProgress: Progress = null;
+	onMeaningProgress: (() => void) | null = null;
 	/** Called when the build makes progress or ends (the modal's status). */
 	onProgress: (() => void) | null = null;
 	/** Called once a build or catch-up finished: the index is current. */
@@ -68,10 +73,51 @@ export class Feeder {
 			vaultId: this.vaultId,
 			stemming: [...this.stemming()],
 		});
+		// Meaning first, so the build and the catch-up give the notes they send their vectors too.
+		const meaning = await this.loadMeaning();
 		if (loaded) await this.catchUp();
 		else await this.build();
 		this.live = true;
 		this.onReady?.();
+		if (meaning) await this.embedMissing();
+	}
+
+	/** Send the model to the worker, if meaning is on and installed. */
+	private async loadMeaning(): Promise<boolean> {
+		const buf = (await this.meaningModel?.()) ?? null;
+		if (!buf) return false;
+		await this.client.call({ op: "meaning:load", buf, model: "potion-base-8M" }, [buf]);
+		return true;
+	}
+
+	/**
+	 * Meaning turned on while Jet runs: the model to the worker, then vectors for every note.
+	 * Off: the worker drops them; `forget` deletes the saved vectors too.
+	 */
+	async meaningChanged(on: boolean, forget = false): Promise<void> {
+		if (!this.client.running || !this.live) return;
+		if (!on) {
+			await this.client.call({ op: "meaning:off", forget });
+			return;
+		}
+		if (await this.loadMeaning()) await this.embedMissing();
+	}
+
+	/** Vectors for notes that lack one or whose vector is older than the note, in batches, with progress. */
+	async embedMissing(): Promise<void> {
+		const missing = await this.client.call({ op: "meaning:missing" });
+		if (!missing.length) return;
+		const files = missing.map((p) => this.app.vault.getFileByPath(p)).filter((f): f is TFile => !!f);
+		const inbound = inboundCounts(this.app);
+		this.meaningProgress = { done: 0, total: files.length };
+		this.onMeaningProgress?.();
+		for (let i = 0; i < files.length; i += BATCH) {
+			await this.client.call({ op: "meaning:embed", notes: await this.read(files.slice(i, i + BATCH), inbound) });
+			this.meaningProgress = { done: Math.min(files.length, i + BATCH), total: files.length };
+			this.onMeaningProgress?.();
+		}
+		this.meaningProgress = null;
+		this.onMeaningProgress?.();
 	}
 
 	/** The first build: newest notes first, so recent work is searchable soonest. */

@@ -1,5 +1,5 @@
 import code from "worker:./jet-worker";
-import type { Answer, QueryReply, Reply, Request } from "./protocol";
+import type { Answer, NearReply, QueryReply, Reply, Request } from "./protocol";
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -45,6 +45,16 @@ export class JetClient {
 			allow: opts.allow,
 			scope: opts.scope,
 		});
+		return r.stale || r.seq !== this.seq ? null : r;
+	}
+
+	/** The notes nearest a question; null if a newer query or question was asked meanwhile. */
+	async nearest(
+		text: string,
+		opts: { k?: number; allow?: string[]; scope?: string } = {},
+	): Promise<NearReply | null> {
+		const seq = ++this.seq;
+		const r = await this.call({ op: "nearest", seq, text, k: opts.k ?? 50, allow: opts.allow, scope: opts.scope });
 		return r.stale || r.seq !== this.seq ? null : r;
 	}
 

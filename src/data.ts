@@ -34,6 +34,9 @@ export type JetSettings = {
 	scopesWhenNew: "tell" | "add" | "nothing";
 	/** How typing a name behaves for every scope that did not choose its own. */
 	scopeMode: OwnMode;
+	/** Search by meaning: off by default; questions use it by themselves when on. */
+	meaning: boolean;
+	meaningQuestions: boolean;
 	/** Reopen with the last scope and filters (off by default). */
 	persistFilters: boolean;
 };
@@ -48,6 +51,8 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	stemming: ["en"],
 	scopesWhenNew: "tell",
 	scopeMode: "suggest",
+	meaning: false,
+	meaningQuestions: true,
 	persistFilters: false,
 };
 
@@ -68,6 +73,8 @@ export type JetData = {
 	last: { scope?: string; filters: Filter[] } | null;
 	/** Settings imported from other plugins, once each ("jade-search"). */
 	imported: string[];
+	/** The installed meaning model: its id and the packed file's size; null: not installed. */
+	meaningModel: { id: string; bytes: number } | null;
 };
 
 const HALF_LIFE = 30 * 86_400_000;
@@ -90,6 +97,8 @@ export const normalizeData = (raw: unknown): JetData => {
 		stemming: Array.isArray(s.stemming) ? s.stemming.filter((x): x is string => typeof x === "string") : ["en"],
 		scopesWhenNew: s.scopesWhenNew === "add" || s.scopesWhenNew === "nothing" ? s.scopesWhenNew : "tell",
 		scopeMode: s.scopeMode === "auto" || s.scopeMode === "in-only" ? s.scopeMode : "suggest",
+		meaning: s.meaning === true,
+		meaningQuestions: s.meaningQuestions !== false,
 		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
 	};
 	const scopeUses: Record<string, number> = {};
@@ -123,6 +132,10 @@ export const normalizeData = (raw: unknown): JetData => {
 		scopeUses,
 		last,
 		imported: Array.isArray(r.imported) ? r.imported.filter((x): x is string => typeof x === "string") : [],
+		meaningModel:
+			r.meaningModel && typeof r.meaningModel === "object" && typeof r.meaningModel.id === "string"
+				? { id: r.meaningModel.id, bytes: Number(r.meaningModel.bytes) || 0 }
+				: null,
 	};
 };
 

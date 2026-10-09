@@ -113,9 +113,12 @@ describe("settings tab", () => {
 			"Open",
 			undefined,
 			"Results",
+			"Search by meaning",
 			"Word forms",
 			"Index",
 		]);
+		// Off by default: only its switch.
+		expect(flat(defs).filter((d) => d.name === "Search by meaning").length).toBe(1);
 		const names = flat(defs).map((d) => d.name);
 		expect(names).toContain("Open with a double tap of ⇧");
 		expect(flat(defs).some((d) => d.name === "Folders to leave out" && d.type === "page")).toBe(true);

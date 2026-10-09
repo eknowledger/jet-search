@@ -564,14 +564,18 @@ export class JetHost implements ModalHost {
 		paint: (entries: Entry[], status?: string) => void,
 		scope?: string,
 		filters: readonly Filter[] = [],
+		meaning?: { on: boolean; offered: boolean },
 	): void {
 		if (!text.trim() && !filters.length) {
 			paint(scope !== undefined ? this.scopeRecents(scope) : this.recents());
 			this.search().warm();
 			return;
 		}
-		this.search().list(text, paint, scope, filters);
+		this.search().list(text, paint, scope, filters, meaning);
 	}
+
+	/** Search by meaning, set by the plugin: available while it is on and its model is installed. */
+	meaning?: ModalHost["meaning"];
 
 	/** The last scope and filters, when "Persist filters" is on. */
 	restore(): { scope?: ScopeView; filters: Filter[] } | null {

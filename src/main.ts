@@ -4,6 +4,7 @@ import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
 import { JadeLink } from "./jade-link";
 import { withModes } from "./scopes/model";
+import { Meaning } from "./meaning/control";
 import { importJadeSearch } from "./migrate";
 import { Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
@@ -52,6 +53,8 @@ export default class JetSearchPlugin extends Plugin {
 	readonly client = new JetClient();
 	feeder!: Feeder;
 	search!: Search;
+	/** Search by meaning. */
+	meaning!: Meaning;
 	scopes!: ScopeKeeper;
 	/** The notes each filter keeps, from the metadata cache. */
 	readonly filterSets = new FilterSets(this.app);
@@ -162,6 +165,17 @@ export default class JetSearchPlugin extends Plugin {
 			this.filterSets,
 		);
 		this.host.inNote = () => this.openInNote("");
+		this.meaning = new Meaning(
+			this.app,
+			this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
+			() => this.data,
+			() => this.save(),
+			this.feeder,
+		);
+		this.host.meaning = {
+			available: () => this.meaning.available(),
+			questions: () => this.data.settings.meaningQuestions,
+		};
 		this.host.manageScopes = () => {
 			this.modal?.close();
 			openSettingsAt(this.app, this.manifest.id, ["Scopes"]);
@@ -170,6 +184,25 @@ export default class JetSearchPlugin extends Plugin {
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
 		this.settingTab = new JetSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
+		// Search by meaning's progress in its settings, while they are on screen (at most twice a second).
+		let last = 0;
+		let later: number | null = null;
+		const show = (): void => {
+			if (!this.settingTab.containerEl.isConnected) return;
+			const wait = 500 - (Date.now() - last);
+			if (wait > 0) {
+				later ??= window.setTimeout(() => {
+					later = null;
+					show();
+				}, wait);
+				return;
+			}
+			last = Date.now();
+			this.settingTab.refresh();
+		};
+		this.meaning.onChange = show;
+		this.feeder.onMeaningProgress = show;
+		this.register(() => later !== null && window.clearTimeout(later));
 		// Jade's search module steps aside while Jet is on, and comes back when it goes.
 		// Said before listen(): Jade frees the Omnisearch ids on its next tick, then Jet takes them.
 		this.app.workspace.trigger("jet-search:on");

@@ -1461,3 +1461,46 @@
 .jet-clear.is-hidden {
 	display: none;
 }
+
+/* Search by meaning */
+.jet-mode {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	margin-left: auto;
+	margin-right: 8px;
+	padding: 2px 7px;
+	border-radius: 5px;
+	font-weight: 500;
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+}
+
+.jet-mode:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.jet-modei .svg-icon {
+	width: 13px;
+	height: 13px;
+}
+
+.jet-mode kbd {
+	font-size: 10px;
+	padding: 0 4px;
+	border-radius: 3px;
+	background: var(--background-modifier-hover);
+	border: 1px solid var(--background-modifier-border);
+}
+
+.jet-sort + .jet-mode {
+	margin-left: 0;
+}
+
+.jet-bdg.is-meaning {
+	background: hsla(var(--interactive-accent-hsl), 0.1);
+	border-color: hsla(var(--interactive-accent-hsl), 0.35);
+	color: var(--interactive-accent);
+}

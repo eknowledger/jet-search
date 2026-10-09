@@ -9,6 +9,7 @@ import type { Filter } from "./filters/filter";
 import type { Entry } from "./modal/jet-modal";
 import { type MetaField, type MetaHit, MetaIndex, type MetaNote } from "./tier0/meta";
 import { type NameHit, NameIndex } from "./tier0/names";
+import { contentWords } from "./meaning/question";
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
 
@@ -45,6 +46,16 @@ export const wantsCoreSearch = (text: string): boolean => CORE_ONLY.test(text);
 const FILTERED_LIST = 50;
 type Shown = NonNullable<Item["excerpt"]> & { offset: number; reason?: string };
 
+/** A note's first line of prose (no headings, properties or empty lines), for a meaning row with none of the words. */
+const firstLine = (body: string): string | null => {
+	for (const raw of body.replace(/^---\n[\s\S]*?\n---\n?/, "").split("\n")) {
+		const l = raw.trim();
+		if (!l || /^(#|---|```|>\s*\[!|!\[|\|)/.test(l)) continue;
+		return l.length > 160 ? `${l.slice(0, 157)}…` : l;
+	}
+	return null;
+};
+
 /** Titles shown above the text hits for a name-like query. */
 const MAX_TITLES = 8;
 /** Excerpts are cut for this many content rows (the visible ones and a little more). */
@@ -74,6 +85,7 @@ export class Search {
 		paint: (entries: Entry[], status?: string) => void;
 		scope?: string;
 		filters?: readonly Filter[];
+		meaning?: { on: boolean; offered: boolean };
 	} | null = null;
 
 	constructor(
@@ -94,8 +106,9 @@ export class Search {
 		paint: (entries: Entry[], status?: string) => void,
 		scope?: string,
 		filters: readonly Filter[] = [],
+		meaning?: { on: boolean; offered: boolean },
 	): void {
-		this.current = { text, paint, scope, filters };
+		this.current = { text, paint, scope, filters, meaning };
 		this.why = { scope, filters };
 		let inScope: ReadonlySet<string> | null = null;
 		if (scope !== undefined && this.scopes) {
@@ -125,7 +138,13 @@ export class Search {
 		});
 		const meta = this.metaHits(text, allowed);
 		const now = Date.now();
-		paint(this.compose(tier0, null, now, new Map(), meta), this.status());
+		// Search by meaning: its own list, never merged with words.
+		if (meaning?.on && !titleOnly) {
+			this.byMeaning(text, paint, scope, narrowed, now);
+			return;
+		}
+		const words = this.compose(tier0, null, now, new Map(), meta);
+		paint(meaning?.offered ? this.offerMeaning(words) : words, this.status());
 		if (titleOnly) return;
 		void (async () => {
 			try {
@@ -148,16 +167,17 @@ export class Search {
 				if (this.current?.text !== text) return;
 				reply = { ...reply, hits };
 			}
+			const offer = (e: Entry[]): Entry[] => (meaning?.offered ? this.offerMeaning(e) : e);
 			const first = this.compose(tier0, reply, now, new Map(), meta);
 			if (!first.length) {
-				paint(await this.recovery(text, scope), this.status());
+				paint(offer(await this.recovery(text, scope)), this.status());
 				return;
 			}
-			paint(first, this.status());
+			paint(offer(first), this.status());
 			// Excerpts for the rows people see, cut from Obsidian's cached text, unless turned off.
 			if (!this.data().settings.excerpts) return;
 			const excerpts = await this.excerpts(first, reply.terms, typedWords(text));
-			if (excerpts.size) paint(this.compose(tier0, reply, now, excerpts, meta), this.status());
+			if (excerpts.size) paint(offer(this.compose(tier0, reply, now, excerpts, meta)), this.status());
 		})().catch((e: unknown) => console.error("Jet Search: search failed", e));
 	}
 
@@ -180,7 +200,89 @@ export class Search {
 	/** Notes changed while the modal is open: run its text again (the selection stays). */
 	refresh(): void {
 		const c = this.current;
-		if (c?.text.trim() || c?.filters?.length) this.list(c.text, c.paint, c.scope, c.filters);
+		if (c?.text.trim() || c?.filters?.length) this.list(c.text, c.paint, c.scope, c.filters, c.meaning);
+	}
+
+	/** A question searched by words: the first header offers By meaning (⌘J). */
+	private offerMeaning(entries: Entry[]): Entry[] {
+		const i = entries.findIndex((e) => e.type === "header" && !e.plain);
+		const h = entries[i];
+		return h?.type === "header" ? entries.map((e, j) => (j === i ? { ...h, mode: "words" as const } : e)) : entries;
+	}
+
+	/**
+	 * By meaning: the notes nearest the question, each with a "by meaning" badge, and
+	 * as its excerpt the line with most of the question's words, else the note's first line.
+	 */
+	private byMeaning(
+		text: string,
+		paint: (entries: Entry[], status?: string) => void,
+		scope: string | undefined,
+		narrowed: Set<string> | null,
+		now: number,
+	): void {
+		const head = (n: number): Entry => ({ type: "header", label: "By meaning", count: n, mode: "meaning" });
+		paint([head(0)], this.status());
+		void (async () => {
+			try {
+				await this.feeder.ensure();
+			} catch (e) {
+				console.error("Jet Search: the index could not be opened", e);
+				return;
+			}
+			const r = await this.client.nearest(text, {
+				k: 50,
+				scope: narrowed ? undefined : scope,
+				allow: narrowed ? [...narrowed] : undefined,
+			});
+			if (!r || this.current?.text !== text) return;
+			const rows = (excerpts: Map<string, Shown>): Entry[] => {
+				const items: Item[] = [];
+				for (const n of r.near) {
+					const file = this.app.vault.getFileByPath(n.path);
+					if (!file) continue;
+					const ex = excerpts.get(n.path);
+					items.push(
+						this.item(file, now, {
+							badge: "by meaning",
+							meaning: true,
+							excerpt: ex ? { text: ex.text, marks: ex.marks, more: 0 } : null,
+							hit: { terms: [] },
+						}),
+					);
+				}
+				return items.length
+					? [head(items.length), ...items]
+					: [{ type: "notice", title: `Nothing near “${text.trim()}” yet` }, ...this.wordsInstead()];
+			};
+			const first = rows(new Map());
+			paint(first, this.status());
+			if (!this.data().settings.excerpts) return;
+			const words = contentWords(text);
+			const ex = new Map<string, Shown>();
+			await Promise.all(
+				first
+					.filter((e): e is Item => e.type === "item")
+					.slice(0, EXCERPT_ROWS)
+					.map(async (it) => {
+						const file = this.app.vault.getFileByPath(it.path);
+						if (!file) return;
+						const body = withoutTitleLine(await this.app.vault.cachedRead(file), it.title);
+						const cut = words.length ? cutExcerpt(body, words, { exact: words }) : null;
+						if (cut) ex.set(it.path, { text: cut.text, marks: cut.marks, more: 0, offset: cut.offset });
+						else {
+							const line = firstLine(body);
+							if (line) ex.set(it.path, { text: line, marks: [], more: 0, offset: 0 });
+						}
+					}),
+			);
+			if (this.current?.text === text) paint(rows(ex), this.status());
+		})().catch((e: unknown) => console.error("Jet Search: search by meaning failed", e));
+	}
+
+	/** Nothing by meaning: the same words searched as words is one key away. */
+	private wordsInstead(): Entry[] {
+		return [{ type: "header", label: "Try instead", plain: true, mode: "meaning" }];
 	}
 
 	/** Filters with no text: the notes they keep, most recently changed first. */
