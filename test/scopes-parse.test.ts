@@ -109,6 +109,20 @@ describe("typing a scope", () => {
 		expect(parseScope("@amberstudio plugin", SCOPES).text).toBe("plugin");
 	});
 
+	it("@ or in: with the start of one scope's name applies it once a space follows (@cob)", () => {
+		const p = parseScope("@cobl world", SCOPES);
+		expect(p.applied?.id).toBe("cobalt");
+		expect(p).toMatchObject({ text: "world", complete: true });
+		expect(parseScope("in:haz notes", SCOPES).applied?.id).toBe("auto");
+		expect(parseScope("@caf menu", SCOPES).applied?.id).toBe("cafe");
+		// Still being typed: not yet.
+		expect(parseScope("@cobl", SCOPES).complete).toBe(false);
+		// The start of several names (AMB, Amber Studio ×2): nothing applies.
+		expect(parseScope("@am plugin", SCOPES).applied).toBeUndefined();
+		// An exact name wins over longer names that start with it.
+		expect(parseScope("@amb plugin", SCOPES).applied?.id).toBe("amb");
+	});
+
 	it("an unknown explicit name, an email or a mid-word @ stay text", () => {
 		expect(parseScope("in:nowhere world", SCOPES)).toEqual({ text: "in:nowhere world" });
 		expect(parseScope("mail ana@cobalt.example", SCOPES)).toEqual({ text: "mail ana@cobalt.example" });

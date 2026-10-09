@@ -102,7 +102,7 @@ describe("filters as chips", () => {
 		expect($(".jet-hscope")?.textContent).toBe("· 2 filters");
 	});
 
-	it("⌫ at the start selects the last chip, again removes it and puts it back as text at the end, unfinished", () => {
+	it("⌫ at the start selects the last chip, again removes it (it must go, not come back as text)", () => {
 		const { host, lists } = fakeHost();
 		const m = new JetModal(new App() as never, host);
 		m.open();
@@ -115,8 +115,24 @@ describe("filters as chips", () => {
 		expect($(".jet-fchip")?.hasClass("is-selected")).toBe(true);
 		press(m, "Backspace");
 		expect(chips()).toEqual([]);
-		expect(m.inputEl.value).toBe("world status:draft");
+		expect(m.inputEl.value).toBe("world");
 		expect(lists.at(-1)).toEqual(["world", "cobalt", []]);
+	});
+
+	it("a quoted filter goes too, and the next ⌫ pair takes the one before it", () => {
+		const { host } = fakeHost();
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		type(m, 'status:draft type:"ai note" ');
+		expect(chips()).toEqual(["statusdraft", "typeai note"]);
+		m.inputEl.setSelectionRange(0, 0);
+		press(m, "Backspace");
+		press(m, "Backspace");
+		expect(chips()).toEqual(["statusdraft"]);
+		expect(m.inputEl.value).toBe("");
+		press(m, "Backspace");
+		press(m, "Backspace");
+		expect(chips()).toEqual([]);
 	});
 
 	it("⌘F shows the bar: Edited, Type, Tags, In, Title only and Clear", () => {

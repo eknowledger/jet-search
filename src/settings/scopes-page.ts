@@ -15,7 +15,7 @@ import {
 	type SettingPage,
 } from "obsidian";
 import { closeSettingPage } from "../internals";
-import { autoOffer } from "../scopes/auto";
+import { autoRisk } from "../scopes/auto";
 import { type Mode, type Rule, type Scope, scopeId } from "../scopes/model";
 import { pickFolder, pickProperty, pickTag } from "./rule-pickers";
 
@@ -178,21 +178,18 @@ const textOnBlur = (row: Setting, value: string, save: (v: string) => void): voi
  */
 export const whenTyped = (h: ScopesHost, s: Scope): SettingDefinition => {
 	const m = h.mentions(s.id);
-	const offer = autoOffer(s.name, m ? m.value : null);
+	const risk = autoRisk(m ? m.value : null);
 	const why = !m
 		? `Checking how often “${s.name}” is written outside it…`
-		: `“${s.name}” is written in ${plural(m.outside)} outside it (${m.value.toFixed(1)} per note in it): ` +
-			(offer === "any"
-				? "Auto is safe."
-				: offer === "case"
-					? `Auto applies only when typed as “${s.name}”.`
-					: "too common for Auto, so it stays Suggest.");
-	const options: Record<string, string> = { suggest: "Suggest" };
-	if (offer !== "no" || s.mode === "auto") options.auto = offer === "case" ? `Auto (as “${s.name}”)` : "Auto";
-	options["in-only"] = "in: only";
+		: risk === "common"
+			? `Careful with Auto: “${s.name}” is written in ${plural(m.outside)} outside it, so ordinary searches with that word would be scoped.`
+			: `“${s.name}” is rare outside it (${plural(m.outside)}): Auto is safe.`;
+	const options: Record<string, string> = { suggest: "Suggest", auto: "Auto", "in-only": "in: only" };
 	return {
 		name: "When typed",
-		desc: `Suggest: ⇥ accepts. Auto: applied at once. in: only: only in:${s.name} or @${s.name}. ${why}`,
+		desc:
+			`Suggest: ⇥ accepts. Auto: applied as soon as the name or an alias is followed by a space, in any casing (⌫ right after undoes it). ` +
+			`in: only: only in:${s.name} or @${s.name}. ${why}`,
 		control: { type: "dropdown", key: `scope:${s.id}:mode`, options },
 	};
 };

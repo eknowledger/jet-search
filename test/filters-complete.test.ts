@@ -46,6 +46,18 @@ describe("fix-it for an unknown key", () => {
 		});
 		expect(findFix("projetc:Cobalt", KEYS, known)?.key).toBe("project");
 		expect(findFix("status:draft", KEYS, known)).toBeNull();
+		// Obsidian Search's own operators are never "fixed" (task:review offered tags:).
+		for (const op of [
+			"task:review",
+			"task-todo:x",
+			"line:foo",
+			"section:bar",
+			"block:baz",
+			"file:x",
+			"content:y",
+			"match-case:z",
+		])
+			expect(findFix(op, [...KEYS, ["tags", 829]], known)).toBeNull();
 		expect(findFix("tpye:x", KEYS, known)?.key).toBe("type");
 		expect(findFix("typ:x", KEYS, known)).toBeNull();
 		expect(findFix("https://example.com", KEYS, known)).toBeNull();

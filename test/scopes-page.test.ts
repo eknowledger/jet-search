@@ -111,25 +111,23 @@ describe("folders to leave out as a page", () => {
 	});
 });
 
-describe("When typed: Auto offered by ambiguity", () => {
+describe("When typed: Auto always offered, with a warning for a common name", () => {
 	const s = (name: string, mode: "suggest" | "auto" = "suggest") =>
 		({ id: "x", name, aliases: [], kind: "", rules: [], combine: "any", mode, source: "manual" }) as const;
 	const host = (m: { value: number; outside: number } | null) => ({ mentions: () => m }) as never;
 	const options = (d: ReturnType<typeof whenTyped>) => Object.keys((d.control as { options: object }).options);
 
-	it("a rare name: Auto, and the page says why", () => {
+	it("a rare name: Auto, and the page says it is safe", () => {
 		const d = whenTyped(host({ value: 0.5, outside: 27 }), { ...s("Cobalt"), aliases: [] });
 		expect(options(d)).toEqual(["suggest", "auto", "in-only"]);
-		expect(d.desc).toContain("27 notes outside it (0.5 per note in it): Auto is safe.");
+		expect(d.desc).toContain("“Cobalt” is rare outside it (27 notes): Auto is safe.");
+		expect(d.desc).toContain("in any casing");
 	});
 
-	it("a common word: no Auto; capitals inside: only as written; not measured yet: checking", () => {
-		expect(options(whenTyped(host({ value: 20.8, outside: 623 }), { ...s("Team"), aliases: [] }))).toEqual([
-			"suggest",
-			"in-only",
-		]);
-		const ask = whenTyped(host({ value: 2.9, outside: 315 }), { ...s("OKR"), aliases: [] });
-		expect((ask.control as { options: Record<string, string> }).options.auto).toBe("Auto (as “OKR”)");
+	it("a common word: Auto still offered, with a warning; not measured yet: checking", () => {
+		const team = whenTyped(host({ value: 20.8, outside: 623 }), { ...s("Team"), aliases: [] });
+		expect(options(team)).toEqual(["suggest", "auto", "in-only"]);
+		expect(team.desc).toContain("Careful with Auto: “Team” is written in 623 notes outside it");
 		expect(whenTyped(host(null), { ...s("Cobalt"), aliases: [] }).desc).toContain("Checking how often");
 	});
 });

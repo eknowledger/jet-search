@@ -2,7 +2,7 @@
  * Typing a scope, pure. A scope's name or alias anywhere
  * in the text, with other words around it, is a suggestion: the results stay unscoped until Tab. The
  * name alone is a normal search with a hint. `in:name` and `@name` anywhere apply the scope, whatever
- * its mode. Names match folded (case, accents, `-` `_` `.` as spaces), longest first; quoted words never.
+ * its mode; so does the start of one scope's name or alias (`@cob`). Names match folded (case, accents, `-` `_` `.` as spaces), longest first; quoted words never.
  */
 import type { Scope } from "./model";
 import { compact, fold } from "./names";
@@ -57,7 +57,12 @@ export const parseScope = (input: string, scopes: readonly Scope[]): Parsed => {
 	const explicit = EXPLICIT.exec(input);
 	if (explicit) {
 		const key = compact(explicit[2] ?? explicit[3] ?? "");
-		const s = key ? scopes.find((x) => [x.name, ...x.aliases].some((n) => compact(n) === key)) : undefined;
+		const names = (x: Scope): string[] => [x.name, ...x.aliases].map(compact);
+		// The name or an alias; else the start of exactly one scope's name or alias (`@cob` → Cobalt).
+		const starts = key ? scopes.filter((x) => names(x).some((n) => n.startsWith(key))) : [];
+		const s = key
+			? (scopes.find((x) => names(x).includes(key)) ?? (starts.length === 1 ? starts[0] : undefined))
+			: undefined;
 		if (s) {
 			const end = explicit.index + explicit[0].length;
 			const text = `${input.slice(0, explicit.index)}${explicit[1] ?? ""}${input.slice(end)}`;

@@ -1,5 +1,5 @@
 import { type App, Menu, Modal, setIcon } from "obsidian";
-import { type Filter, filterLabel, filterText, type Found, sameFilter, withoutPieces } from "../filters/filter";
+import { type Filter, filterLabel, type Found, sameFilter, withoutPieces } from "../filters/filter";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
@@ -1322,13 +1322,9 @@ export class JetModal extends Modal {
 					this.drawFilters();
 					return false;
 				}
-				const f = this.filters.pop() as Filter;
+				// Removed, as a chip's × does (putting it back as text re-made a quoted one at once).
+				this.filters.pop();
 				this.filterSel = false;
-				// Back as text at the end, unfinished, so you can change it (it is not a chip again until a space).
-				const t = filterText(f);
-				const v = this.inputEl.value;
-				if (t) this.inputEl.value = v ? `${v} ${t}` : t;
-				this.inputEl.setSelectionRange(this.inputEl.value.length, this.inputEl.value.length);
 				this.refresh();
 				return false;
 			}

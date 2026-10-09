@@ -69,6 +69,29 @@ export type Fix = { from: number; to: number; wrong: string; key: string; value:
  * An unknown `key:value` whose key is two edits or fewer from a key your notes use:
  * the nearest, then the most used. Short keys (under 4 letters) are never fixed: too many neighbours.
  */
+/** Keys never "fixed": Jet's own, links, and Obsidian Search's operators (`task:` is not a misspelt `tags:`). */
+const OWN = new Set([
+	"in",
+	"tag",
+	"path",
+	"edited",
+	"created",
+	"links",
+	"has",
+	"http",
+	"https",
+	"file",
+	"content",
+	"line",
+	"block",
+	"section",
+	"task",
+	"task-todo",
+	"task-done",
+	"match-case",
+	"ignore-case",
+]);
+
 export const findFix = (
 	text: string,
 	keys: ReadonlyArray<readonly [name: string, notes: number]>,
@@ -77,12 +100,7 @@ export const findFix = (
 	for (const m of text.matchAll(/(^|\s)([^\s:"[\]#@]+):("[^"]*"?|[^\s]+)/gu)) {
 		const wrong = m[2] ?? "";
 		const k = wrong.toLowerCase();
-		if (
-			wrong.length < 4 ||
-			known(wrong) ||
-			["in", "tag", "path", "edited", "created", "links", "has", "http", "https"].includes(k)
-		)
-			continue;
+		if (wrong.length < 4 || known(wrong) || OWN.has(k.replace(/^-/, ""))) continue;
 		let best: { key: string; d: number; n: number } | null = null;
 		for (const [name, n] of keys) {
 			const d = editDistance(k, name.toLowerCase(), 2);

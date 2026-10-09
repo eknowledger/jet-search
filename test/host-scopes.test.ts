@@ -142,15 +142,16 @@ describe("the host's scopes", () => {
 		expect(edited).toEqual(["cobalt"]);
 	});
 
-	it("Auto applies at once for a rare name in any casing; unmeasured, only as written (and it gets measured)", () => {
-		const bridge: Scope = { ...COBALT, id: "bridge", name: "Moonbridge", aliases: [], mode: "auto" };
-		const { host, measured, amb } = setup([bridge, STUDIO]);
-		expect(host.scopes?.typed("moonbridge invoices")?.auto).toBeUndefined();
-		expect(host.scopes?.typed("Moonbridge invoices")?.auto).toBe(true);
-		expect(measured).toContain("bridge");
-		amb.set("bridge", 0.4);
+	it("Auto applies for the name or an alias in any casing, measured or not, common or not", () => {
+		const bridge: Scope = { ...COBALT, id: "bridge", name: "Moonbridge", aliases: ["mb"], mode: "auto" };
+		const { host, amb } = setup([bridge, STUDIO]);
 		expect(host.scopes?.typed("moonbridge invoices")?.auto).toBe(true);
-		expect(host.scopes?.typed("moonbridge")?.auto).toBe(true);
+		expect(host.scopes?.typed("Moonbridge invoices")?.auto).toBe(true);
+		expect(host.scopes?.typed("MB invoices")?.auto).toBe(true);
+		expect(host.scopes?.typed("mb")?.auto).toBe(true);
+		amb.set("bridge", 9);
+		expect(host.scopes?.typed("mb invoices")?.auto).toBe(true);
+		expect(host.scopes?.typed("Amber Studio invoices")?.auto).toBeUndefined();
 	});
 
 	it("scopes of one name are listed biggest first, and never apply by themselves", () => {

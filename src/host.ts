@@ -16,7 +16,6 @@ import { findFix, pieceAt, wantOf } from "./filters/complete";
 import { type Filter, filterLabel, filterText, findFilters, withoutPieces } from "./filters/filter";
 import type { FilterSets } from "./filters/sets";
 import type { Rule, Scope } from "./scopes/model";
-import { autoApplies } from "./scopes/auto";
 import { createTarget } from "./scopes/create";
 import { fold } from "./scopes/names";
 import { parseScope } from "./scopes/parse";
@@ -411,21 +410,16 @@ export class JetHost implements ModalHost {
 				},
 			};
 			// A name two scopes share never applies by itself.
-			if (!others.length && this.autoFor(a, first, p.suggest.name)) t.auto = true;
+			if (!others.length && this.autoFor(first)) t.auto = true;
 			return t;
 		}
 		if (!p.hint) return {};
-		const typedName = text.trim();
-		return this.autoFor(a, p.hint, typedName) ? { hint: view(p.hint), auto: true } : { hint: view(p.hint) };
+		return this.autoFor(p.hint) ? { hint: view(p.hint), auto: true } : { hint: view(p.hint) };
 	}
 
-	/** Whether an Auto scope applies at once for the name as typed. */
-	private autoFor(a: HostScopes, s: Scope, typed: string): boolean {
-		if (s.mode !== "auto") return false;
-		const amb = a.ambiguity(s.id);
-		if (amb === null) a.measure(s.id);
-		const written = [s.name, ...s.aliases].find((n) => fold(n) === fold(typed)) ?? s.name;
-		return autoApplies(written, typed, amb);
+	/** Whether a scope applies at once for its name or alias as typed: when you set it to Auto, in any casing. */
+	private autoFor(s: Scope): boolean {
+		return s.mode === "auto";
 	}
 
 	private card(a: HostScopes, id: string): ScopeCard {
