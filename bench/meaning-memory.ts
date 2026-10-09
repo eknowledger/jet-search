@@ -17,10 +17,10 @@ const heap = (): number => {
 const mb = (b: number): string => `${(b / 1e6).toFixed(1)} MB`;
 
 const st = readFileSync(
-	process.env.JET_MODEL ?? "models/static/minishlab__potion-base-8M/model.safetensors",
+	process.env.JET_MODEL ?? `${process.env.HOME}/.cache/jet-search/models/potion-base-8M/model.safetensors`,
 );
 const tok = readFileSync(
-	process.env.JET_TOKENIZER ?? "models/minishlab/potion-base-8M/tokenizer.json",
+	process.env.JET_TOKENIZER ?? `${process.env.HOME}/.cache/jet-search/models/potion-base-8M/tokenizer.json`,
 	"utf8",
 );
 const packed = packModel(st.buffer.slice(st.byteOffset, st.byteOffset + st.byteLength), tok);
