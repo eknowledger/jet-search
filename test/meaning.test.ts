@@ -140,3 +140,27 @@ describe("a note's text for its vector", () => {
 		expect(t).not.toContain("rm -rf");
 	});
 });
+
+describe("the meaning model's record follows the file", () => {
+	it("a record whose file went is dropped when the worker asks for the model", async () => {
+		const { Meaning } = await import("../src/meaning/control");
+		const data = {
+			settings: { meaning: true },
+			meaningModel: { id: "potion-base-8M", bytes: 1 },
+		} as never as import("../src/data").JetData;
+		const app = { vault: { adapter: { exists: async () => false } } } as never;
+		const feeder = {} as { meaningModel: (() => Promise<ArrayBuffer | null>) | null };
+		let saved = 0;
+		const m = new Meaning(
+			app,
+			"dir",
+			() => data,
+			async () => void saved++,
+			feeder as never,
+		);
+		expect(m.available()).toBe(true);
+		expect(await feeder.meaningModel?.()).toBeNull();
+		expect(m.available()).toBe(false);
+		expect(saved).toBe(1);
+	});
+});

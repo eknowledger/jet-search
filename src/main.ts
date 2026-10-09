@@ -169,7 +169,10 @@ export default class JetSearchPlugin extends Plugin {
 			this.app,
 			this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
 			() => this.data,
-			() => this.save(),
+			async () => {
+				this.save.cancel();
+				await this.saveData(this.data);
+			},
 			this.feeder,
 		);
 		this.host.meaning = {

@@ -18,10 +18,21 @@ export class Meaning {
 		private readonly app: App,
 		private readonly dir: string,
 		private readonly data: () => JetData,
-		private readonly save: () => void,
+		/** Saves at once: installing and removing must not be lost if Obsidian closes right after. */
+		private readonly save: () => Promise<void>,
 		private readonly feeder: Feeder,
 	) {
-		feeder.meaningModel = () => (this.available() ? readModel(this.app, this.dir) : Promise.resolve(null));
+		feeder.meaningModel = async () => {
+			if (!this.available()) return null;
+			const buf = await readModel(this.app, this.dir);
+			// The file went (deleted by hand, a sync): not installed any more; the settings say so.
+			if (!buf) {
+				this.data().meaningModel = null;
+				await this.save();
+				this.onChange?.();
+			}
+			return buf;
+		};
 	}
 
 	/** On, with its model installed. */
@@ -41,7 +52,7 @@ export class Meaning {
 	/** Turn it on or off (on needs the model: the settings ask first). */
 	async set(on: boolean): Promise<void> {
 		this.data().settings.meaning = on;
-		this.save();
+		await this.save();
 		await this.feeder.meaningChanged(on && this.installed());
 		this.onChange?.();
 	}
@@ -73,7 +84,7 @@ export class Meaning {
 		const d = this.data();
 		d.meaningModel = null;
 		d.settings.meaning = false;
-		this.save();
+		await this.save();
 		this.onChange?.();
 	}
 
