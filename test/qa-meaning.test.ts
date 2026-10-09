@@ -467,3 +467,51 @@ describe("the confirm closed (Esc) while downloading", () => {
 		expect(outcomes).toEqual([true]);
 	});
 });
+
+describe("embedding pauses while Obsidian is in the background", () => {
+	it("no batch is sent while the document is hidden; it goes on when it is shown again", async () => {
+		const { app } = vaultWith(NOTES);
+		const router = new Router(() => memoryStore(), timers);
+		const sent: string[] = [];
+		const { client } = clientFor(router, (req) => {
+			sent.push(req.op);
+			return undefined;
+		});
+		const feeder = new Feeder(app as never, client, "v", () => []);
+		feeder.meaningModel = async () => model();
+		await feeder.ensure();
+		let hidden = true;
+		Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+		try {
+			const done = feeder.meaningChanged(true);
+			await sleep(20);
+			expect(sent.filter((op) => op === "meaning:embed")).toHaveLength(0);
+			hidden = false;
+			document.dispatchEvent(new Event("visibilitychange"));
+			await done;
+			expect(sent.filter((op) => op === "meaning:embed").length).toBeGreaterThan(0);
+		} finally {
+			Reflect.deleteProperty(document, "hidden");
+		}
+	});
+});
+
+describe("the first question of a session loads the model once", () => {
+	it("two questions in quick succession send one model and make the vectors once", async () => {
+		const { app } = vaultWith(NOTES);
+		const router = new Router(() => memoryStore(), timers);
+		const sent: string[] = [];
+		const { client } = clientFor(router, (req) => {
+			sent.push(req.op);
+			return undefined;
+		});
+		const feeder = new Feeder(app as never, client, "v", () => []);
+		feeder.meaningModel = async () => model();
+		await feeder.ensure();
+		const [a, b] = await Promise.all([feeder.ensureMeaning(), feeder.ensureMeaning()]);
+		await sleep(10);
+		expect([a, b]).toEqual([true, true]);
+		expect(sent.filter((op) => op === "meaning:load")).toHaveLength(1);
+		expect(sent.filter((op) => op === "meaning:missing")).toHaveLength(1);
+	});
+});

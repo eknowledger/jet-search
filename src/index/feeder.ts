@@ -4,6 +4,19 @@ import type { JetClient } from "../worker/jet-client";
 import { excluder, gather, inboundCounts } from "./gather";
 import { sliced } from "./slice";
 
+/** Now if the app is in front, else when it comes back (a phone backgrounded, a window minimized). */
+const whenVisible = (): Promise<void> =>
+	typeof document === "undefined" || !document.hidden
+		? Promise.resolve()
+		: new Promise((resolve) => {
+				const seen = (): void => {
+					if (document.hidden) return;
+					document.removeEventListener("visibilitychange", seen);
+					resolve();
+				};
+				document.addEventListener("visibilitychange", seen);
+			});
+
 /** A build or catch-up stopped because the index was cleared or rebuilt meanwhile (not a failure). */
 export class Cancelled extends Error {
 	constructor() {
@@ -134,10 +147,22 @@ export class Feeder {
 	 */
 	async ensureMeaning(): Promise<boolean> {
 		if (this.meaningLoaded) return true;
-		if (!(await this.loadMeaning())) return false;
-		void this.embedMissing().catch((e: unknown) => console.warn("Jet Search: notes could not be given vectors", e));
-		return true;
+		// Two questions in quick succession load the model once, and make the vectors once.
+		this.meaningLoading ??= (async () => {
+			try {
+				if (!(await this.loadMeaning())) return false;
+				void this.embedMissing().catch((e: unknown) =>
+					console.warn("Jet Search: notes could not be given vectors", e),
+				);
+				return true;
+			} finally {
+				this.meaningLoading = null;
+			}
+		})();
+		return this.meaningLoading;
 	}
+
+	private meaningLoading: Promise<boolean> | null = null;
 
 	/**
 	 * Send the model to the worker, if meaning is on and installed. A model file that cannot be read
@@ -206,6 +231,9 @@ export class Feeder {
 		this.onMeaningProgress?.();
 		try {
 			for (let i = 0; i < files.length && gen === this.meaningGen; i += BATCH) {
+				// Paused while Obsidian is in the background, so a hidden app does no work.
+				await whenVisible();
+				if (gen !== this.meaningGen) break;
 				const notes = await this.read(files.slice(i, i + BATCH), inbound);
 				if (gen !== this.meaningGen) break;
 				await this.client.call({ op: "meaning:embed", notes });
