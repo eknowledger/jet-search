@@ -44,16 +44,36 @@ export class ScopeKeeper {
 		return this.sets !== null;
 	}
 
-	/** How many notes one rule takes (the scope page shows it per rule): one pass over the cache. */
+	/** Notes per rule, for every rule of every scope at once (one pass, not one per rule). */
+	private counts: Map<string, number> | null = null;
+
+	/** How many notes one rule takes (the scope page shows it per rule). */
 	ruleCount(r: Rule): number {
+		const key = JSON.stringify(r);
+		if (!this.counts) {
+			const rules = new Map<string, Rule>();
+			for (const s of this.scopes()) for (const x of s.rules) rules.set(JSON.stringify(x), x);
+			rules.set(key, r);
+			const counts = new Map<string, number>([...rules.keys()].map((k) => [k, 0]));
+			const list = [...rules];
+			for (const f of this.app.vault.getMarkdownFiles()) {
+				const facts = noteFacts(this.app, f);
+				for (const [k, x] of list) if (matches(x, facts)) counts.set(k, (counts.get(k) ?? 0) + 1);
+			}
+			this.counts = counts;
+		}
+		const known = this.counts.get(key);
+		if (known !== undefined) return known;
 		let n = 0;
 		for (const f of this.app.vault.getMarkdownFiles()) if (matches(r, noteFacts(this.app, f))) n++;
+		this.counts.set(key, n);
 		return n;
 	}
 
 	/** The scopes changed (settings): start over at the next `ensure`. */
 	reset(): void {
 		this.sets = null;
+		this.counts = null;
 	}
 
 	/** Every set to the worker again (it restarted, or the first pass ran). */
@@ -65,6 +85,7 @@ export class ScopeKeeper {
 
 	/** A note's metadata changed (or it was created): recheck it in every scope. */
 	changed(file: TFile): void {
+		if (file.extension === "md") this.counts = null;
 		if (!this.sets || file.extension !== "md") return;
 		const facts = noteFacts(this.app, file);
 		for (const s of this.scopes()) {
@@ -86,6 +107,7 @@ export class ScopeKeeper {
 	}
 
 	deleted(path: string): void {
+		this.counts = null;
 		if (!this.sets) return;
 		for (const set of this.sets.values()) set.delete(path);
 	}

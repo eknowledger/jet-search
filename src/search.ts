@@ -3,7 +3,7 @@ import { type JetData, frecency } from "./data";
 import { cutExcerpt } from "./excerpt/excerpt";
 import { filterPhrases, PHRASE_CHECK_LIMIT, quotedPhrases } from "./rank";
 import { iconOf } from "./host";
-import type { Feeder } from "./index/feeder";
+import { Cancelled, type Feeder } from "./index/feeder";
 import { age, crumb, titleOf } from "./modal/format";
 import type { Filter } from "./filters/filter";
 import type { Entry, Sort } from "./modal/jet-modal";
@@ -198,6 +198,8 @@ export class Search {
 			try {
 				await this.feeder.ensure();
 			} catch (e) {
+				// Cleared or rebuilt meanwhile: names stay; the next key searches the new index.
+				if (e instanceof Cancelled) return;
 				console.error("Jet Search: the index could not be opened", e);
 				paint(this.compose(tier0, null, now, new Map(), meta), "Full text unavailable (see console)");
 				return;
@@ -281,7 +283,7 @@ export class Search {
 			try {
 				await this.feeder.ensure();
 			} catch (e) {
-				console.error("Jet Search: the index could not be opened", e);
+				if (!(e instanceof Cancelled)) console.error("Jet Search: the index could not be opened", e);
 				return;
 			}
 			const r = await this.client.nearest(text, {

@@ -20,6 +20,38 @@ export type Filter =
 	| { kind: "haslink" }
 	| { kind: "title" };
 
+/**
+ * Whether a saved value is a filter this version can draw and test: a kept filter from a
+ * newer Jet on another device, or one missing its fields, is dropped at load instead of breaking the modal.
+ */
+export const validFilter = (x: unknown): x is Filter => {
+	if (!x || typeof x !== "object") return false;
+	const f = x as Record<string, unknown>;
+	const str = (v: unknown): boolean => typeof v === "string" && v.length > 0;
+	switch (f.kind) {
+		case "prop":
+			return (
+				str(f.key) && typeof f.value === "string" && (f.target === undefined || typeof f.target === "string")
+			);
+		case "tag":
+			return str(f.tag);
+		case "path":
+			return str(f.prefix);
+		case "edited":
+		case "created":
+			return typeof f.days === "number" && Number.isFinite(f.days) && f.days > 0;
+		case "date":
+			return (f.op === "<" || f.op === ">") && typeof f.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(f.date);
+		case "links":
+			return str(f.name) && (f.target === undefined || typeof f.target === "string");
+		case "haslink":
+		case "title":
+			return true;
+		default:
+			return false;
+	}
+};
+
 /** What filters need to know about a note, beyond scope facts. */
 export type FilterFacts = NoteFacts & {
 	mtime: number;

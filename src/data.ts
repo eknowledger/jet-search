@@ -1,4 +1,4 @@
-import type { Filter } from "./filters/filter";
+import { type Filter, validFilter } from "./filters/filter";
 import { normalizeScopes, type OwnMode, type Scope } from "./scopes/model";
 
 /**
@@ -109,18 +109,15 @@ export const normalizeData = (raw: unknown): JetData => {
 		lastRaw && typeof lastRaw === "object"
 			? {
 					scope: typeof lastRaw.scope === "string" ? lastRaw.scope : undefined,
-					filters: Array.isArray(lastRaw.filters)
-						? (lastRaw.filters.filter(
-								(f) =>
-									!!f && typeof f === "object" && typeof (f as { kind?: unknown }).kind === "string",
-							) as Filter[])
-						: [],
+					filters: Array.isArray(lastRaw.filters) ? lastRaw.filters.filter(validFilter) : [],
 				}
 			: null;
 	const opened: Record<string, Opened> = {};
 	if (r.opened && typeof r.opened === "object")
 		for (const [p, v] of Object.entries(r.opened))
-			if (Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "number") opened[p] = [v[0], v[1]];
+			// A score below 0 or a time that is not a number would make the boost NaN.
+			if (Array.isArray(v) && Number.isFinite(v[0]) && v[0] >= 0 && Number.isFinite(v[1]))
+				opened[p] = [v[0], v[1]];
 	const searches = Array.isArray(r.searches) ? r.searches.filter((x): x is string => typeof x === "string") : [];
 	const indexedAt = typeof r.indexedAt === "number" ? r.indexedAt : null;
 	return {
@@ -142,7 +139,8 @@ export const normalizeData = (raw: unknown): JetData => {
 /** A note was opened: its frecency decays to now and gains one (30-day half-life). */
 export const recordOpen = (data: JetData, path: string, now: number): void => {
 	const [score, at] = data.opened[path] ?? [0, now];
-	data.opened[path] = [score * 0.5 ** ((now - at) / HALF_LIFE) + 1, now];
+	// A time ahead of now (another device's clock) counts as now: no decay, never growth.
+	data.opened[path] = [Math.max(0, score) * 0.5 ** (Math.max(0, now - at) / HALF_LIFE) + 1, now];
 	const entries = Object.entries(data.opened);
 	if (entries.length > MAX_OPENED) {
 		entries.sort((a, b) => b[1][1] - a[1][1]);
@@ -154,7 +152,7 @@ export const recordOpen = (data: JetData, path: string, now: number): void => {
 export const frecency = (data: JetData, path: string, now: number): number => {
 	const o = data.opened[path];
 	if (!o) return 1;
-	return 1 + 0.15 * Math.log2(1 + o[0] * 0.5 ** ((now - o[1]) / HALF_LIFE));
+	return 1 + 0.15 * Math.log2(1 + Math.max(0, o[0]) * 0.5 ** (Math.max(0, now - o[1]) / HALF_LIFE));
 };
 
 export const rememberSearch = (data: JetData, q: string): void => {
@@ -186,7 +184,7 @@ export const groupRecents = (
 	limit = 30,
 ): RecentGroup[] => {
 	const seen = new Map<string, number>();
-	for (const [p, [, at]] of Object.entries(data.opened)) if (exists(p)) seen.set(p, at);
+	for (const [p, [, at]] of Object.entries(data.opened)) if (exists(p)) seen.set(p, Math.min(now, at));
 	for (const p of fallback) if (!seen.has(p) && exists(p)) seen.set(p, Math.min(now, timeOf(p)));
 	const all = [...seen].sort((a, b) => b[1] - a[1]).slice(0, limit);
 	const day = new Date(now);

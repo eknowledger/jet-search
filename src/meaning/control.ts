@@ -3,7 +3,7 @@
  * the vectors again. The worker holds the model and vectors; this keeps the setting, the installed
  * model's record and the worker in step.
  */
-import { type App, normalizePath } from "obsidian";
+import { type App, normalizePath, Notice } from "obsidian";
 import type { JetData } from "../data";
 import type { Feeder } from "../index/feeder";
 import { download, install, readModel, removeModel } from "./install";
@@ -32,6 +32,19 @@ export class Meaning {
 				this.onChange?.();
 			}
 			return buf;
+		};
+		feeder.onMeaningBroken = () => {
+			void (async () => {
+				await removeModel(this.app, this.dir).catch(() => {});
+				const d = this.data();
+				d.meaningModel = null;
+				d.settings.meaning = false;
+				await this.save();
+				this.onChange?.();
+				new Notice(
+					"The search-by-meaning model could not be read, so it is off. Turn it on in settings to get it again.",
+				);
+			})();
 		};
 	}
 

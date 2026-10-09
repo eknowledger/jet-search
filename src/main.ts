@@ -6,7 +6,7 @@ import { JadeLink } from "./jade-link";
 import { withModes } from "./scopes/model";
 import { Meaning } from "./meaning/control";
 import { importJadeSearch } from "./migrate";
-import { Feeder } from "./index/feeder";
+import { Cancelled, Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
 import {
 	addCommandAs,
@@ -276,11 +276,12 @@ export default class JetSearchPlugin extends Plugin {
 				value: ambiguity(m, this.scopes.count(id)),
 				outside: m.notes - m.inside,
 			});
-			this.settingTab.refresh();
 		} catch (e) {
 			console.error("Jet Search: counting mentions failed", e);
 		} finally {
 			this.measuring.delete(id);
+			// One redraw once every scope asked for is measured, not one per scope.
+			if (!this.measuring.size) this.settingTab.refresh();
 		}
 	}
 
@@ -453,7 +454,9 @@ export default class JetSearchPlugin extends Plugin {
 			window.setTimeout(() => {
 				if (this.data.indexedAt !== null) return;
 				this.wake();
-				void this.feeder.ensure().catch((e: unknown) => console.error("Jet Search: the first build failed", e));
+				void this.feeder.ensure().catch((e: unknown) => {
+					if (!(e instanceof Cancelled)) console.error("Jet Search: the first build failed", e);
+				});
 			}, FIRST_BUILD_DELAY_MS);
 	}
 }

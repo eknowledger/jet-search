@@ -194,7 +194,10 @@ export class JetSettingTab extends PluginSettingTab {
 				new MeaningConfirm(this.app, m, this.app.vault.getMarkdownFiles().length, () => this.redraw()).open();
 				return;
 			}
-			void m.set(value === true).then(() => this.redraw());
+			void m
+				.set(value === true)
+				.catch((e: unknown) => console.error("Jet Search: search by meaning could not be switched", e))
+				.then(() => this.redraw());
 			return;
 		}
 		if (key === "meaningQuestions") {
@@ -225,7 +228,11 @@ export class JetSettingTab extends PluginSettingTab {
 				s.doubleShift = value === true;
 				break;
 			case "shiftInterval":
-				s.shiftInterval = Number(value);
+				{
+					// Only a window the setting offers a range for; anything else is ignored.
+					const n = Number(value);
+					if (Number.isFinite(n) && n >= 150 && n <= 1000) s.shiftInterval = n;
+				}
 				break;
 			case "newTab":
 				s.newTab = value === true;

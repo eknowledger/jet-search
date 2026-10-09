@@ -4,6 +4,12 @@ import type { JetClient } from "../worker/jet-client";
 import { excluder, gather, inboundCounts } from "./gather";
 import { sliced } from "./slice";
 
+/** A build or catch-up stopped because the index was cleared or rebuilt meanwhile (not a failure). */
+export class Cancelled extends Error {
+	constructor() {
+		super("Jet Search: the index was cleared or rebuilt meanwhile");
+	}
+}
 const BATCH = 100;
 /** The note being typed in: its text goes to the index this long after typing pauses. */
 const TYPING_PAUSE_MS = 300;
@@ -47,15 +53,30 @@ export class Feeder {
 
 	/** Open the saved index and catch up, or build it (once; again after a worker restart). */
 	ensure(): Promise<void> {
-		return (this.ready ??= this.start().catch((e: unknown) => {
-			this.ready = null;
-			this.building = false;
+		if (this.ready) return this.ready;
+		const gen = this.gen;
+		const p: Promise<void> = this.start(gen).catch((e: unknown) => {
+			// Only this run's state: a reset meanwhile already started afresh.
+			if (this.ready === p) {
+				this.ready = null;
+				this.building = false;
+			}
 			throw e;
-		}));
+		});
+		this.ready = p;
+		return p;
 	}
 
-	/** The worker stopped (asleep, or crashed): the next search opens the index again. */
+	/** Bumped by reset: a build or catch-up of an older run stops at its next step. */
+	private gen = 0;
+
+	private alive(gen: number): void {
+		if (gen !== this.gen) throw new Cancelled();
+	}
+
+	/** The worker stopped (asleep, crashed, cleared): the next search opens the index again. */
 	reset(): void {
+		this.gen++;
 		this.ready = null;
 		this.live = false;
 		this.building = false;
@@ -67,28 +88,46 @@ export class Feeder {
 		return this.app.vault.getMarkdownFiles().filter((f) => !excluded(f.path));
 	}
 
-	private async start(): Promise<void> {
+	private async start(gen: number): Promise<void> {
 		const { loaded } = await this.client.call({
 			op: "open",
 			vaultId: this.vaultId,
 			stemming: [...this.stemming()],
 		});
+		this.alive(gen);
 		// Meaning first, so the build and the catch-up give the notes they send their vectors too.
 		const meaning = await this.loadMeaning();
-		if (loaded) await this.catchUp();
-		else await this.build();
+		this.alive(gen);
+		if (loaded) await this.catchUp(gen);
+		else await this.build(gen);
+		this.alive(gen);
 		this.live = true;
 		this.onReady?.();
 		if (meaning) await this.embedMissing();
 	}
 
-	/** Send the model to the worker, if meaning is on and installed. */
+	/**
+	 * Send the model to the worker, if meaning is on and installed. A model file that cannot be read
+	 * (truncated, an older format, a sync conflict) turns meaning off; words carry on.
+	 */
 	private async loadMeaning(): Promise<boolean> {
-		const buf = (await this.meaningModel?.()) ?? null;
-		if (!buf) return false;
-		await this.client.call({ op: "meaning:load", buf, model: "potion-base-8M" }, [buf]);
-		return true;
+		let buf: ArrayBuffer | null = null;
+		try {
+			buf = (await this.meaningModel?.()) ?? null;
+			if (!buf) return false;
+			await this.client.call({ op: "meaning:load", buf, model: "potion-base-8M" }, [buf]);
+			return true;
+		} catch (e) {
+			// The worker stopped meanwhile: that is not the model's fault.
+			if (!this.client.running) throw e;
+			console.warn("Jet Search: the meaning model could not be read; search by meaning is off", e);
+			this.onMeaningBroken?.();
+			return false;
+		}
 	}
+
+	/** The model file could not be used (the plugin forgets it, so the settings offer it again). */
+	onMeaningBroken: (() => void) | null = null;
 
 	/**
 	 * Meaning turned on while Jet runs: the model to the worker, then vectors for every note.
@@ -121,7 +160,7 @@ export class Feeder {
 	}
 
 	/** The first build: newest notes first, so recent work is searchable soonest. */
-	private async build(): Promise<void> {
+	private async build(gen: number): Promise<void> {
 		this.building = true;
 		const files = this.notes().sort((a, b) => b.stat.mtime - a.stat.mtime);
 		const inbound = inboundCounts(this.app);
@@ -130,7 +169,10 @@ export class Feeder {
 		for (let i = 0; i < files.length || i === 0; i += BATCH) {
 			const slice = files.slice(i, i + BATCH);
 			const notes = await this.read(slice, inbound);
+			// Cleared or rebuilt meanwhile: a new worker must not be started by this old run.
+			this.alive(gen);
 			await this.client.call({ op: "batch", notes, last: i + BATCH >= files.length });
+			this.alive(gen);
 			this.progress = { done: Math.min(files.length, i + BATCH), total: files.length };
 			this.onProgress?.();
 			if (!files.length) break;
@@ -141,16 +183,20 @@ export class Feeder {
 	}
 
 	/** After loading a saved index: what changed while Jet was not looking, by modified time. */
-	private async catchUp(): Promise<void> {
+	private async catchUp(gen: number): Promise<void> {
 		const known = new Map(await this.client.call({ op: "mtimes" }));
+		this.alive(gen);
 		const files = this.notes();
 		const present = new Set(files.map((f) => f.path));
 		const gone = [...known.keys()].filter((p) => !present.has(p));
 		const stale = files.filter((f) => known.get(f.path) !== f.stat.mtime);
 		if (gone.length) await this.client.call({ op: "delete", paths: gone });
 		const inbound = inboundCounts(this.app);
-		for (let i = 0; i < stale.length; i += BATCH)
-			await this.client.call({ op: "upsert", notes: await this.read(stale.slice(i, i + BATCH), inbound) });
+		for (let i = 0; i < stale.length; i += BATCH) {
+			const notes = await this.read(stale.slice(i, i + BATCH), inbound);
+			this.alive(gen);
+			await this.client.call({ op: "upsert", notes });
+		}
 	}
 
 	/** The batch's text (read in parallel), then each note gathered in slices of ≤ 8 ms. */
