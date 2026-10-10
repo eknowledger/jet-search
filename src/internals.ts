@@ -16,8 +16,14 @@ type Internals = {
 		openPage?: (page: SettingPage) => void;
 		closePage?: () => void;
 		open?: () => void;
-		openTabById?: (id: string) => void;
+		openTabById?: (
+			id: string,
+		) => { searchComponent?: { setValue(v: string): void }; updateHotkeyVisibility?(): void } | void;
 		modalEl?: HTMLElement;
+		activeTab?: unknown;
+	};
+	hotkeyManager?: {
+		printHotkeyForCommand?: (id: string) => string;
 	};
 };
 
@@ -100,4 +106,31 @@ export const openSettingsAt = (app: App, tab: string, rows: readonly string[]): 
 		}, 120);
 	};
 	step(0);
+};
+
+/** The hotkey Obsidian's Hotkeys give a command, as it prints it (""/null: none). Internal API. */
+export const hotkeyLabel = (app: App, id: string): string | null => {
+	try {
+		return internals(app).hotkeyManager?.printHotkeyForCommand?.(id) || null;
+	} catch {
+		return null;
+	}
+};
+
+/** Open Obsidian's Hotkeys, showing only the commands matching `filter` (Jet's). Internal API. */
+export const openHotkeys = (app: App, filter: string): void => {
+	const s = internals(app).setting;
+	const tab = s?.openTabById?.("hotkeys");
+	if (!tab) return;
+	tab.searchComponent?.setValue(filter);
+	tab.updateHotkeyVisibility?.();
+};
+
+/** Open the settings at Jet's tab; returns the tab Obsidian shows. Internal API. */
+export const openJetSettings = (app: App, id: string): unknown => {
+	const s = internals(app).setting;
+	if (!s?.open || !s.openTabById) return null;
+	s.open();
+	s.openTabById(id);
+	return s.activeTab ?? null;
 };

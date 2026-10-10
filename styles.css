@@ -1544,3 +1544,283 @@
 .jet-mbi { display: inline-flex; }
 .jet-mbi .svg-icon { width: 14px; height: 14px; }
 .jet-mpicker { display: none; }
+
+/* ── Settings page: Jade's layout, with Jet's accent ── */
+.jet-set-head {
+	padding: 4px 0 0;
+}
+.jet-set-title {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.jet-set-mark {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	border-radius: 17px;
+	background-color: var(--interactive-accent);
+	color: #1f1f1f;
+	font-weight: 800;
+}
+.jet-set-h {
+	font-size: 1.25em;
+	font-weight: var(--font-semibold);
+}
+.jet-set-sub {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.jet-set-chips {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 6px;
+	margin-left: auto;
+}
+.jet-set-chip {
+	padding: 3px 9px;
+	border-radius: 10px;
+	background-color: var(--background-modifier-hover);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+.jet-set-chip > b {
+	color: var(--text-normal);
+}
+input.jet-set-search {
+	width: 100%;
+	margin-top: 14px;
+}
+.jet-set-tabs {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	margin: 12px 0 0;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background-color: var(--background-primary);
+}
+.jet-set-tab {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 11px;
+	border-radius: 8px;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.jet-set-tab:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+.jet-set-tab.is-active {
+	background-color: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+	color: var(--interactive-accent);
+}
+.jet-set-body {
+	padding: 14px 0 30px;
+}
+.jet-set-lead {
+	margin: 0 0 12px;
+	color: var(--text-muted);
+}
+.jet-set-empty {
+	padding: 26px;
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: 10px;
+	color: var(--text-muted);
+	text-align: center;
+}
+.jet-set-card {
+	margin-bottom: 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	background-color: var(--background-secondary);
+}
+.jet-set-card.is-off {
+	opacity: 0.75;
+}
+.jet-set-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 14px;
+}
+.jet-set-icon {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	background-color: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+.jet-set-text {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.jet-set-name {
+	font-weight: var(--font-semibold);
+}
+.jet-set-desc {
+	margin-top: 2px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.jet-set-opts {
+	padding: 4px 14px 8px 58px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* ── Settings, drawn like Jade's ── */
+.jet-settings .jet-set-mark {
+	color: var(--text-on-accent);
+}
+.jet-set-opts .setting-item:first-child {
+	border-top: 0;
+}
+.jet-set-opts .setting-item {
+	padding: 10px 0;
+}
+.jet-set-row > button,
+.jet-set-listhead > button {
+	flex: none;
+}
+.jet-set-kbd {
+	display: inline-block;
+	min-width: 26px;
+	padding: 2px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-bottom-width: 2px;
+	border-radius: 6px;
+	background: var(--background-primary);
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-small);
+	text-align: center;
+	white-space: nowrap;
+}
+.jet-set-kbd.is-key {
+	cursor: pointer;
+}
+.jet-set-kbd.is-key:hover {
+	border-color: var(--interactive-accent);
+}
+.jet-set-kbd.is-changed {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
+}
+.jet-set-kbd.is-fixed {
+	color: var(--text-muted);
+}
+.jet-set-reset {
+	margin-left: 8px;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+}
+.jet-set-reset:hover {
+	color: var(--text-normal);
+}
+.jet-set-rec {
+	padding: 2px 8px;
+	border: 1px dashed var(--interactive-accent);
+	border-radius: 6px;
+	color: var(--text-accent);
+	font-size: var(--font-ui-small);
+}
+table.jet-set-keys {
+	width: 100%;
+	margin: 6px 0 4px;
+	border-collapse: collapse;
+}
+.jet-set-keys td {
+	padding: 6px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-small);
+}
+.jet-set-keys tr:last-child td {
+	border-bottom: 0;
+}
+.jet-set-keys td:last-child {
+	width: 1%;
+	text-align: right;
+	white-space: nowrap;
+}
+.jet-set-keymsg {
+	margin: 6px 0 8px;
+	padding: 6px 10px;
+	border-left: 3px solid var(--color-red);
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--color-red) 8%, transparent);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+.jet-set-list {
+	padding: 8px 14px;
+}
+.jet-set-listhead {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 0 8px;
+	color: var(--text-muted);
+}
+.jet-set-listhead > button {
+	margin-left: auto;
+}
+.jet-set-new {
+	color: var(--text-accent);
+}
+.jet-set-scope {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+.jet-set-scope > b {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.jet-set-scope .jet-set-k,
+.jet-set-scope .jet-set-n,
+.jet-set-scope .jet-set-m {
+	flex: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+}
+.jet-set-scope .jet-set-k {
+	padding: 1px 7px;
+	border-radius: 8px;
+	background: var(--background-modifier-hover);
+}
+.jet-set-scope .jet-set-k:empty {
+	display: none;
+}
+.jet-set-scope .jet-set-m {
+	min-width: 120px;
+	text-align: right;
+}
+/* Editing a scope, and the Generate review, in a dialog (Obsidian before 1.13). */
+.jet-sed-modal,
+.jet-gen-modal {
+	width: min(620px, 92vw);
+}
+.jet-sed .setting-item-control input[type="text"] {
+	width: 240px;
+}
+.jet-sed-rules .setting-item:not(:first-child) {
+	padding-left: 18px;
+}

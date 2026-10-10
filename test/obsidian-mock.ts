@@ -113,12 +113,14 @@ export const MarkdownRenderer = {
 
 export class Modal {
 	readonly modalEl = document.createElement("div");
+	readonly titleEl = document.createElement("div");
 	readonly contentEl = document.createElement("div");
 	readonly scope = new Scope();
 	isOpen = false;
 
 	constructor(readonly app: App) {
-		this.modalEl.appendChild(this.contentEl);
+		this.titleEl.className = "modal-title";
+		this.modalEl.append(this.titleEl, this.contentEl);
 		this.scope.register([], "Escape", () => {
 			this.close();
 			return false;

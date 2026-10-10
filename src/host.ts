@@ -123,6 +123,8 @@ export class JetHost implements ModalHost {
 					.sort((x, y) => y.members - x.members),
 			complete: (text, caret, scope, filters) => this.complete(f, text, caret, scope, filters),
 			fix: (text) => {
+				// Off in the settings (Results → Filters): no fix offered.
+				if (!this.data().settings.fixKeys) return null;
 				const keys = [...f.propertyKeys().values()].map((k) => [k.name, k.notes] as const);
 				const x = findFix(text, keys, (k) => f.known(k));
 				return x ? { ...x, notes: f.propertyKeys().get(x.key.toLowerCase())?.notes ?? 0 } : null;

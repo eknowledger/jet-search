@@ -3,6 +3,7 @@
  * code and trying what a user does. They fail until the bug is fixed. Vaults are built in memory as
  * generator snapshots (the same shape `obsidianSnapshot` gives), so no file is written.
  */
+import { buttonNamed, editScope, goTo, tabOf } from "./settings-ui";
 import { afterEach, describe, expect, it } from "vitest";
 import { App, TFile } from "obsidian";
 import JetSearchPlugin from "../src/main";
@@ -14,7 +15,6 @@ import { fold } from "../src/scopes/names";
 import { applyReview, review } from "../src/scopes/review";
 import { emptyConfig, type Snapshot } from "../src/scopes/snapshot";
 import { ScopeWatcher } from "../src/scopes/watcher";
-import type { JetSettingTab } from "../src/settings-tab";
 import { mockApi } from "./obsidian-mock";
 
 // ── Vault builders ─────────────────────────────────────────────────────────────
@@ -313,9 +313,8 @@ describe("QA generate: the settings tab before Obsidian 1.13", () => {
 		mockApi.version = was;
 	});
 
-	// Pending: a classic Scopes UI for Obsidian 1.8–1.12 is not built yet, or
-	// minAppVersion goes to 1.13. Kept as the check for whichever is chosen.
-	it.skip("the classic tab (Jet supports 1.8) shows the scopes, Generate and “When new ones appear”", async () => {
+	// The same tab, drawn by Jet; a scope and Generate open in a dialog.
+	it("on Obsidian 1.12 the tab shows the scopes and their choices; Edit and Generate open dialogs", async () => {
 		mockApi.version = "1.12.4";
 		const app = new App();
 		(app.vault as unknown as { files: Map<string, TFile> }).files.set(
@@ -336,11 +335,17 @@ describe("QA generate: the settings tab before Obsidian 1.13", () => {
 				source: "generated",
 			},
 		];
-		const tab = (plugin as unknown as { settingTabs: JetSettingTab[] }).settingTabs[0] as JetSettingTab;
-		tab.display();
-		const names = [...tab.containerEl.querySelectorAll(".setting-item-name")].map((e) => e.textContent ?? "");
-		plugin.onunload();
+		const tab = tabOf(plugin);
+		const el = goTo(tab, "scopes");
+		const names = [...el.querySelectorAll(".setting-item-name")].map((e) => e.textContent ?? "");
 		expect(names).toContain("When new ones appear");
-		expect(names.some((n) => n.includes("Garden"))).toBe(true);
+		expect([...el.querySelectorAll(".jet-set-scope b")].map((e) => e.textContent)).toEqual(["Garden"]);
+		const d = editScope(tab, "Garden");
+		expect(d?.querySelector(".modal-title")?.textContent).toBe("Edit scope · Garden");
+		buttonNamed(d as HTMLElement, "Cancel")?.click();
+		buttonNamed(goTo(tab, "scopes"), "Find new scopes")?.click();
+		expect(document.querySelector(".jet-gen-modal .modal-title")?.textContent).toBe("Find new scopes");
+		plugin.onunload();
+		document.body.replaceChildren();
 	});
 });

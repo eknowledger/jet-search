@@ -11,20 +11,10 @@ import { clearIndex } from "../src/index-status";
 import { JetModal, type ModalHost } from "../src/modal/jet-modal";
 import { normalizeScopes, withModes, type Scope } from "../src/scopes/model";
 import type { JetSettingTab } from "../src/settings-tab";
+import { addScopeDialog, editScope, goTo, saveDialog, tabOf, typeInto } from "./settings-ui";
 import { Router } from "../src/worker/router";
 import { memoryStore } from "../src/worker/store";
 import type { JetClient } from "../src/worker/jet-client";
-
-type Def = {
-	type?: string;
-	name?: string;
-	desc?: string;
-	heading?: string;
-	items?: Def[];
-	render?: (row: unknown) => void;
-	addItem?: { action: (el: HTMLElement) => void };
-	onDelete?: (i: number) => void;
-};
 
 const flush = async (n = 20): Promise<void> => {
 	for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
@@ -39,24 +29,22 @@ const make = async (raw: unknown = null, files: string[] = ["Projects/Garden/Pla
 	// The mock's loadData returns the plugin's own `data` field: data.json as Obsidian would read it.
 	(plugin as unknown as { data: unknown }).data = raw;
 	await plugin.onload();
-	const tab = (plugin as unknown as { settingTabs: JetSettingTab[] }).settingTabs[0] as JetSettingTab;
-	const scopesPage = (): Def => {
-		const defs = tab.getSettingDefinitions() as unknown as Def[];
-		return defs.flatMap((d) => d.items ?? []).find((d) => d.type === "page" && d.name === "Scopes") as Def;
-	};
-	return { app, plugin, tab, scopesPage, calls: (app.vault as unknown as { calls: string[] }).calls };
+	const tab = tabOf(plugin);
+	return { app, plugin, tab, calls: (app.vault as unknown as { calls: string[] }).calls };
 };
 
-/** The scope page's "Name" field, typed into and left (the text box saves on blur). */
-const rename = (scopePage: Def, to: string): void => {
-	const name = scopePage.items?.[0]?.items?.find((d) => d.name === "Name");
-	const input = document.createElement("input");
-	name?.render?.({
-		addText: (f: (t: unknown) => void) =>
-			f({ setValue: (v: string) => (input.value = v), getValue: () => input.value, inputEl: input }),
-	});
-	input.value = to;
-	input.dispatchEvent(new Event("blur"));
+/** A scope renamed in its Edit dialog, and saved. */
+const rename = (tab: JetSettingTab, from: string, to: string): void => {
+	const d = editScope(tab, from) as HTMLElement;
+	typeInto(d, "Name", to);
+	saveDialog(d);
+};
+
+/** "Add scope", named in its dialog, saved. */
+const addNamed = (tab: JetSettingTab, name?: string): void => {
+	const d = addScopeDialog(tab) as HTMLElement;
+	if (name) typeInto(d, "Name", name);
+	saveDialog(d);
 };
 
 const folderScope = (name: string, mode: Scope["mode"] = "default"): Record<string, unknown> => ({
@@ -72,7 +60,7 @@ afterEach(() => {
 
 describe("scopes edited in settings reach typing (withModes cache)", () => {
 	it("a scope renamed on its settings page is found by its new name in the modal", async () => {
-		const { plugin, scopesPage } = await make({
+		const { plugin, tab } = await make({
 			settings: { scopeMode: "suggest" },
 			scopes: [folderScope("Alpha")],
 		});
@@ -80,7 +68,7 @@ describe("scopes edited in settings reach typing (withModes cache)", () => {
 		// The modal was used once (the resolved list is cached)…
 		expect(host.scopes.typed("@Alpha ").applied?.scope.name).toBe("Alpha");
 		// …then the scope is renamed in settings.
-		rename(scopesPage().items?.[1]?.items?.[0] as Def, "Beta");
+		rename(tab, "Alpha", "Beta");
 		expect(plugin.data.scopes[0]?.name).toBe("Beta");
 		expect(host.scopes.typed("@Beta ").applied?.scope.name).toBe("Beta");
 	});
@@ -97,20 +85,18 @@ describe("scopes edited in settings reach typing (withModes cache)", () => {
 
 describe("scopes added by hand get unique ids", () => {
 	it("add a scope, rename it, add another: the two have different ids", async () => {
-		const { plugin, scopesPage } = await make();
-		scopesPage().items?.[1]?.addItem?.action(document.createElement("div"));
-		rename(scopesPage().items?.[1]?.items?.[0] as Def, "Work");
-		scopesPage().items?.[1]?.addItem?.action(document.createElement("div"));
+		const { plugin, tab } = await make();
+		addNamed(tab, "Work");
+		addNamed(tab);
 		expect(plugin.data.scopes.map((s) => s.name)).toEqual(["Work", "New scope"]);
 		const [a, b] = plugin.data.scopes;
 		expect(a?.id).not.toBe(b?.id);
 	});
 
 	it("the second scope's own 'When typed' dropdown changes that scope, not the first", async () => {
-		const { plugin, scopesPage, tab } = await make();
-		scopesPage().items?.[1]?.addItem?.action(document.createElement("div"));
-		rename(scopesPage().items?.[1]?.items?.[0] as Def, "Work");
-		scopesPage().items?.[1]?.addItem?.action(document.createElement("div"));
+		const { plugin, tab } = await make();
+		addNamed(tab, "Work");
+		addNamed(tab);
 		const second = plugin.data.scopes[1] as Scope;
 		tab.setControlValue(`scope:${second.id}:mode`, "auto");
 		expect(plugin.data.scopes.map((s) => s.mode)).toEqual(["default", "auto"]);
@@ -161,32 +147,36 @@ describe("the settings tab with many scopes", () => {
 		Array.from({ length: n }, (_, i) => ({ id: `s${i}`, ...folderScope(`Scope ${i}`) })) as unknown[];
 
 	it("one draw of the tab does not walk the whole vault once per rule of every scope", async () => {
-		const { plugin, tab, scopesPage, calls } = await make({
+		const { plugin, tab, calls } = await make({
 			settings: { scopeMode: "suggest" },
 			scopes: many(200),
 		});
 		plugin.measure = () => Promise.resolve(); // counted in the next test
 		document.body.appendChild(tab.containerEl); // the tab is on screen
 		calls.length = 0;
-		scopesPage();
-		// 200 scopes · 1 rule: today 200 rule passes plus the members pass, before any page is opened.
-		expect(calls.filter((c) => c === "getMarkdownFiles").length).toBeLessThanOrEqual(2);
+		goTo(tab, "scopes");
+		// 200 scopes · 1 rule: once for the header's note count, once for the members, not once per rule.
+		expect(calls.filter((c) => c === "getMarkdownFiles").length).toBeLessThanOrEqual(3);
 	});
 
-	it("opening the tab measures every scope's name and redraws the whole tab once per scope", async () => {
+	it("opening the Scopes tab measures no name and draws the tab a few times at most", async () => {
 		const { plugin, tab } = await make({ settings: { scopeMode: "suggest" }, scopes: many(200) });
 		document.body.appendChild(tab.containerEl);
 		plugin.feeder.ensure = () => Promise.resolve();
-		(plugin.client as unknown as { call: (r: { op: string }) => Promise<unknown> }).call = (r) =>
-			Promise.resolve(r.op === "mentions" ? { notes: 3, inside: 1 } : { notes: 0 });
-		let draws = 0;
-		// Obsidian 1.13+: update() draws the tab again from its definitions.
-		tab.update = () => {
-			draws++;
-			tab.getSettingDefinitions();
+		const ops: string[] = [];
+		(plugin.client as unknown as { call: (r: { op: string }) => Promise<unknown> }).call = (r) => {
+			ops.push(r.op);
+			return Promise.resolve(r.op === "mentions" ? { notes: 3, inside: 1 } : { notes: 0 });
 		};
-		tab.getSettingDefinitions();
+		const display = tab.display.bind(tab);
+		let draws = 0;
+		tab.display = () => {
+			draws++;
+			display();
+		};
+		goTo(tab, "scopes");
 		await flush(50);
+		expect(ops.filter((o) => o === "mentions")).toEqual([]);
 		expect(draws).toBeLessThanOrEqual(5);
 	});
 });

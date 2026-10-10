@@ -175,13 +175,25 @@ export const comboOf = (e: {
 /** The double tap that opens Jet: a modifier tapped twice alone, or none. */
 export type TapKey = "Shift" | "Control" | "Alt" | "Meta" | "off";
 
-export const TAP_KEYS: ReadonlyArray<[TapKey, string]> = [
-	["Shift", "⇧ Shift"],
-	["Control", "⌃ Control"],
-	["Alt", "⌥ Option"],
-	["Meta", "⌘ Command"],
-	["off", "Off"],
-];
+export const TAP_KEYS: readonly TapKey[] = ["Shift", "Control", "Alt", "Meta", "off"];
+
+/** The choices of double tap, as this platform names the keys. */
+export const tapKeyNames = (): ReadonlyArray<readonly [TapKey, string]> =>
+	mac
+		? [
+				["Shift", "⇧ Shift"],
+				["Control", "⌃ Control"],
+				["Alt", "⌥ Option"],
+				["Meta", "⌘ Command"],
+				["off", "Off"],
+			]
+		: [
+				["Shift", "Shift"],
+				["Control", "Ctrl"],
+				["Alt", "Alt"],
+				["Meta", "Windows key"],
+				["off", "Off"],
+			];
 
 /** The double tap as the hints write it (⇧⇧), or null when it is off. */
 export const tapLabel = (k: TapKey): string | null => {

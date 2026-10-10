@@ -15,7 +15,7 @@ import { type Scope, withModes } from "../src/scopes/model";
 import { stripName } from "../src/scopes/names";
 import { parseScope } from "../src/scopes/parse";
 import type { Search } from "../src/search";
-import { type ScopesHost, scopesPage } from "../src/settings/scopes-page";
+import { addScope, type ScopesHost } from "../src/settings/scopes-page";
 
 const sc = (id: string, name: string, extra: Partial<Scope> = {}): Scope => ({
 	id,
@@ -319,26 +319,11 @@ describe("QA: scopes typed in the search box", () => {
 describe("QA: the Scopes settings page", () => {
 	it("Add scope, rename it, Add scope again: two scopes with two ids", () => {
 		const all: Scope[] = [];
-		const h = {
-			app: new App(),
-			scopes: () => all,
-			save: () => {},
-			count: () => 0,
-			ruleCount: () => 0,
-			mentions: () => null,
-			changed: () => {},
-			generate: () => false,
-			generatePage: () => ({}),
-			canOpenPages: () => true,
-			newCount: () => 0,
-			everyMode: () => "suggest",
-		} as unknown as ScopesHost;
-		type List = { addItem?: { action(el: HTMLElement): void } };
-		const add = () => (scopesPage(h).items[1] as unknown as List).addItem?.action(document.createElement("div"));
-		add();
-		// What the Name field does on blur (scopes-page.ts: `s.name = name`).
+		const h = { scopes: () => all, save: () => {}, changed: () => {} } as unknown as ScopesHost;
+		addScope(h);
+		// What the Name field does (scope-editor.ts: `s.name = name`).
 		(all[0] as Scope).name = "Cobalt";
-		add();
+		addScope(h);
 		expect(all.map((s) => s.name)).toEqual(["Cobalt", "New scope"]);
 		expect(new Set(all.map((s) => s.id)).size).toBe(2);
 	});

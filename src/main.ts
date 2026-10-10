@@ -8,16 +8,7 @@ import { Meaning } from "./meaning/control";
 import { importJadeSearch } from "./migrate";
 import { Cancelled, Feeder } from "./index/feeder";
 import { indexStatus, rebuild } from "./index-status";
-import {
-	addCommandAs,
-	commandAt,
-	hasCommand,
-	openSettingsAt,
-	plugin,
-	removeCommand,
-	tapOwnedElsewhere,
-	vaultId,
-} from "./internals";
+import { addCommandAs, commandAt, hasCommand, plugin, removeCommand, tapOwnedElsewhere, vaultId } from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
 import { FilterSets } from "./filters/sets";
@@ -173,7 +164,7 @@ export default class JetSearchPlugin extends Plugin {
 				ruleCount: (r) => this.scopes.ruleCount(r),
 				edit: (id) => {
 					const s = this.data.scopes.find((x) => x.id === id);
-					if (s) openSettingsAt(this.app, this.manifest.id, ["Scopes", s.name]);
+					if (s) this.settingTab.openAt("scopes", s.id);
 				},
 				ambiguity: (id) => this.ambiguityOf(id),
 				measure: (id) => void this.measure(id),
@@ -198,7 +189,7 @@ export default class JetSearchPlugin extends Plugin {
 		};
 		this.host.manageScopes = () => {
 			this.modal?.close();
-			openSettingsAt(this.app, this.manifest.id, ["Scopes"]);
+			this.settingTab.openAt("scopes");
 		};
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });

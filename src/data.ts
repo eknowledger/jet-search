@@ -1,6 +1,6 @@
 import { type Filter, validFilter } from "./filters/filter";
 import { normalizeScopes, type OwnMode, type Scope } from "./scopes/model";
-import { type Combo, KEY_ACTIONS, type TapKey } from "./keys/keymap";
+import { type Combo, KEY_ACTIONS, TAP_KEYS, type TapKey } from "./keys/keymap";
 
 /**
  * Data saved before "every scope" existed (no `scopeMode` yet): Suggest was the default then, so a
@@ -49,6 +49,8 @@ export type JetSettings = {
 	meaningLong: boolean;
 	/** Reopen with the last scope and filters (off by default). */
 	persistFilters: boolean;
+	/** Offer the property key a misspelt one is close to; on by default. */
+	fixKeys: boolean;
 };
 
 export const DEFAULT_SETTINGS: JetSettings = {
@@ -67,6 +69,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	meaningQuestions: true,
 	meaningLong: false,
 	persistFilters: false,
+	fixKeys: true,
 };
 
 /** Per note: a frecency score (decays with a 30-day half-life) and when it was last opened. */
@@ -114,10 +117,9 @@ export const normalizeData = (raw: unknown): JetData => {
 	const s = (r.settings && typeof r.settings === "object" ? r.settings : {}) as Partial<JetSettings> & {
 		doubleShift?: unknown;
 	};
-	const TAPS: readonly TapKey[] = ["Shift", "Control", "Alt", "Meta", "off"];
 	const settings: JetSettings = {
 		// Before the choice of key: the double Shift on or off.
-		tapKey: TAPS.includes(s.tapKey as TapKey)
+		tapKey: TAP_KEYS.includes(s.tapKey as TapKey)
 			? (s.tapKey as TapKey)
 			: s.doubleShift === false
 				? "off"
@@ -139,6 +141,7 @@ export const normalizeData = (raw: unknown): JetData => {
 		meaningQuestions: s.meaningQuestions !== false,
 		meaningLong: s.meaningLong === true,
 		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
+		fixKeys: s.fixKeys !== false,
 	};
 	const scopeUses: Record<string, number> = {};
 	if (r.scopeUses && typeof r.scopeUses === "object")

@@ -2,15 +2,7 @@
  * The settings for search by meaning (general examples, not a real vault's). Off by default; turning it on asks first
  * (the model's source, size and checksum), then downloads it or takes the two files you have.
  */
-import {
-	type App,
-	Modal,
-	Notice,
-	setIcon,
-	type Setting,
-	type SettingDefinition,
-	type SettingDefinitionGroup,
-} from "obsidian";
+import { type App, Modal, Notice, setIcon } from "obsidian";
 import { fileUrl } from "../meaning/install";
 import { MODEL } from "../meaning/model";
 import type { Meaning } from "../meaning/control";
@@ -21,11 +13,12 @@ export const MEANING_WHAT =
 	"“recipes without dairy” finds “Vegan dinners”. Word searches like “deployment checklist” are unchanged. " +
 	"Off: nothing is downloaded and Jet works exactly as before.";
 
-export const MEANING_QUESTIONS =
+/** What "Questions go by meaning by themselves" does; `key` is the switch's key as you set it (⌘J). */
+export const questionsText = (key: string): string =>
 	"When a search reads like a question, its results are by meaning first. A question starts with how, why, what, " +
 	"when, where, who, which, can, should, does, is… or ends with “?”: “why did the build fail on Monday”, " +
 	"“who owns the billing service?”. Anything else (“billing service”, “build failure Monday”) stays a word " +
-	"search. ⌘J switches either way. Off: only ⌘J uses meaning.";
+	`search. ${key} switches either way. Off: only ${key} uses meaning.`;
 
 export const MEANING_LONG =
 	"Searches of 6 words or more, even without a question word (for example a sentence pasted from a note), " +
@@ -140,70 +133,3 @@ export class MeaningConfirm extends Modal {
 		else this.closed(this.done);
 	}
 }
-
-/** The group in Jet's tab. */
-export const meaningGroup = (
-	meaning: Meaning,
-	progress: () => { done: number; total: number } | null,
-	notes: () => number,
-	redraw: () => void,
-): SettingDefinitionGroup => {
-	const on = meaning.available();
-	const items: SettingDefinition[] = [
-		{
-			name: "Search by meaning",
-			desc: MEANING_WHAT,
-			aliases: ["semantic", "embedding", "model", "question"],
-			control: { type: "toggle", key: "meaning" },
-		},
-	];
-	if (on) {
-		items.push(
-			{
-				name: "Notes",
-				desc: "Each note gets one vector, in the background, newest first; it follows your edits.",
-				render: (row: Setting) => {
-					const p = progress();
-					row.setDesc(
-						p
-							? `Giving notes their meaning: ${p.done.toLocaleString()} of ${p.total.toLocaleString()}…`
-							: `${notes().toLocaleString()} notes · follows your edits`,
-					);
-					row.addButton((b) =>
-						b.setButtonText("Rebuild").onClick(() => {
-							b.setDisabled(true).setButtonText("Rebuilding…");
-							void meaning.rebuild().then(redraw, (e: unknown) => {
-								console.error("Jet Search: making the vectors failed", e);
-								new Notice(
-									"Search by meaning: the notes could not be given their meaning (see the console).",
-								);
-								redraw();
-							});
-						}),
-					);
-				},
-			},
-			{
-				name: "Model",
-				desc: `${MODEL.id} · static (one vector per note) · ${(meaning.installedBytes() / 1e6).toFixed(1)} MB in Jet's folder`,
-				render: (row: Setting) => {
-					row.addButton((b) => {
-						b.setButtonText("Remove the model").onClick(() => void meaning.remove().then(redraw));
-						b.buttonEl.addClass("mod-warning");
-					});
-				},
-			},
-			{
-				name: "Questions use it by themselves",
-				desc: MEANING_QUESTIONS,
-				control: { type: "toggle", key: "meaningQuestions" },
-			},
-			{
-				name: "Long searches go by meaning too",
-				desc: MEANING_LONG,
-				control: { type: "toggle", key: "meaningLong" },
-			},
-		);
-	}
-	return { type: "group", heading: "Search by meaning", items };
-};

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { App, Setting } from "obsidian";
-import type { JetSettingTab } from "../src/settings-tab";
+import { App } from "obsidian";
+import { buttonNamed, goTo, rowNamed, tabOf, textsOf } from "./settings-ui";
 import JetSearchPlugin from "../src/main";
 
 const manifest = { id: "jet-search", name: "Jet Search", version: "0.0.1" };
@@ -75,12 +75,50 @@ describe("plugin start", () => {
 });
 
 describe("settings tab", () => {
-	it("shows the version and the build", async () => {
+	afterEach(() => document.body.replaceChildren());
+	const loaded = async () => {
 		const { plugin } = make();
 		await plugin.onload();
-		const tab = plugin.settingTabs[0];
-		tab?.display();
-		const text = tab?.containerEl.textContent ?? "";
+		return { plugin, tab: tabOf(plugin) };
+	};
+
+	it("is Jade's layout: a header with live numbers, a search box, six tabs, cards", async () => {
+		const { tab } = await loaded();
+		tab.display();
+		const el = tab.containerEl;
+		expect(el.querySelector(".jet-set-h")?.textContent).toBe("Jet Search");
+		expect(textsOf(el, ".jet-set-chip")).toEqual(["Index not built yet", "0 scopes"]);
+		expect(el.querySelector("input.jet-set-search")).not.toBeNull();
+		expect(textsOf(el, ".jet-set-tab")).toEqual([
+			"Open & keys",
+			"Results",
+			"Scopes",
+			"Search by meaning",
+			"Index",
+			"Advanced",
+		]);
+		expect(textsOf(el, ".jet-set-name")).toEqual(["Open Jet", "Keys in Jet"]);
+		expect(rowNamed(el, "Double tap")).not.toBeNull();
+		expect(textsOf(goTo(tab, "results"), ".jet-set-name")).toEqual([
+			"Excerpts",
+			"Preview",
+			"Keep the last scope and filters",
+			"Filters",
+		]);
+		// Off by default: only its switch.
+		const meaning = goTo(tab, "meaning");
+		expect(textsOf(meaning, ".jet-set-name")).toEqual(["Search by meaning"]);
+		expect(meaning.querySelector(".jet-set-opts")).toBeNull();
+		expect(textsOf(goTo(tab, "advanced"), ".jet-set-name")).toEqual([
+			"Word forms",
+			"Folders to leave out",
+			"Version",
+		]);
+	});
+
+	it("shows the version and the build", async () => {
+		const { tab } = await loaded();
+		const text = goTo(tab, "advanced").textContent ?? "";
 		expect(text).toContain("Version");
 		expect(text).toContain("0.0.1");
 		expect(text).toContain("dev");
@@ -88,46 +126,18 @@ describe("settings tab", () => {
 
 	it("draws the index status at once and never changes the tab afterwards", async () => {
 		// Obsidian 1.13+ redraws a settings tab whose text changes; a late update looped forever.
-		const { plugin } = make();
-		await plugin.onload();
-		const tab = plugin.settingTabs[0];
-		tab?.display();
-		const before = tab?.containerEl.textContent ?? "";
+		const { tab } = await loaded();
+		const el = goTo(tab, "index");
+		const before = el.textContent ?? "";
 		expect(before).toContain("Not built yet");
+		expect(buttonNamed(el, "Rebuild")).not.toBeNull();
+		expect(buttonNamed(el, "Clear")).not.toBeNull();
 		await new Promise((r) => setTimeout(r, 20));
-		expect(tab?.containerEl.textContent).toBe(before);
-	});
-
-	type Def = { type?: string; heading?: string; name?: string; items?: Def[]; render?: (s: Setting) => void };
-	const defsOf = async (): Promise<{ tab: JetSettingTab; defs: Def[]; plugin: Mocked }> => {
-		const { plugin } = make();
-		await plugin.onload();
-		const tab = plugin.settingTabs[0] as unknown as JetSettingTab;
-		return { tab, defs: tab.getSettingDefinitions() as unknown as Def[], plugin };
-	};
-	const flat = (defs: Def[]): Def[] => defs.flatMap((d) => (d.type === "group" ? (d.items ?? []) : [d]));
-
-	it("declares every setting, so Obsidian 1.13+ draws them and finds them in its settings search", async () => {
-		const { defs } = await defsOf();
-		expect(defs.filter((d) => d.type === "group").map((d) => d.heading)).toEqual([
-			"Open",
-			undefined,
-			"Results",
-			"Search by meaning",
-			"Word forms",
-			"Index",
-		]);
-		// Off by default: only its switch.
-		expect(flat(defs).filter((d) => d.name === "Search by meaning").length).toBe(1);
-		const names = flat(defs).map((d) => d.name);
-		expect(names).toContain("Double tap");
-		expect(flat(defs).some((d) => d.name === "Folders to leave out" && d.type === "page")).toBe(true);
-		expect(names).toContain("English");
-		expect(names.at(-1)).toBe("Version");
+		expect(el.textContent).toBe(before);
 	});
 
 	it("reads and writes Jet's own settings through the control keys", async () => {
-		const { tab, plugin } = await defsOf();
+		const { tab, plugin } = await loaded();
 		tab.setControlValue("shiftInterval", "500");
 		expect(plugin.data.settings.shiftInterval).toBe(500);
 		expect(tab.getControlValue("shiftInterval")).toBe("500");
@@ -140,15 +150,74 @@ describe("settings tab", () => {
 		expect(tab.getControlValue("exclude")).toBe("Archive\nTemplates");
 	});
 
-	it("draws the declared index row at once and never changes it afterwards", async () => {
-		const { defs } = await defsOf();
-		const row = flat(defs).find((d) => d.name === "Index");
-		const el = document.createElement("div");
-		row?.render?.(new Setting(el));
-		const before = el.textContent ?? "";
-		expect(before).toContain("Not built yet");
-		expect(before).toContain("Rebuild");
-		await new Promise((r) => setTimeout(r, 20));
-		expect(el.textContent).toBe(before);
+	it("a switch and a dropdown write their setting; the double tap off hides its window", async () => {
+		const { tab, plugin } = await loaded();
+		const el = goTo(tab, "results");
+		el.querySelector<HTMLElement>('.checkbox-container[data-key="excerpts"]')?.click();
+		expect(plugin.data.settings.excerpts).toBe(false);
+		const open = goTo(tab, "open");
+		expect(rowNamed(open, "Double tap window")).not.toBeNull();
+		const sel = open.querySelector<HTMLSelectElement>('select[data-key="tapKey"]');
+		if (sel) {
+			sel.value = "off";
+			sel.dispatchEvent(new Event("change"));
+		}
+		expect(plugin.data.settings.tapKey).toBe("off");
+		expect(rowNamed(tab.containerEl, "Double tap window")).toBeNull();
+	});
+
+	it("its search box finds a setting on any tab, keeping only the rows that match", async () => {
+		const { tab } = await loaded();
+		tab.display();
+		const box = tab.containerEl.querySelector<HTMLInputElement>("input.jet-set-search");
+		if (!box) throw new Error("no search box");
+		box.value = "window";
+		box.dispatchEvent(new Event("input"));
+		const el = tab.containerEl;
+		expect(el.querySelector(".jet-set-tab.is-active")).toBeNull();
+		expect(textsOf(el, ".jet-set-name")).toContain("Open Jet");
+		expect(rowNamed(el, "Double tap window")).not.toBeNull();
+		expect(rowNamed(el, "Hotkey")).toBeNull();
+		box.value = "zzqx";
+		box.dispatchEvent(new Event("input"));
+		expect(el.querySelector(".jet-set-lead")?.textContent).toBe("Nothing matches.");
+	});
+});
+
+describe("the keys in the window, in settings", () => {
+	afterEach(() => document.body.replaceChildren());
+	const key = (k: string, code: string, mods: Partial<KeyboardEventInit> = {}) =>
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: k, code, bubbles: true, ...mods }));
+
+	it("click a key, press another: saved, marked, with ↺ to its default; a taken key is refused, naming why", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		const tab = tabOf(plugin);
+		const cell = () =>
+			goTo(tab, "open").querySelector<HTMLElement>('tr[data-action="copyLink"] .jet-set-kbd') as HTMLElement;
+		goTo(tab, "open");
+		expect(cell().textContent).toBe("⌘L");
+		cell().click();
+		expect(tab.containerEl.querySelector('tr[data-action="copyLink"] .jet-set-rec')).not.toBeNull();
+		key("c", "KeyC", { metaKey: true });
+		expect(plugin.data.settings.keys.copyLink).toEqual({ mods: ["Mod"], key: "c" });
+		expect(tab.containerEl.querySelector('tr[data-action="copyLink"] .jet-set-kbd.is-changed')?.textContent).toBe(
+			"⌘C",
+		);
+		// Another action's key is refused, and the tab says which.
+		tab.containerEl.querySelector<HTMLElement>('tr[data-action="preview"] .jet-set-kbd')?.click();
+		key("k", "KeyK", { metaKey: true });
+		expect(plugin.data.settings.keys.preview).toBeUndefined();
+		expect(tab.containerEl.querySelector(".jet-set-keymsg")?.textContent).toContain("The note's actions");
+		// Esc while recording leaves the key as it was.
+		tab.containerEl.querySelector<HTMLElement>('tr[data-action="preview"] .jet-set-kbd')?.click();
+		key("Escape", "Escape");
+		expect(plugin.data.settings.keys.preview).toBeUndefined();
+		tab.containerEl.querySelector<HTMLElement>('tr[data-action="copyLink"] .jet-set-reset')?.click();
+		expect(plugin.data.settings.keys.copyLink).toBeUndefined();
+		expect(tab.getControlValue("key:copyLink")).toBe("⌘L");
+		tab.setControlValue("key:sort", { mods: ["Mod"], key: "o" });
+		buttonNamed(tab.containerEl, "Reset all")?.click();
+		expect(plugin.data.settings.keys).toEqual({});
 	});
 });
