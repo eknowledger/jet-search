@@ -1,6 +1,7 @@
 import { type App, Menu, Modal, setIcon } from "obsidian";
 import { cutPieces, type Filter, filterLabel, type Found, sameFilter, withoutPieces } from "../filters/filter";
 import { isLongSearch, isQuestion } from "../meaning/question";
+import { joinNames, listNames, type Where } from "../scopes/where";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
@@ -111,6 +112,8 @@ export type HintState = {
 	widened?: string;
 	/** Filters are on (with no text, Esc clears them first). */
 	filters?: true;
+	/** Several scopes are on: ⇧↵ creates the note in this one, the first. */
+	create?: string;
 };
 
 /** Result order. */
@@ -181,13 +184,13 @@ const openAt = (e: Extract<Entry, { type: "item" }>): OpenAt | undefined => {
 /** What the modal needs from the plugin. */
 export type ModalHost = {
 	/**
-	 * The list for this text (empty text: recents), inside the scope `scope` when a chip is applied;
-	 * `paint` may be called again as results arrive.
+	 * The list for this text (empty text: recents), inside the scope `scope` when a chip is applied, or
+	 * any of several when you added more; `paint` may be called again as results arrive.
 	 */
 	list(
 		text: string,
 		paint: (entries: Entry[], status?: string) => void,
-		scope?: string,
+		scope?: Where,
 		filters?: readonly Filter[],
 		meaning?: { on: boolean; offered: boolean },
 		/** The order chosen; the notes kept by filters alone are sorted by it before the first ones are taken. */
@@ -201,8 +204,17 @@ export type ModalHost = {
 	open(path: string, how: OpenHow, at?: OpenAt): void;
 	/** Footer hints for the current text and scope state. */
 	hints(text: string, state?: HintState): Array<[key: string, label: string]>;
-	/** The modal closed: its text, whether a note was opened, and the chip's scope if one was applied. */
-	closed(text: string, opened: boolean, scope?: ScopeView, filters?: readonly Filter[]): void;
+	/**
+	 * The modal closed: its text, whether a note was opened, the first scope if one was applied, its
+	 * filters, and the scopes added beside the first.
+	 */
+	closed(
+		text: string,
+		opened: boolean,
+		scope?: ScopeView,
+		filters?: readonly Filter[],
+		also?: readonly ScopeView[],
+	): void;
 	placeholder: string;
 	/** The preview pane's setting (⌘. toggles it). */
 	previewOn(): boolean;
@@ -224,8 +236,8 @@ export type ModalHost = {
 	act?(id: string, path: string): boolean;
 	/** Open Obsidian's core Search with this query. */
 	coreSearch?(query: string): void;
-	/** The last scope and filters to reopen with, or null. */
-	restore?(): { scope?: ScopeView; filters: Filter[] } | null;
+	/** The last scopes and filters to reopen with, or null. */
+	restore?(): { scope?: ScopeView; also?: ScopeView[]; filters: Filter[] } | null;
 	/** The footer's settings popover, if this host has one. */
 	renderSettings?(el: HTMLElement): void;
 	/** Scopes typed in the box; absent when there are none. */
@@ -234,24 +246,26 @@ export type ModalHost = {
 		card(id: string): ScopeCard;
 		/** Open the scope's settings. */
 		edit(id: string): void;
+		/** Another scope while one is on: added beside it (the default) or in its place. */
+		another?(): "add" | "switch";
 	};
 	/** Filters typed in the box or picked in the bar; absent: no filters. */
 	filters?: {
 		/** The filters in the text (links resolved), where each is and whether it is finished. */
 		find(text: string): Found[];
 		/** A property's values with their note counts, inside the scope and filters (most first). */
-		values(key: string, scope?: string, filters?: readonly Filter[]): Array<[value: string, notes: number]>;
-		tags(scope?: string, filters?: readonly Filter[]): Array<[tag: string, notes: number]>;
+		values(key: string, scope?: Where, filters?: readonly Filter[]): Array<[value: string, notes: number]>;
+		tags(scope?: Where, filters?: readonly Filter[]): Array<[tag: string, notes: number]>;
 		/** Property keys your notes use, with their note counts. */
 		keys(): Array<[key: string, notes: number]>;
 		/** Every scope, for the bar's In menu. */
 		scopes(): ScopeView[];
 		/** What to list for the piece at the caret, counted inside the scope and filters. */
-		complete(text: string, caret: number, scope?: string, filters?: readonly Filter[]): Completion | null;
+		complete(text: string, caret: number, scope?: Where, filters?: readonly Filter[]): Completion | null;
 		/** An unknown key a used key is two edits from (`stauts:draft`). */
 		fix(text: string): FixView | null;
 		/** The notes the fixed filter would keep, as rows (shown dimmed under the results). */
-		preview(filter: Filter, scope?: string, filters?: readonly Filter[]): Entry[];
+		preview(filter: Filter, scope?: Where, filters?: readonly Filter[]): Entry[];
 	};
 };
 
@@ -304,7 +318,12 @@ export class JetModal extends Modal {
 	private previewTimer: number | null = null;
 	private resize: ResizeObserver | null = null;
 	// Scopes: the applied chip, what the text says, and their elements.
+	/** The last scope applied: ⌫ selects it, ⇥ cycles its name, its card opens on hover. */
 	private chip: ScopeView | null = null;
+	/** The scopes added before it: the search covers them all, first added first. */
+	private kept: ScopeView[] = [];
+	/** A recent search being applied: each scope it names is added, whatever the setting. */
+	private restoring = false;
 	private chipSelected = false;
 	/** The scopes sharing the chip's name (⇥ cycles them); just the chip otherwise. */
 	private choices: ScopeView[] = [];
@@ -318,12 +337,12 @@ export class JetModal extends Modal {
 	/** The last search's meaning state, for the header switch, the footer and the banner. */
 	private meaningNow: MeaningNow = { on: false, offered: false, auto: null };
 	private clearEl!: HTMLElement;
-	/** The chip an Auto scope replaced just now: ⌫ undoes back to it. */
-	private autoPrev: ScopeView | null = null;
+	/** The chips an Auto scope replaced just now (Switch to it): ⌫ undoes back to them. */
+	private autoPrev: { chip: ScopeView; kept: ScopeView[] } | null = null;
 	/** The name as you typed it when Auto applied (`mb`): the undo puts that back. */
 	private autoName: string | null = null;
 	/** Widened from a chip (⇧⇧): ⇧⇧ again puts it back. */
-	private widened: { chip: ScopeView; choices: ScopeView[] } | null = null;
+	private widened: { chip: ScopeView; choices: ScopeView[]; kept: ScopeView[] } | null = null;
 	/** Between onOpen and onClose. */
 	shown = false;
 	// Filters: chips after the scope's, the last one selected by ⌫, and the bar.
@@ -356,6 +375,7 @@ export class JetModal extends Modal {
 	private fixPreview: Entry[] = [];
 	private readonly fixEl: HTMLElement;
 	private typing: Typed = {};
+	private readonly keptEl: HTMLElement;
 	private readonly chipEl: HTMLElement;
 	private readonly chipLabel: HTMLElement;
 	private readonly ghostEl: HTMLElement;
@@ -376,6 +396,7 @@ export class JetModal extends Modal {
 		this.contentEl.addClass("jet-content");
 		const top = this.contentEl.createDiv({ cls: "jet-in" });
 		setIcon(top.createSpan({ cls: "jet-sic" }), "search");
+		this.keptEl = top.createSpan({ cls: "jet-kept" });
 		this.chipEl = top.createSpan({ cls: "jet-chip is-hidden" });
 		this.chipLabel = this.chipEl.createSpan({ cls: "jet-chl" });
 		const x = this.chipEl.createSpan({ cls: "jet-chx", attr: { "aria-label": "Remove scope", role: "button" } });
@@ -495,8 +516,10 @@ export class JetModal extends Modal {
 		// Persisted filters: the last scope and filters, pinned.
 		const r = this.initial ? null : (this.host.restore?.() ?? null);
 		if (r && (r.scope || r.filters.length)) {
-			this.chip = r.scope ?? null;
-			this.choices = r.scope ? [r.scope] : [];
+			const all = r.scope ? [r.scope, ...(r.also ?? [])] : [];
+			this.chip = all.at(-1) ?? null;
+			this.kept = all.slice(0, -1);
+			this.choices = this.chip ? [this.chip] : [];
 			this.filters = [...r.filters];
 			this.pinnedKey = this.chipsKey();
 		}
@@ -523,7 +546,8 @@ export class JetModal extends Modal {
 		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
 		this.preview.destroy();
 		if (this.cardTimer !== null) window.clearTimeout(this.cardTimer);
-		this.host.closed(this.inputEl.value, this.opened, this.chip ?? undefined, this.filters);
+		const [first, ...also] = this.where();
+		this.host.closed(this.inputEl.value, this.opened, first, this.filters, also);
 		this.contentEl.empty();
 	}
 
@@ -579,7 +603,11 @@ export class JetModal extends Modal {
 		// The first header says where the search runs (inside the chip's scope, or everywhere while one
 		// is suggested) and how many filters narrow it.
 		const n = this.filters.length;
-		const where = this.chip ? `in ${this.chip.name}` : this.typing.suggest ? "everywhere" : "";
+		const where = this.chip
+			? `in ${joinNames(this.where().map((s) => s.name))}`
+			: this.typing.suggest
+				? "everywhere"
+				: "";
 		const note = [where, n ? `${n} filter${n === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") || undefined;
 		const h = entries.findIndex((e) => e.type === "header" && !e.plain);
 		const first = entries[h];
@@ -671,7 +699,7 @@ export class JetModal extends Modal {
 		this.fixPreview = fx
 			? (this.host.filters?.preview(
 					{ kind: "prop", key: fx.key, value: fx.value },
-					this.chip?.id,
+					this.whereArg(),
 					this.filters,
 				) ?? [])
 			: [];
@@ -682,7 +710,8 @@ export class JetModal extends Modal {
 			// With a chip on too: `@name`, an Auto name or a suggestion switch scopes (they were ignored).
 			const t = this.host.scopes.typed(raw);
 			const current = this.chip;
-			const same = (v: ScopeView | undefined): boolean => !!v && v.id === current?.id;
+			const on = this.where();
+			const same = (v: ScopeView | undefined): boolean => !!v && on.some((x) => x.id === v.id);
 			// The space you typed after the name stays, so the next word does not stick to the last one.
 			const keep = (rest: string): string => (rest && /\s$/u.test(raw) && !/\s$/u.test(rest) ? `${rest} ` : rest);
 			if (t.applied && (t.applied.complete || final)) {
@@ -696,9 +725,12 @@ export class JetModal extends Modal {
 				const s = t.suggest;
 				const spaced = s ? /\s/u.test(raw[s.at + s.name.length] ?? "") : /\s$/u.test(raw);
 				if (spaced) {
+					// Switching: ⌫ puts back the chips it replaced. Adding: ⌫ just removes it.
+					const before =
+						current && this.another() === "switch" ? { chip: current, kept: [...this.kept] } : null;
 					this.applyChip(auto, keep(s?.rest ?? ""));
 					this.autoUndo = true;
-					this.autoPrev = current;
+					this.autoPrev = before;
 					this.autoName = s ? s.name : raw.trim();
 					this.drawScope();
 					this.footer(this.inputEl.value);
@@ -712,7 +744,7 @@ export class JetModal extends Modal {
 		const text = pending.length ? withoutPieces(shown, pending) : shown;
 		this.meaningNow = this.meaningState(text);
 		this.drawScope();
-		const scope = this.chip?.id;
+		const scope = this.whereArg();
 		this.selectedKey = null;
 		const seq = ++this.listSeq;
 		// A new list starts at its top: the selected first row is in view.
@@ -737,7 +769,7 @@ export class JetModal extends Modal {
 		const f = this.host.filters;
 		const v = this.inputEl.value;
 		const caret = this.inputEl.selectionStart ?? v.length;
-		const c = f ? f.complete(v, caret, this.chip?.id, this.filters) : null;
+		const c = f ? f.complete(v, caret, this.whereArg(), this.filters) : null;
 		const piece = c ? v.slice(c.from, c.to) : null;
 		if (!c || piece === this.acClosedFor) {
 			this.closeAC();
@@ -829,7 +861,7 @@ export class JetModal extends Modal {
 	// ── Filters ────────────────────────────────────
 
 	private chipsKey(): string {
-		return JSON.stringify([this.chip?.id ?? null, this.filters]);
+		return JSON.stringify([this.where().map((s) => s.id), this.filters]);
 	}
 
 	private pinned(): boolean {
@@ -912,14 +944,15 @@ export class JetModal extends Modal {
 			const r = el.getBoundingClientRect();
 			m.showAtPosition({ x: r.left, y: r.bottom + 4 });
 		};
-		const scope = this.chip?.id;
+		const scope = this.whereArg();
 		const title = this.filters.some((x) => x.kind === "title");
 		button("Title only", "type", title, () =>
 			title
 				? ((this.filters = this.filters.filter((x) => x.kind !== "title")), this.refresh())
 				: this.addFilter({ kind: "title" }),
 		);
-		button(this.chip ? `In: ${this.chip.name}` : "In", "scan-search", !!this.chip, (el) =>
+		const inLabel = this.chip ? `In: ${joinNames(this.where().map((s) => s.name))}` : "In";
+		button(inLabel, "scan-search", !!this.chip, (el) =>
 			menu(
 				el,
 				f
@@ -995,6 +1028,7 @@ export class JetModal extends Modal {
 				this.filters = [];
 				this.filterSel = false;
 				this.chip = null;
+				this.kept = [];
 				this.choices = [];
 				this.refresh();
 			});
@@ -1002,8 +1036,37 @@ export class JetModal extends Modal {
 
 	// ── Scopes ─────────────────────────────────────
 
-	/** Tab, `in:name` or a recent search: the scope becomes the chip; the box keeps the rest. */
-	private applyChip(scope: ScopeView, text: string, choices: ScopeView[] = [scope]): void {
+	/** Every scope the search covers, first added first (none: everywhere). */
+	private where(): ScopeView[] {
+		return this.chip ? [...this.kept, this.chip] : [];
+	}
+
+	/** The same, as the host takes it: one id, or several. */
+	private whereArg(): Where | undefined {
+		const w = this.where();
+		return w.length > 1 ? w.map((s) => s.id) : w[0]?.id;
+	}
+
+	/** Another scope while one is on: your setting, Add it by default; a recent search adds each it names. */
+	private another(): "add" | "switch" {
+		return this.restoring ? "add" : (this.host.scopes?.another?.() ?? "add");
+	}
+
+	/**
+	 * Tab, `in:name` or a recent search: the scope becomes the chip; the box keeps the rest. With a chip
+	 * on, `add` keeps it beside the new one, `switch` replaces every chip.
+	 */
+	private applyChip(
+		scope: ScopeView,
+		text: string,
+		choices: ScopeView[] = [scope],
+		how: "add" | "switch" = this.another(),
+	): void {
+		const cur = this.chip;
+		// A scope already on just becomes the last chip.
+		if (cur && how === "add" && cur.id !== scope.id)
+			this.kept = [...this.kept, cur].filter((s) => s.id !== scope.id);
+		else if (how === "switch") this.kept = [];
 		this.chip = scope;
 		this.choices = choices;
 		this.widened = null;
@@ -1013,15 +1076,27 @@ export class JetModal extends Modal {
 		this.hideCard();
 		this.inputEl.value = text;
 		this.inputEl.setSelectionRange(text.length, text.length);
+		// A recent search names its scopes one after the other: each applies as typed whole.
+		this.refresh(this.restoring);
+	}
+
+	/** × on a chip added before the last one: the search no longer covers it; the text stays. */
+	private removeKept(id: string): void {
+		this.kept = this.kept.filter((s) => s.id !== id);
+		this.suppressAuto.add(id);
 		this.refresh();
 	}
 
-	/** × keeps the text; the second ⌫ puts the name back in front of it, as you typed it. */
+	/**
+	 * × keeps the text; the second ⌫ puts the name back in front of it, as you typed it. The chip added
+	 * before it, if any, becomes the last one.
+	 */
 	private removeChip(nameBack: boolean, typedName?: string): void {
 		const chip = this.chip;
 		if (!chip) return;
-		this.chip = null;
-		this.choices = [];
+		const back = this.kept.pop() ?? null;
+		this.chip = back;
+		this.choices = back ? [back] : [];
 		this.autoUndo = false;
 		this.autoPrev = null;
 		this.chipSelected = false;
@@ -1044,6 +1119,7 @@ export class JetModal extends Modal {
 		const next = this.choices[(i + step + n) % n];
 		if (!next || i < 0) return;
 		this.chip = next;
+		this.kept = this.kept.filter((s) => s.id !== next.id);
 		this.refresh();
 	}
 
@@ -1053,8 +1129,9 @@ export class JetModal extends Modal {
 	 */
 	widen(): boolean {
 		if (this.chip) {
-			this.widened = { chip: this.chip, choices: this.choices };
+			this.widened = { chip: this.chip, choices: this.choices, kept: this.kept };
 			this.chip = null;
+			this.kept = [];
 			this.choices = [];
 			this.chipSelected = false;
 			this.autoUndo = false;
@@ -1066,6 +1143,7 @@ export class JetModal extends Modal {
 		if (!w) return false;
 		this.widened = null;
 		this.chip = w.chip;
+		this.kept = w.kept;
 		this.choices = w.choices;
 		this.refresh();
 		return true;
@@ -1102,6 +1180,7 @@ export class JetModal extends Modal {
 		this.filterSel = false;
 		this.widened = null;
 		this.chip = null;
+		this.kept = [];
 		this.choices = [];
 		this.filters = [];
 		this.refresh();
@@ -1116,7 +1195,9 @@ export class JetModal extends Modal {
 		this.chipLabel.setText(
 			chip ? (this.choices.length > 1 && chip.kind ? `${chip.name} · ${chip.kind}` : chip.name) : "",
 		);
-		this.inputEl.placeholder = chip ? `Search in ${chip.name}…` : this.host.placeholder;
+		this.drawKept();
+		const names = this.where().map((s) => s.name);
+		this.inputEl.placeholder = chip ? `Search in ${listNames(names)}…` : this.host.placeholder;
 		const hint = !chip ? this.typing.hint : undefined;
 		this.ihintEl.toggleClass("is-hidden", !hint);
 		this.ihintEl.empty();
@@ -1127,6 +1208,24 @@ export class JetModal extends Modal {
 		this.drawBanner();
 		this.placeGhost();
 		if (!chip) this.hideCard();
+	}
+
+	/** The chips added before the last one: each with its ×. */
+	private drawKept(): void {
+		const el = this.keptEl;
+		el.empty();
+		const pinned = this.pinned();
+		for (const s of this.chip ? this.kept : []) {
+			const c = el.createSpan({ cls: `jet-chip is-kept${pinned ? " is-pinned" : ""}` });
+			c.createSpan({ cls: "jet-chl", text: s.name });
+			const x = c.createSpan({ cls: "jet-chx", attr: { "aria-label": `Remove ${s.name}`, role: "button" } });
+			setIcon(x, "x");
+			c.addEventListener("mousedown", (e) => e.preventDefault());
+			x.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.removeKept(s.id);
+			});
+		}
 	}
 
 	/** The banner above the rows: widened, Auto's undo, the scopes of one name, or the suggestion. */
@@ -1167,13 +1266,28 @@ export class JetModal extends Modal {
 			t.createEl("b", { text: chip.name });
 			t.appendText(" · Auto");
 			keys([["⌫", "Undo"]]);
+		} else if (chip && s && !s.others.length && this.another() === "add") {
+			// A scope named in the text while one is on: ⇥ adds it, ⇧⇥ searches it alone.
+			const t = head("plus");
+			t.appendText("Add ");
+			t.createEl("b", { text: s.scope.name });
+			t.appendText(" to this search");
+			keys([
+				["⇥", "Add"],
+				["⇧⇥", `Only ${s.scope.name}`],
+			]);
 		} else if (chip && s && !s.others.length) {
-			// A scope named in the text while a chip is on: ⇥ switches to it, so the banner says that.
+			// Switch to it (your setting): ⇥ switches, ⇧⇥ adds it instead.
 			const t = head("scan-search");
 			t.appendText("Search in ");
 			t.createEl("b", { text: s.scope.name });
-			t.appendText(` instead of ${chip.name} for “${s.rest}” · ${notes(s.scope.members)}`);
-			keys([["⇥", "Tab"]]);
+			t.appendText(
+				` instead of ${joinNames(this.where().map((x) => x.name))} for “${s.rest}” · ${notes(s.scope.members)}`,
+			);
+			keys([
+				["⇥", "Switch"],
+				["⇧⇥", "Add it"],
+			]);
 		} else if (chip && this.choices.length > 1) {
 			b.addClass("is-multi");
 			head("scan-search").appendText(
@@ -1257,6 +1371,7 @@ export class JetModal extends Modal {
 			if (this.chipSelected) st.selected = true;
 			if (this.autoUndo) st.auto = true;
 			if (this.choices.length > 1) st.more = true;
+			if (this.kept[0]) st.create = this.kept[0].name;
 			return st;
 		}
 		if (this.widened) return { widened: this.widened.chip.name };
@@ -1415,13 +1530,18 @@ export class JetModal extends Modal {
 		if (!e) return;
 		if (e.type === "search") {
 			this.inputEl.value = e.query;
-			this.refresh(true);
+			this.restoring = true;
+			try {
+				this.refresh(true);
+			} finally {
+				this.restoring = false;
+			}
 			return;
 		}
 		if (e.type === "create") {
 			if (!this.host.create) return;
 			this.opened = true;
-			this.host.create(e.text, this.chip?.id);
+			this.host.create(e.text, this.where()[0]?.id);
 			this.close();
 			return;
 		}
@@ -1475,7 +1595,14 @@ export class JetModal extends Modal {
 		});
 		// Tab accepts the suggestion, or the name alone with nothing typed yet.
 		this.scope.register(["Shift"], "Tab", (e) => {
-			if (e.isComposing || !this.chip || this.choices.length < 2) return;
+			if (e.isComposing) return;
+			// A scope offered while one is on: the other choice than ⇥'s.
+			const s = this.typing.suggest;
+			if (this.chip && s && !s.others.length) {
+				this.applyChip(s.scope, s.rest, [s.scope], this.another() === "add" ? "switch" : "add");
+				return false;
+			}
+			if (!this.chip || this.choices.length < 2) return;
 			this.cycle(-1);
 			return false;
 		});
@@ -1537,8 +1664,9 @@ export class JetModal extends Modal {
 				const prev = this.autoPrev;
 				this.removeChip(true, this.autoName ?? undefined);
 				if (prev) {
-					this.chip = prev;
-					this.choices = [prev];
+					this.chip = prev.chip;
+					this.kept = prev.kept;
+					this.choices = [prev.chip];
 					this.refresh();
 				}
 				return false;
@@ -1686,7 +1814,7 @@ export class JetModal extends Modal {
 			const text = this.inputEl.value.trim();
 			if (!text || !this.host.create) return false;
 			this.opened = true;
-			this.host.create(text, this.chip?.id);
+			this.host.create(text, this.where()[0]?.id);
 			this.close();
 			return false;
 		});

@@ -647,6 +647,11 @@
 	border: 1px solid hsla(var(--interactive-accent-hsl), 0.45);
 }
 
+/* The scopes added before the last one: chips in the same row. */
+.jet-kept {
+	display: contents;
+}
+
 .jet-chip:hover {
 	border-color: var(--interactive-accent);
 }

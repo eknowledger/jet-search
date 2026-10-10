@@ -147,6 +147,7 @@ export class JetSettingTab extends PluginSettingTab {
 		if (scope) return scope.field === "mode" ? scope.s.mode : scope.s.combine;
 		if (key === "scopesWhenNew") return s.scopesWhenNew;
 		if (key === "scopeMode") return s.scopeMode;
+		if (key === "scopeAnother") return s.scopeAnother;
 		if (key === "meaning") return s.meaning && this.owner.meaning.installed();
 		if (key === "meaningQuestions") return s.meaningQuestions;
 		if (key === "meaningLong") return s.meaningLong;
@@ -219,6 +220,11 @@ export class JetSettingTab extends PluginSettingTab {
 		}
 		if (key === "scopesWhenNew") {
 			s.scopesWhenNew = value === "add" || value === "nothing" ? value : "tell";
+			this.owner.save();
+			return;
+		}
+		if (key === "scopeAnother") {
+			s.scopeAnother = value === "switch" ? "switch" : "add";
 			this.owner.save();
 			return;
 		}

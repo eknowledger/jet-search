@@ -134,6 +134,15 @@ export const scopesPage = (h: ScopesHost): SettingDefinitionPage => {
 			options: { suggest: "Suggest", auto: "Auto", "in-only": "in: only" },
 		},
 	};
+	const another: SettingDefinition = {
+		name: "Another scope while one is on",
+		desc: "Add it: the search covers both (results from either). Switch to it: the new one replaces the first.",
+		control: {
+			type: "dropdown",
+			key: "scopeAnother",
+			options: { add: "Add it", switch: "Switch to it" },
+		},
+	};
 	const whenNew: SettingDefinition = {
 		name: "When new ones appear",
 		desc: "Jet checks after changes in your vault (a new folder that fits a pattern, a new property value).",
@@ -149,7 +158,7 @@ export const scopesPage = (h: ScopesHost): SettingDefinitionPage => {
 		desc: SCOPES_INTRO,
 		displayValue: () => scopesSummary(h),
 		items: [
-			{ type: "group", items: [every, h.canOpenPages() ? find : findPage, whenNew] },
+			{ type: "group", items: [every, another, h.canOpenPages() ? find : findPage, whenNew] },
 			{
 				type: "list",
 				items: all.map((s) => scopePage(h, s)),

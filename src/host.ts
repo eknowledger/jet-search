@@ -33,6 +33,7 @@ import { clusterStart } from "./excerpt/chars";
 import { createTarget } from "./scopes/create";
 import { fold } from "./scopes/names";
 import { parseScope } from "./scopes/parse";
+import { joinNames, unionOf, type Where, whereIds } from "./scopes/where";
 import { MODE_LABEL } from "./settings/scopes-page";
 import type { Search } from "./search";
 import type { IndexStatus } from "./index-status";
@@ -143,7 +144,7 @@ export class JetHost implements ModalHost {
 		f: FilterSets,
 		text: string,
 		caret: number,
-		scope?: string,
+		scope?: Where,
 		filters?: readonly Filter[],
 	): Completion | null {
 		const { from, to, piece } = pieceAt(text, caret);
@@ -151,7 +152,10 @@ export class JetHost implements ModalHost {
 		if (!want) return null;
 		const starts = (v: string, prefix: string): boolean => !prefix || fold(v).startsWith(fold(prefix));
 		const quote = (v: string): string => (/\s/.test(v) ? `"${v}"` : v);
-		const where = scope !== undefined ? this.scopeAccess?.all().find((s) => s.id === scope)?.name : undefined;
+		const ids = whereIds(scope);
+		const all = this.scopeAccess?.all() ?? [];
+		const names = ids.flatMap((id) => all.find((s) => s.id === id)?.name ?? []);
+		const where = names.length ? joinNames(names) : undefined;
 		const base = { from, to, where };
 		switch (want.kind) {
 			case "tags": {
@@ -174,7 +178,7 @@ export class JetHost implements ModalHost {
 					const fm = this.app.metadataCache.getFileCache(x)?.frontmatter;
 					return !!fm && Object.keys(fm).some((k) => k.toLowerCase() === key.toLowerCase());
 				}).length;
-				const narrowed = scope !== undefined || !!filters?.length;
+				const narrowed = ids.length > 0 || !!filters?.length;
 				const vault = narrowed
 					? `Vault-wide: ${this.values(key)
 							.slice(0, 3)
@@ -248,12 +252,14 @@ export class JetHost implements ModalHost {
 		}
 	}
 
-	/** The notes inside the scope and filters (null: every note). */
-	private within(scope?: string, filters: readonly Filter[] = []): ReadonlySet<string> | null {
+	/** The notes inside the scope (or any of several) and filters (null: every note). */
+	private within(scope?: Where, filters: readonly Filter[] = []): ReadonlySet<string> | null {
 		const sets: Array<ReadonlySet<string>> = [];
-		if (scope !== undefined && this.scopeAccess) {
-			this.scopeAccess.ensure();
-			sets.push(this.scopeAccess.membersOf(scope));
+		const a = this.scopeAccess;
+		const ids = whereIds(scope);
+		if (ids.length && a) {
+			a.ensure();
+			sets.push(unionOf(ids, (id) => a.membersOf(id)));
 		}
 		for (const x of filters) if (x.kind !== "title" && this.filterSets) sets.push(this.filterSets.notes(x));
 		if (!sets.length) return null;
@@ -261,14 +267,14 @@ export class JetHost implements ModalHost {
 		return new Set([...(first ?? [])].filter((p) => rest.every((r) => r.has(p))));
 	}
 
-	private files(scope?: string, filters?: readonly Filter[]): TFile[] {
+	private files(scope?: Where, filters?: readonly Filter[]): TFile[] {
 		const w = this.within(scope, filters);
 		const all = this.app.vault.getMarkdownFiles();
 		return w ? all.filter((f) => w.has(f.path)) : all;
 	}
 
 	/** A property's values and their note counts (counted inside the scope and filters). */
-	private values(key: string, scope?: string, filters?: readonly Filter[]): Array<[string, number]> {
+	private values(key: string, scope?: Where, filters?: readonly Filter[]): Array<[string, number]> {
 		const low = key.toLowerCase();
 		const counts = new Map<string, { name: string; n: number }>();
 		for (const file of this.files(scope, filters)) {
@@ -296,7 +302,7 @@ export class JetHost implements ModalHost {
 			.map((c) => [c.name, c.n]);
 	}
 
-	private tagCounts(scope?: string, filters?: readonly Filter[]): Array<[string, number]> {
+	private tagCounts(scope?: Where, filters?: readonly Filter[]): Array<[string, number]> {
 		const counts = new Map<string, number>();
 		for (const file of this.files(scope, filters)) {
 			const cache = this.app.metadataCache.getFileCache(file);
@@ -428,7 +434,12 @@ export class JetHost implements ModalHost {
 	get scopes(): ModalHost["scopes"] {
 		const a = this.scopeAccess;
 		if (!a?.all().length) return undefined;
-		return { typed: (t) => this.typed(a, t), card: (id) => this.card(a, id), edit: (id) => a.edit(id) };
+		return {
+			typed: (t) => this.typed(a, t),
+			card: (id) => this.card(a, id),
+			edit: (id) => a.edit(id),
+			another: () => this.data().settings.scopeAnother,
+		};
 	}
 
 	private typed(a: HostScopes, text: string): Typed {
@@ -512,14 +523,14 @@ export class JetHost implements ModalHost {
 		};
 	}
 
-	/** A scope's notes with nothing typed: those you opened, most recent first, then by last change. */
-	private scopeRecents(id: string): Entry[] {
+	/** A scope's notes (or several scopes') with nothing typed: those you opened, most recent first, then by last change. */
+	private scopeRecents(scope: Where): Entry[] {
 		const a = this.scopeAccess;
 		if (!a) return [];
 		a.ensure();
 		const now = Date.now();
 		const opened = this.data().opened;
-		const files = [...a.membersOf(id)]
+		const files = [...unionOf(whereIds(scope), (id) => a.membersOf(id))]
 			.map((p) => this.app.vault.getFileByPath(p))
 			.filter((f): f is TFile => !!f)
 			.map((f) => {
@@ -612,13 +623,13 @@ export class JetHost implements ModalHost {
 	list(
 		text: string,
 		paint: (entries: Entry[], status?: string) => void,
-		scope?: string,
+		scope?: Where,
 		filters: readonly Filter[] = [],
 		meaning?: { on: boolean; offered: boolean },
 		order?: Sort,
 	): void {
 		if (!text.trim() && !filters.length) {
-			paint(scope !== undefined ? this.scopeRecents(scope) : this.recents());
+			paint(whereIds(scope).length ? this.scopeRecents(scope as Where) : this.recents());
 			this.search().warm();
 			return;
 		}
@@ -628,15 +639,18 @@ export class JetHost implements ModalHost {
 	/** Search by meaning, set by the plugin: available while it is on and its model is installed. */
 	meaning?: ModalHost["meaning"];
 
-	/** The last scope and filters, when "Persist filters" is on. */
-	restore(): { scope?: ScopeView; filters: Filter[] } | null {
+	/** The last scopes and filters, when "Persist filters" is on; scopes since deleted are left out. */
+	restore(): { scope?: ScopeView; also?: ScopeView[]; filters: Filter[] } | null {
 		const d = this.data();
 		if (!d.settings.persistFilters || !d.last) return null;
-		const s = d.last.scope !== undefined ? this.scopeAccess?.all().find((x) => x.id === d.last?.scope) : undefined;
-		const scope = s
-			? { id: s.id, name: s.name, kind: s.kind, members: this.scopeAccess?.count(s.id) ?? 0 }
-			: undefined;
-		return { scope, filters: d.last.filters };
+		const a = this.scopeAccess;
+		const ids = d.last.scope !== undefined ? [d.last.scope, ...(d.last.also ?? [])] : [];
+		const views = ids.flatMap((id) => {
+			const s = a?.all().find((x) => x.id === id);
+			return s ? [{ id: s.id, name: s.name, kind: s.kind, members: a?.count(s.id) ?? 0 }] : [];
+		});
+		const [scope, ...also] = views;
+		return also.length ? { scope, also, filters: d.last.filters } : { scope, filters: d.last.filters };
 	}
 
 	/**
@@ -675,9 +689,11 @@ export class JetHost implements ModalHost {
 		const f = this.filterSets;
 		const found = f ? findFilters(q, (k) => f.known(k)).filter((x) => x.complete || x.to === q.length) : [];
 		let rest = found.length ? withoutPieces(q, found) : q;
-		const p = this.scopeAccess ? parseScope(rest, this.scopeAccess.all()) : { text: rest };
 		const out: Array<{ chip: [string, string] } | { text: string }> = [];
-		if (p.applied) {
+		// Every scope the search names, as it applies them (several).
+		for (let i = 0; i < 4 && this.scopeAccess; i++) {
+			const p = parseScope(rest, this.scopeAccess.all());
+			if (!p.applied) break;
 			out.push({ chip: ["", p.applied.name] });
 			rest = p.text;
 		}
@@ -811,7 +827,7 @@ export class JetHost implements ModalHost {
 				? [
 						["↵", "Open"],
 						["⌘↵", tab],
-						["⇧↵", `Create in ${state.chip}`],
+						["⇧↵", `Create in ${state.create ?? state.chip}`],
 						["⌫", `Remove ${state.chip}`],
 						["⇧⇧", "Widen"],
 					]
@@ -926,18 +942,34 @@ export class JetHost implements ModalHost {
 		});
 	}
 
-	closed(text: string, opened: boolean, scope?: ScopeView, filters: readonly Filter[] = []): void {
+	closed(
+		text: string,
+		opened: boolean,
+		scope?: ScopeView,
+		filters: readonly Filter[] = [],
+		also: readonly ScopeView[] = [],
+	): void {
 		this.ruleCounts.clear();
 		const d = this.data();
-		if (opened && scope) d.scopeUses[scope.id] = (d.scopeUses[scope.id] ?? 0) + 1;
+		// Every scope of the search, first added first (several).
+		const scopes = scope ? [scope, ...also] : [];
+		if (opened) for (const s of scopes) d.scopeUses[s.id] = (d.scopeUses[s.id] ?? 0) + 1;
 		d.last =
-			d.settings.persistFilters && (scope || filters.length) ? { scope: scope?.id, filters: [...filters] } : null;
-		// Remembered as typed, scope and filters included, so choosing it again applies them again.
+			d.settings.persistFilters && (scopes.length || filters.length)
+				? {
+						scope: scope?.id,
+						...(also.length ? { also: also.map((s) => s.id) } : {}),
+						filters: [...filters],
+					}
+				: null;
+		// Remembered as typed, scopes and filters included, so choosing it again applies them again.
 		const parts = [...filters.map(filterText).filter(Boolean), text.trim()].filter(Boolean).join(" ");
 		// A name another scope shares is written "Name Kind", so the search finds the same scope again.
-		const shared = scope && (this.scopeAccess?.all() ?? []).some((s) => s.id !== scope.id && s.name === scope.name);
-		const named = scope ? (shared && scope.kind ? `${scope.name} ${scope.kind}` : scope.name) : "";
-		if (opened) rememberSearch(this.data(), scope ? scopedSearch(named, parts) : parts);
+		const all = this.scopeAccess?.all() ?? [];
+		const named = (s: ScopeView): string =>
+			all.some((x) => x.id !== s.id && x.name === s.name) && s.kind ? `${s.name} ${s.kind}` : s.name;
+		const q = scopes.reduceRight((rest, s) => scopedSearch(named(s), rest), parts);
+		if (opened) rememberSearch(this.data(), q);
 		this.search().idle();
 		this.save();
 	}

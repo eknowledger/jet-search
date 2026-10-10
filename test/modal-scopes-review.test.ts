@@ -32,29 +32,32 @@ const item = (path: string): Entry => ({
 	icon: "file-text",
 });
 
-const fakeHost = () => {
-	const lists: Array<[string, string | undefined]> = [];
+const fakeHost = (another: "add" | "switch" = "add") => {
+	const lists: Array<[string, unknown]> = [];
+	const closed: unknown[][] = [];
+	const created: Array<[string, string | undefined]> = [];
 	const host: ModalHost = {
 		placeholder: "Search notes…",
 		list: (text, paint, scope) => {
 			lists.push([text, scope]);
-			paint([{ type: "header", label: "Results", count: 1 }, item(`${scope ?? "all"}/${text}.md`)]);
+			paint([{ type: "header", label: "Results", count: 1 }, item(`${String(scope ?? "all")}/${text}.md`)]);
 		},
 		open: () => {},
 		hints: () => [["↵", "Open"]],
-		closed: () => {},
+		closed: (...a) => closed.push(a),
 		previewOn: () => false,
 		setPreviewOn: () => {},
 		copyLink: () => {},
 		insertLink: () => {},
-		create: () => {},
+		create: (t, s) => created.push([t, s]),
 		scopes: {
 			typed,
 			card: () => ({ name: "", kind: "", mode: "", rules: [], total: 0, aliases: [] }),
 			edit: () => {},
+			another: () => another,
 		},
 	};
-	return { host, lists };
+	return { host, lists, closed, created };
 };
 
 const press = (m: JetModal, key: string) =>
@@ -64,9 +67,11 @@ const type = (m: JetModal, text: string) => {
 	m.inputEl.setSelectionRange(text.length, text.length);
 	m.inputEl.dispatchEvent(new Event("input"));
 };
-const chip = () => document.querySelector(".jet-chip:not(.is-hidden) .jet-chl")?.textContent ?? null;
-const open = () => {
-	const h = fakeHost();
+/** The last chip (⌫ and ⇥ act on it); the chips added before it are `.is-kept`. */
+const chip = () => document.querySelector(".jet-chip:not(.is-kept):not(.is-hidden) .jet-chl")?.textContent ?? null;
+const kept = () => [...document.querySelectorAll(".jet-chip.is-kept .jet-chl")].map((e) => e.textContent);
+const open = (another: "add" | "switch" = "switch") => {
+	const h = fakeHost(another);
 	const m = new JetModal(new App() as never, h.host);
 	m.open();
 	return { m, ...h };
@@ -147,5 +152,102 @@ describe("scopes keep working after Esc, ⌫ and an applied chip", () => {
 		press(m, "Escape");
 		type(m, "Moonbridge ");
 		expect(chip()).toBe("Moonbridge");
+	});
+});
+
+describe("several scopes in one search: Add it, the default", () => {
+	afterEach(() => document.body.replaceChildren());
+	const banner = () => document.querySelector(".jet-ban")?.textContent ?? "";
+	const note = () => document.querySelector(".jet-hscope, .jet-h .jet-hn")?.textContent ?? "";
+
+	it("@name with a chip on adds a second chip; results come from either; the header and placeholder say both", () => {
+		const { m, lists } = open("add");
+		type(m, "Moonbridge ");
+		type(m, "@cob world");
+		expect(kept()).toEqual(["Moonbridge"]);
+		expect(chip()).toBe("Cobalt");
+		expect(lists.at(-1)).toEqual(["world", ["bridge", "cobalt"]]);
+		expect(m.inputEl.placeholder).toBe("Search in Moonbridge and Cobalt…");
+		expect(document.querySelector(".jet-list")?.textContent).toContain("in Moonbridge + Cobalt");
+		// A scope already on: its @name only leaves the text.
+		type(m, "@cobalt notes");
+		expect(kept()).toEqual(["Moonbridge"]);
+		expect(chip()).toBe("Cobalt");
+		expect(m.inputEl.value).toBe("notes");
+		void note;
+	});
+
+	it("an Auto name adds; ⌫ undoes just that one", () => {
+		const { m, lists } = open("add");
+		type(m, "@cob ");
+		type(m, "mb status");
+		expect(kept()).toEqual(["Cobalt"]);
+		expect(chip()).toBe("Moonbridge");
+		m.inputEl.setSelectionRange(0, 0);
+		press(m, "Backspace");
+		expect(kept()).toEqual([]);
+		expect(chip()).toBe("Cobalt");
+		expect(m.inputEl.value).toBe("mb status");
+		expect(lists.at(-1)?.[1]).toBe("cobalt");
+	});
+
+	it("a name typed as a word is offered: ⇥ adds it, ⇧⇥ searches it alone", () => {
+		const { m } = open("add");
+		type(m, "mb ");
+		type(m, "cobalt world");
+		expect(banner()).toContain("Add Cobalt to this search");
+		expect(banner()).toContain("Only Cobalt");
+		press(m, "Tab");
+		expect(kept()).toEqual(["Moonbridge"]);
+		expect(chip()).toBe("Cobalt");
+		expect(m.inputEl.value).toBe("world");
+		press(m, "Escape");
+		type(m, "mb ");
+		type(m, "cobalt world");
+		(m.scope as unknown as { press(k: string, m: unknown[]): boolean }).press("Tab", ["Shift"]);
+		expect(kept()).toEqual([]);
+		expect(chip()).toBe("Cobalt");
+	});
+
+	it("⌫ selects the last chip, then removes it (the one before stays); × removes any one", () => {
+		const { m, lists } = open("add");
+		type(m, "@cob ");
+		type(m, "Moonbridge ");
+		expect(kept()).toEqual(["Cobalt"]);
+		// Auto's undo is done once you type on.
+		type(m, "x");
+		type(m, "");
+		press(m, "Backspace");
+		expect(document.querySelector(".jet-chip.is-selected .jet-chl")?.textContent).toBe("Moonbridge");
+		press(m, "Backspace");
+		expect(chip()).toBe("Cobalt");
+		expect(kept()).toEqual([]);
+		// Its name is back as text, and stays text in this search (removed on purpose): a new search.
+		expect(m.inputEl.value).toBe("Moonbridge ");
+		press(m, "Escape");
+		type(m, "@cob ");
+		type(m, "Moonbridge ");
+		expect(kept()).toEqual(["Cobalt"]);
+		document.querySelector<HTMLElement>(".jet-chip.is-kept .jet-chx")?.click();
+		expect(kept()).toEqual([]);
+		expect(chip()).toBe("Moonbridge");
+		expect(lists.at(-1)?.[1]).toBe("bridge");
+	});
+
+	it("closing reports the first scope and the others; ⇧↵ creates in the first; ⇧⇧ widens and puts both back", () => {
+		const { m, closed, created } = open("add");
+		type(m, "@cob ");
+		type(m, "Moonbridge plan");
+		m.widen();
+		expect(chip()).toBeNull();
+		expect(kept()).toEqual([]);
+		m.widen();
+		expect(kept()).toEqual(["Cobalt"]);
+		expect(chip()).toBe("Moonbridge");
+		(m.scope as unknown as { press(k: string, m: unknown[]): boolean }).press("Enter", ["Shift"]);
+		expect(created.at(-1)).toEqual(["plan", "cobalt"]);
+		const [, , first, , also] = closed.at(-1) ?? [];
+		expect((first as ScopeView).id).toBe("cobalt");
+		expect((also as ScopeView[]).map((s) => s.id)).toEqual(["bridge"]);
 	});
 });

@@ -52,10 +52,11 @@ describe("the Scopes page in settings (option C)", () => {
 	it("offers Generate first; once scopes were generated, finding new ones", async () => {
 		const first = (await make()).page();
 		expect(first.items?.[0]?.items?.[0]?.name).toBe("When typed, for every scope");
-		expect(first.items?.[0]?.items?.[1]?.name).toBe("Find scopes in your vault");
+		expect(first.items?.[0]?.items?.[1]?.name).toBe("Another scope while one is on");
+		expect(first.items?.[0]?.items?.[2]?.name).toBe("Find scopes in your vault");
 		expect(first.items?.[1]?.emptyState).toContain("No scopes yet");
 		const later = (await make([{ source: "generated" }])).page();
-		expect(later.items?.[0]?.items?.[1]?.name).toBe("Find new scopes");
+		expect(later.items?.[0]?.items?.[2]?.name).toBe("Find new scopes");
 	});
 
 	it("lists each scope as a page with its rules, and its mode as the row's value", async () => {

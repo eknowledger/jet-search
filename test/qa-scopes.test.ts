@@ -76,7 +76,9 @@ const type = (m: JetModal, text: string) => {
 	m.inputEl.dispatchEvent(new Event("input"));
 };
 const $ = (sel: string) => document.querySelector<HTMLElement>(sel);
-const chip = () => $(".jet-chip:not(.is-hidden) .jet-chl")?.textContent ?? null;
+/** The last chip (the one ⌫ and ⇥ act on); chips added before it are `.is-kept`. */
+const chip = () => $(".jet-chip:not(.is-kept):not(.is-hidden) .jet-chl")?.textContent ?? null;
+const kept = () => [...document.querySelectorAll(".jet-chip.is-kept .jet-chl")].map((e) => e.textContent);
 const banner = () => $(".jet-ban")?.textContent ?? "";
 
 describe("QA: scopes typed in the search box", () => {
@@ -261,9 +263,28 @@ describe("QA: scopes typed in the search box", () => {
 		type(m, "cobalt roe");
 		const said = banner();
 		press(m, "Tab");
-		// ⇥ went to Cobalt, so the banner should have offered Cobalt, not "⇥ next".
+		// ⇥ went to Cobalt, so the banner should have offered Cobalt, not "⇥ next": added (the default).
 		expect(chip()).toBe("Cobalt");
-		expect(said).toContain("Search in Cobalt");
+		expect(kept()).toEqual(["Amber Studio"]);
+		expect(said).toContain("Add Cobalt to this search");
+	});
+
+	it("Switch to it: the banner offers Cobalt instead, and ⇥ switches", () => {
+		const { m, data } = real(
+			[sc("a1", "Amber Studio"), sc("a2", "Amber Studio", { kind: "Areas" }), sc("cobalt", "Cobalt")],
+			{
+				a1: 9,
+				a2: 2,
+			},
+		);
+		data.settings.scopeAnother = "switch";
+		type(m, "Amber Studio plugin");
+		press(m, "Tab");
+		type(m, "cobalt roe");
+		expect(banner()).toContain("Search in Cobalt instead of Amber Studio");
+		press(m, "Tab");
+		expect(chip()).toBe("Cobalt");
+		expect(kept()).toEqual([]);
 	});
 
 	// an Auto name that starts a longer scope name hides the longer one.

@@ -87,9 +87,9 @@ describe("searching inside a scope", () => {
 		const app = new App();
 		const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
 		for (const p of ["Garden/Beds.md", "Garden/Bean poles.md", "Trips/Beaufort.md"]) files.set(p, new TFile(p));
-		const queries: Array<{ text: string; scope?: string }> = [];
+		const queries: Array<{ text: string; scope?: string | string[] }> = [];
 		const client = {
-			query: (text: string, opts: { scope?: string }) => {
+			query: (text: string, opts: { scope?: string | string[] }) => {
 				queries.push({ text, scope: opts.scope });
 				return Promise.resolve({
 					seq: 1,
@@ -110,7 +110,8 @@ describe("searching inside a scope", () => {
 			ensure: () => {
 				ensured++;
 			},
-			membersOf: (id: string) => (id === "garden" ? members : new Set<string>()),
+			membersOf: (id: string) =>
+				id === "garden" ? members : id === "trips" ? new Set(["Trips/Beaufort.md"]) : new Set<string>(),
 		};
 		const s = new Search(app, client, feeder, () => data, keeper);
 		return { s, queries, ensured: () => ensured };
@@ -129,6 +130,18 @@ describe("searching inside a scope", () => {
 		await settle();
 		expect(queries).toEqual([{ text: "bea", scope: "garden" }]);
 		expect(items(paints.at(-1))).not.toContain("Trips/Beaufort.md");
+	});
+
+	it("several scopes: names from either, the worker asked with both", async () => {
+		const { s, queries } = scoped();
+		const paints: Entry[][] = [];
+		s.list("bea", (e) => paints.push(e), ["garden", "trips"]);
+		const items = (e: Entry[] | undefined) =>
+			(e ?? []).filter((x): x is Item => x.type === "item").map((x) => x.path);
+		expect(items(paints[0]).sort()).toEqual(["Garden/Bean poles.md", "Trips/Beaufort.md"]);
+		await settle();
+		await settle();
+		expect(queries).toEqual([{ text: "bea", scope: ["garden", "trips"] }]);
 	});
 
 	it("without a scope, everything", async () => {

@@ -217,18 +217,24 @@ export class Router {
 	private queryOnce(req: Extract<Request, { op: "query" }>): QueryReply {
 		const t0 = performance.now();
 		// A scope that is not (or no longer) known answers nothing, never everything.
-		const allow =
-			req.scope !== undefined
-				? (this.scopes.get(req.scope) ?? new Set<string>())
-				: req.allow
-					? new Set(req.allow)
-					: null;
+		const allow = this.allowOf(req);
 		const r = this.engine.query(parseQuery(req.text), {
 			limit: req.limit,
 			now: req.now,
 			allow: allow ? (p) => allow.has(p) : undefined,
 		});
 		return { seq: req.seq, hits: r.hits, terms: r.terms, ms: performance.now() - t0 };
+	}
+
+	/**
+	 * The notes a query or a question may answer with: a scope's set, or any of several scopes' sets; else the paths sent; else every note. A scope that is not (or no longer) known adds none.
+	 */
+	private allowOf(req: { scope?: string | string[]; allow?: string[] }): { has(p: string): boolean } | null {
+		if (req.scope === undefined) return req.allow ? new Set(req.allow) : null;
+		const sets = (typeof req.scope === "string" ? [req.scope] : req.scope).map(
+			(id) => this.scopes.get(id) ?? new Set<string>(),
+		);
+		return sets.length === 1 ? (sets[0] as Set<string>) : { has: (p) => sets.some((s) => s.has(p)) };
 	}
 
 	/** A note's vector, when meaning is on (none for a note with no known word: it is never near). */
@@ -255,12 +261,7 @@ export class Router {
 		if (!m) return { seq: req.seq, near: [], ms: 0 };
 		const q = embed(m.model, req.text, 64);
 		if (!q) return { seq: req.seq, near: [], ms: performance.now() - t0 };
-		const allow =
-			req.scope !== undefined
-				? (this.scopes.get(req.scope) ?? new Set<string>())
-				: req.allow
-					? new Set(req.allow)
-					: null;
+		const allow = this.allowOf(req);
 		const near = m.vectors.nearest(q, req.k, allow ? (p) => allow.has(p) : undefined);
 		return { seq: req.seq, near, ms: performance.now() - t0 };
 	}

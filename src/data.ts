@@ -34,6 +34,8 @@ export type JetSettings = {
 	scopesWhenNew: "tell" | "add" | "nothing";
 	/** How typing a name behaves for every scope that did not choose its own. */
 	scopeMode: OwnMode;
+	/** Another scope typed or picked while one is on: added beside it, or in its place. */
+	scopeAnother: "add" | "switch";
 	/** Search by meaning: off by default; questions use it by themselves when on. */
 	meaning: boolean;
 	meaningQuestions: boolean;
@@ -53,6 +55,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	stemming: ["en"],
 	scopesWhenNew: "tell",
 	scopeMode: "suggest",
+	scopeAnother: "add",
 	meaning: false,
 	meaningQuestions: true,
 	meaningLong: false,
@@ -73,7 +76,7 @@ export type JetData = {
 	/** How often each scope was searched in and a note opened (the empty state's order). */
 	scopeUses: Record<string, number>;
 	/** The last scope and filters, kept when "Persist filters" is on. */
-	last: { scope?: string; filters: Filter[] } | null;
+	last: { scope?: string; also?: string[]; filters: Filter[] } | null;
 	/** Settings imported from other plugins, once each ("jade-search"). */
 	imported: string[];
 	/** The installed meaning model: its id and the packed file's size; null: not installed. */
@@ -100,6 +103,7 @@ export const normalizeData = (raw: unknown): JetData => {
 		stemming: Array.isArray(s.stemming) ? s.stemming.filter((x): x is string => typeof x === "string") : ["en"],
 		scopesWhenNew: s.scopesWhenNew === "add" || s.scopesWhenNew === "nothing" ? s.scopesWhenNew : "tell",
 		scopeMode: s.scopeMode === "auto" || s.scopeMode === "in-only" ? s.scopeMode : "suggest",
+		scopeAnother: s.scopeAnother === "switch" ? "switch" : "add",
 		meaning: s.meaning === true,
 		meaningQuestions: s.meaningQuestions !== false,
 		meaningLong: s.meaningLong === true,
@@ -108,11 +112,17 @@ export const normalizeData = (raw: unknown): JetData => {
 	const scopeUses: Record<string, number> = {};
 	if (r.scopeUses && typeof r.scopeUses === "object")
 		for (const [k, v] of Object.entries(r.scopeUses)) if (typeof v === "number" && v > 0) scopeUses[k] = v;
-	const lastRaw = r.last as { scope?: unknown; filters?: unknown } | null | undefined;
+	const lastRaw = r.last as { scope?: unknown; also?: unknown; filters?: unknown } | null | undefined;
+	// The scopes added beside the first one; none without a first.
+	const also =
+		lastRaw && typeof lastRaw === "object" && typeof lastRaw.scope === "string" && Array.isArray(lastRaw.also)
+			? lastRaw.also.filter((x): x is string => typeof x === "string")
+			: [];
 	const last =
 		lastRaw && typeof lastRaw === "object"
 			? {
 					scope: typeof lastRaw.scope === "string" ? lastRaw.scope : undefined,
+					...(also.length ? { also } : {}),
 					filters: Array.isArray(lastRaw.filters) ? lastRaw.filters.filter(validFilter) : [],
 				}
 			: null;

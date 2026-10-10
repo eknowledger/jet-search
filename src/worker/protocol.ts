@@ -15,8 +15,16 @@ export type Request =
 	| { op: "upsert"; notes: RawNote[] }
 	| { op: "delete"; paths: string[] }
 	| { op: "rename"; from: string; to: string }
-	/** `scope`: only that scope's notes (its set, below); `allow`: only these paths. */
-	| { op: "query"; seq: number; text: string; limit: number; now: number; allow?: string[]; scope?: string }
+	/** `scope`: only that scope's notes (its set, below), or any of several scopes'; `allow`: only these paths. */
+	| {
+			op: "query";
+			seq: number;
+			text: string;
+			limit: number;
+			now: number;
+			allow?: string[];
+			scope?: string | string[];
+	  }
 	| { op: "mtimes" }
 	/** No results: the closest spelling the vault uses, and how many notes it finds. */
 	| { op: "suggest"; text: string }
@@ -44,7 +52,7 @@ export type Request =
 	/** The notes whose vector is missing or older than the note. */
 	| { op: "meaning:missing" }
 	/** The notes nearest to a question, best first (`scope` / `allow` as for a query). */
-	| { op: "nearest"; seq: number; text: string; k: number; allow?: string[]; scope?: string };
+	| { op: "nearest"; seq: number; text: string; k: number; allow?: string[]; scope?: string | string[] };
 
 export type Stats = { notes: number; segments: number; pending: number; savedAt: number | null; bytes: number };
 

@@ -34,7 +34,7 @@ const setup = (scopes: Scope[] = [COBALT, STUDIO]) => {
 	});
 	const data = normalizeData(null);
 	data.opened["2.Projects/Cobalt/Old.md"] = [1, 5000];
-	const searched: Array<[string, string | undefined]> = [];
+	const searched: Array<[string, unknown]> = [];
 	const edited: string[] = [];
 	const measured: string[] = [];
 	const amb = new Map<string, number>();
@@ -52,7 +52,7 @@ const setup = (scopes: Scope[] = [COBALT, STUDIO]) => {
 		measure: (id) => measured.push(id),
 	};
 	const search = {
-		list: (t: string, _p: unknown, s?: string) => searched.push([t, s]),
+		list: (t: string, _p: unknown, s?: unknown) => searched.push([t, s]),
 		warm: () => {},
 		idle: () => {},
 	} as unknown as Search;
@@ -228,5 +228,31 @@ describe("the empty state and persisted filters", () => {
 		data.settings.persistFilters = true;
 		host.closed("x", false, view, [{ kind: "edited", days: 7 }]);
 		expect(host.restore()).toEqual({ scope: view, filters: [{ kind: "edited", days: 7 }] });
+	});
+
+	it("several scopes: remembered in order, shown as chips, restored, used counted, listed together", () => {
+		const { host, data, searched } = setup();
+		const v = (s: Scope) => ({ id: s.id, name: s.name, kind: s.kind, members: 3 });
+		data.settings.persistFilters = true;
+		host.closed("world", true, v(COBALT), [], [v(STUDIO)]);
+		expect(data.searches[0]).toBe('in:Cobalt in:"Amber Studio" world');
+		expect([data.scopeUses.cobalt, data.scopeUses.amb]).toEqual([1, 1]);
+		expect(data.last).toEqual({ scope: "cobalt", also: ["amb"], filters: [] });
+		expect(host.restore()).toMatchObject({ scope: { id: "cobalt" }, also: [{ id: "amb" }] });
+		const search = host.recents().find((e) => e.type === "search");
+		expect(search?.type === "search" && search.parts).toEqual([
+			{ chip: ["", "Cobalt"] },
+			{ chip: ["", "Amber Studio"] },
+			{ text: "world" },
+		]);
+		// Nothing typed: the notes of either scope; text: the search asked with both.
+		const painted: Entry[][] = [];
+		host.list("", (e) => painted.push(e), ["cobalt", "amb"]);
+		expect(painted[0]?.filter((e) => e.type === "item").length).toBe(3);
+		host.list("plan", () => {}, ["cobalt", "amb"]);
+		expect(searched.at(-1)).toEqual(["plan", ["cobalt", "amb"]]);
+		// A scope deleted since is left out when restoring.
+		data.last = { scope: "gone", also: ["amb"], filters: [] };
+		expect(host.restore()).toMatchObject({ scope: { id: "amb" } });
 	});
 });

@@ -165,6 +165,22 @@ describe("scope sets in the worker", () => {
 		expect(await askIn(r, "orchid ", "s1")).toEqual(["d.md"]);
 		// An unknown scope answers nothing rather than everything.
 		expect(await askIn(r, "orchid ", "nope")).toEqual([]);
+		// Several scopes: the notes in any of them; an unknown one adds none.
+		await r.handle({ op: "scope:set", id: "s2", paths: ["a.md"] });
+		await r.handle({ op: "batch", notes: [raw("a.md", "orchid garden")], last: true });
+		const both = (
+			(await r.handle({
+				op: "query",
+				seq: 2,
+				text: "orchid ",
+				limit: 50,
+				now: 0,
+				scope: ["s1", "s2", "nope"],
+			})) as QueryReply
+		).hits
+			.map((h) => h.path)
+			.sort();
+		expect(both).toEqual(["a.md", "d.md"]);
 		await r.handle({ op: "scope:clear" });
 		expect(await askIn(r, "orchid ", "s1")).toEqual([]);
 	});

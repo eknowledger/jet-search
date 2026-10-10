@@ -33,7 +33,7 @@ export class JetClient {
 	/** Ask a query; resolves with its answer, or null if a newer query was asked meanwhile. */
 	async query(
 		text: string,
-		opts: { limit?: number; allow?: string[]; scope?: string } = {},
+		opts: { limit?: number; allow?: string[]; scope?: string | string[] } = {},
 	): Promise<QueryReply | null> {
 		const seq = ++this.seq;
 		const r = await this.call({
@@ -59,7 +59,7 @@ export class JetClient {
 	/** The notes nearest a question; null if a newer query or question was asked meanwhile. */
 	async nearest(
 		text: string,
-		opts: { k?: number; allow?: string[]; scope?: string } = {},
+		opts: { k?: number; allow?: string[]; scope?: string | string[] } = {},
 	): Promise<NearReply | null> {
 		const seq = ++this.seq;
 		const r = await this.call({ op: "nearest", seq, text, k: opts.k ?? 50, allow: opts.allow, scope: opts.scope });

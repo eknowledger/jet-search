@@ -272,3 +272,16 @@ describe("frecency from a bad 'opened' entry", () => {
 		expect(frecency(d, "future.md", now)).toBeLessThan(1 + 0.15 * Math.log2(101));
 	});
 });
+
+describe("saved data for several scopes", () => {
+	it("keeps the scopes added beside the first, drops them without a first, and reads the Add/Switch setting", () => {
+		const d = normalizeData({
+			last: { scope: "a", also: ["b", 3, "c"], filters: [] },
+			settings: { scopeAnother: "switch" },
+		});
+		expect(d.last).toEqual({ scope: "a", also: ["b", "c"], filters: [] });
+		expect(d.settings.scopeAnother).toBe("switch");
+		expect(normalizeData({ last: { also: ["b"], filters: [] } }).last).toEqual({ scope: undefined, filters: [] });
+		expect(normalizeData({ settings: { scopeAnother: "both" } }).settings.scopeAnother).toBe("add");
+	});
+});

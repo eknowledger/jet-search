@@ -37,6 +37,7 @@ export const namesQuery = (text: string): { text: string; excluded: Set<string> 
 	return { text: kept.join(" ") + (/\s$/u.test(text) ? " " : ""), excluded };
 };
 import { contentWords } from "./meaning/question";
+import { joinNames, unionOf, type Where, whereIds, wireWhere } from "./scopes/where";
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
 
@@ -103,14 +104,14 @@ export class Search {
 	private meta: MetaIndex | null = null;
 	private readonly idOf = new Map<string, number>();
 	/** The scope and filters of the list being composed (for the rows' reasons). */
-	private why: { scope?: string; filters: readonly Filter[] } = { filters: [] };
+	private why: { scope?: Where; filters: readonly Filter[] } = { filters: [] };
 	private readonly pathOf = new Map<number, string>();
 	private nextId = 1;
 	/** The open modal's current text and painter, to re-run when the index changes. */
 	private current: {
 		text: string;
 		paint: (entries: Entry[], status?: string) => void;
-		scope?: string;
+		scope?: Where;
 		filters?: readonly Filter[];
 		meaning?: { on: boolean; offered: boolean };
 		/** The order chosen: a live refresh keeps it. */
@@ -127,13 +128,14 @@ export class Search {
 	) {}
 
 	/**
-	 * Results for `text`, inside the scope `scope` when given: its members filter Tier 0 and the
-	 * worker, which holds the same set (sent before this query: messages arrive in order).
+	 * Results for `text`, inside the scope `scope` when given, or any of several:
+	 * its members filter Tier 0 and the worker, which holds the same sets (sent before this query:
+	 * messages arrive in order).
 	 */
 	list(
 		text: string,
 		paint: (entries: Entry[], status?: string) => void,
-		scope?: string,
+		scope?: Where,
 		filters: readonly Filter[] = [],
 		meaning?: { on: boolean; offered: boolean },
 		order: Sort = "best",
@@ -141,9 +143,11 @@ export class Search {
 		this.current = { text, paint, scope, filters, meaning, order };
 		this.why = { scope, filters };
 		let inScope: ReadonlySet<string> | null = null;
-		if (scope !== undefined && this.scopes) {
-			this.scopes.ensure();
-			inScope = this.scopes.membersOf(scope);
+		const ids = whereIds(scope);
+		const sc = this.scopes;
+		if (ids.length && sc) {
+			sc.ensure();
+			inScope = unionOf(ids, (id) => sc.membersOf(id));
 		}
 		// Filters: their notes, intersected with the scope's; "Title only" searches names alone.
 		const sets = filters.filter((f) => f.kind !== "title");
@@ -214,7 +218,7 @@ export class Search {
 			const phrases = quotedPhrases(text);
 			let reply = await this.client.query(text, {
 				limit: phrases.length ? PHRASE_CHECK_LIMIT : 50,
-				scope: narrowed ? undefined : scope,
+				scope: narrowed ? undefined : wireWhere(scope),
 				allow: narrowed ? [...narrowed] : undefined,
 			});
 			if (!reply) return;
@@ -280,7 +284,7 @@ export class Search {
 	private byMeaning(
 		text: string,
 		paint: (entries: Entry[], status?: string) => void,
-		scope: string | undefined,
+		scope: Where | undefined,
 		narrowed: Set<string> | null,
 		now: number,
 	): void {
@@ -298,7 +302,7 @@ export class Search {
 			if (this.current?.text !== text) return;
 			const r = await this.client.nearest(text, {
 				k: 50,
-				scope: narrowed ? undefined : scope,
+				scope: narrowed ? undefined : wireWhere(scope),
 				allow: narrowed ? [...narrowed] : undefined,
 			});
 			if (!r || this.current?.text !== text) return;
@@ -400,13 +404,16 @@ export class Search {
 	 * "Search with Obsidian Search": the text with the chips written in Obsidian's own syntax, so the
 	 * hand-off searches what you asked, not the whole vault. Chips it has no syntax for are named.
 	 */
-	private coreRow(c: { text: string; scope?: string; filters?: readonly Filter[] }): Entry {
+	private coreRow(c: { text: string; scope?: Where; filters?: readonly Filter[] }): Entry {
 		const q = (v: string): string => (/[\s"]/u.test(v) ? `"${v.replace(/"/g, "")}"` : v);
 		const parts: string[] = [];
 		const left: string[] = [];
-		const d = c.scope !== undefined ? (this.scopes?.describe?.(c.scope) ?? null) : null;
-		if (d?.query) parts.push(d.query);
-		else if (d) left.push(d.name);
+		// Several scopes: any of them, ORed; one Obsidian has no syntax for is named.
+		const ds = whereIds(c.scope).map((id) => this.scopes?.describe?.(id) ?? null);
+		const queries = ds.flatMap((d) => (d?.query ? [d.query] : []));
+		for (const d of ds) if (d && !d.query) left.push(d.name);
+		if (queries.length === 1) parts.push(queries[0] as string);
+		else if (queries.length) parts.push(`(${queries.map((x) => `(${x})`).join(" OR ")})`);
 		for (const f of c.filters ?? [])
 			if (f.kind === "tag") parts.push(`tag:${f.tag}`);
 			else if (f.kind === "path") parts.push(`path:${q(f.prefix)}`);
@@ -504,7 +511,10 @@ export class Search {
 			const r = f.kind === "title" ? null : (this.filterNotes?.reason?.(f, path) ?? null);
 			if (r) out.push(r);
 		}
-		const via = scope !== undefined ? (this.scopes?.via?.(scope, path) ?? null) : null;
+		// Several scopes: the reason of the first one holding the note.
+		const sc = this.scopes;
+		const id = sc ? whereIds(scope).find((x) => sc.membersOf(x).has(path)) : undefined;
+		const via = id !== undefined ? (sc?.via?.(id, path) ?? null) : null;
 		if (via) out.push(via);
 		return out;
 	}
@@ -514,13 +524,18 @@ export class Search {
 	 * scope: also searching everywhere, with its count, and creating
 	 * the note in the scope.
 	 */
-	private async recovery(text: string, scope?: string): Promise<Entry[]> {
+	private async recovery(text: string, scope?: Where): Promise<Entry[]> {
 		const s = await this.client.call({ op: "suggest", text });
 		// Typed on meanwhile: this text's recovery is not shown, so it asks nothing more.
 		if (this.current?.text !== text) return [];
 		const n = (k: number): string => `${k} note${k === 1 ? "" : "s"}`;
 		const t = text.trim();
-		const d = scope !== undefined ? (this.scopes?.describe?.(scope) ?? null) : null;
+		// Several scopes: named together; a note is created in the first one.
+		const ds = whereIds(scope).flatMap((id) => {
+			const x = this.scopes?.describe?.(id) ?? null;
+			return x ? [x] : [];
+		});
+		const d = ds[0] ? { name: joinNames(ds.map((x) => x.name)), create: ds[0].create, first: ds[0].name } : null;
 		// The notice, then "Try instead" and the suggestions as cards.
 		const out: Entry[] = [
 			{ type: "notice", title: d ? `No results for “${t}” in ${d.name}` : `No results for “${t}”` },
@@ -543,7 +558,7 @@ export class Search {
 			out.push({ type: "search", query: s.text, detail: `Written that way in ${n(s.notes)}`, spelling: true });
 		out.push(
 			d
-				? { type: "create", text: t, detail: `In ${d.name} · ${d.create}` }
+				? { type: "create", text: t, detail: `In ${d.first} · ${d.create}` }
 				: { type: "create", text: t, detail: "A new note with this name" },
 		);
 		return out;
