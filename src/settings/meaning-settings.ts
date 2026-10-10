@@ -2,7 +2,15 @@
  * The settings for search by meaning (general examples, not a real vault's). Off by default; turning it on asks first
  * (the model's source, size and checksum), then downloads it or takes the two files you have.
  */
-import { type App, Modal, Notice, type Setting, type SettingDefinition, type SettingDefinitionGroup } from "obsidian";
+import {
+	type App,
+	Modal,
+	Notice,
+	setIcon,
+	type Setting,
+	type SettingDefinition,
+	type SettingDefinitionGroup,
+} from "obsidian";
 import { fileUrl } from "../meaning/install";
 import { MODEL } from "../meaning/model";
 import type { Meaning } from "../meaning/control";
@@ -34,6 +42,8 @@ export class MeaningConfirm extends Modal {
 
 	onOpen(): void {
 		this.titleEl.setText("Download the model?");
+		// A two-column table, buttons with icons on one line.
+		this.modalEl.addClass("jet-mconfirm-modal");
 		const c = this.contentEl;
 		c.addClass("jet-mconfirm");
 		c.createEl("p", {
@@ -42,23 +52,34 @@ export class MeaningConfirm extends Modal {
 				"folder. Nothing else goes over the network, and nothing is sent: your notes stay on this device.",
 		});
 		const t = c.createEl("table");
-		const row = (k: string, v: string): void => {
+		const row = (k: string, v: string, code = false): void => {
 			const r = t.createEl("tr");
 			r.createEl("td", { text: k });
-			r.createEl("td", { text: v });
+			const d = r.createEl("td");
+			if (code) d.createEl("code", { text: v });
+			else d.setText(v);
 		};
-		row("Model", `${MODEL.id} (Model2Vec, static, ${MODEL.licence} licence)`);
+		row("Model", `${MODEL.id} (Model2Vec, static, ${MODEL.licence})`);
 		row("Download", `~${MODEL.downloadMB} MB, once · kept as about 8 MB`);
-		row("From", `huggingface.co/${MODEL.repo}`);
-		row("Checked against", "the SHA-256 of each file, pinned in Jet's code");
-		row("Then", `${this.notes.toLocaleString()} notes given their meaning, in a few seconds`);
+		row("From", `huggingface.co/${MODEL.repo}`, true);
+		row("Checked against", "its SHA-256, pinned in Jet's code");
+		row("Then", `${this.notes.toLocaleString()} notes given their meaning in a few seconds`);
 		const status = c.createEl("p", { cls: "jet-mstatus" });
-		const btns = c.createDiv({ cls: "modal-button-container" });
-		const cancel = btns.createEl("button", { text: "Cancel" });
-		const files = btns.createEl("button", { text: "Use files…" });
-		const go = btns.createEl("button", { text: "Download", cls: "mod-cta" });
-		const picker = c.createEl("input", { attr: { type: "file", multiple: "", accept: ".safetensors,.json" } });
-		picker.addClass("is-hidden");
+		const btns = c.createDiv({ cls: "jet-mbtns" });
+		const button = (text: string, icon: string | null, cta = false): HTMLButtonElement => {
+			const b = btns.createEl("button", { cls: cta ? "mod-cta" : "" });
+			if (icon) setIcon(b.createSpan({ cls: "jet-mbi" }), icon);
+			b.createSpan({ text });
+			return b;
+		};
+		const cancel = button("Cancel", null);
+		const files = button("Use files…", "file");
+		const go = button("Download", "download", true);
+		// Never shown: "Use files…" opens it.
+		const picker = c.createEl("input", {
+			cls: "jet-mpicker",
+			attr: { type: "file", multiple: "", accept: ".safetensors,.json" },
+		});
 		const lock = (on: boolean): void => {
 			for (const b of [cancel, files, go]) b.disabled = on;
 		};

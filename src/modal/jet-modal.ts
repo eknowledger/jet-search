@@ -1890,6 +1890,24 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		};
 		prev.addEventListener("mousedown", slide(-1));
 		next.addEventListener("mousedown", slide(1));
+		// Resting the pointer on an arrow slides the line that way, until it leaves or the end shows;
+		// no click is needed.
+		const win = row.win ?? window;
+		let gliding = 0;
+		const glide = (dir: number): void => {
+			win.cancelAnimationFrame(gliding);
+			const step = (): void => {
+				const before = row.scrollLeft;
+				row.scrollLeft += dir * 6;
+				if (row.scrollLeft !== before) gliding = win.requestAnimationFrame(step);
+			};
+			gliding = win.requestAnimationFrame(step);
+		};
+		const stop = (): void => win.cancelAnimationFrame(gliding);
+		prev.addEventListener("mouseenter", () => glide(-1));
+		next.addEventListener("mouseenter", () => glide(1));
+		prev.addEventListener("mouseleave", stop);
+		next.addEventListener("mouseleave", stop);
 		row.addEventListener("scroll", ends, { passive: true });
 		// A vertical wheel slides the line sideways (most mice have no sideways wheel).
 		row.addEventListener(
