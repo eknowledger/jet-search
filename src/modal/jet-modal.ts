@@ -1,6 +1,6 @@
 import { type App, Menu, Modal, setIcon } from "obsidian";
 import { cutPieces, type Filter, filterLabel, type Found, sameFilter, withoutPieces } from "../filters/filter";
-import { isQuestion } from "../meaning/question";
+import { isLongSearch, isQuestion } from "../meaning/question";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
@@ -161,6 +161,9 @@ export const sortEntries = (entries: Entry[], sort: Sort): Entry[] => {
 };
 
 /** How to open a note. */
+/** This search by meaning or by words; `auto` says why it went by meaning by itself. */
+type MeaningNow = { on: boolean; offered: boolean; auto: "question" | "long" | null };
+
 export type OpenHow = "default" | "other" | "split";
 
 /** Where in the note: a line of the open note (search in this note), or a character offset in its text. */
@@ -190,8 +193,11 @@ export type ModalHost = {
 		/** The order chosen; the notes kept by filters alone are sorted by it before the first ones are taken. */
 		order?: Sort,
 	): void;
-	/** Search by meaning: whether it can answer (on, model installed), and whether questions use it by themselves. */
-	meaning?: { available(): boolean; questions(): boolean };
+	/**
+	 * Search by meaning: whether it can answer (on, model installed), whether questions use it by
+	 * themselves, and whether long searches do too (an opt-in, off by default).
+	 */
+	meaning?: { available(): boolean; questions(): boolean; long?(): boolean };
 	open(path: string, how: OpenHow, at?: OpenAt): void;
 	/** Footer hints for the current text and scope state. */
 	hints(text: string, state?: HintState): Array<[key: string, label: string]>;
@@ -310,7 +316,7 @@ export class JetModal extends Modal {
 	/** ⌘J's choice for this search: words or meaning; null follows the question rule. */
 	private meaningPick: "words" | "meaning" | null = null;
 	/** The last search's meaning state, for the header switch, the footer and the banner. */
-	private meaningNow: { on: boolean; offered: boolean; auto: boolean } = { on: false, offered: false, auto: false };
+	private meaningNow: MeaningNow = { on: false, offered: false, auto: null };
 	private clearEl!: HTMLElement;
 	/** The chip an Auto scope replaced just now: ⌫ undoes back to it. */
 	private autoPrev: ScopeView | null = null;
@@ -1069,14 +1075,16 @@ export class JetModal extends Modal {
 	 * By meaning or by words: ⌘J's choice for this search, else a question goes by meaning when
 	 * questions use it by themselves; a question searched by words is offered meaning.
 	 */
-	private meaningState(text: string): { on: boolean; offered: boolean; auto: boolean } {
+	private meaningState(text: string): MeaningNow {
 		const m = this.host.meaning;
 		if (!text.trim()) this.meaningPick = null;
-		if (!m?.available() || !text.trim()) return { on: false, offered: false, auto: false };
+		if (!m?.available() || !text.trim()) return { on: false, offered: false, auto: null };
 		const question = isQuestion(text);
-		const auto = this.meaningPick === null && question && m.questions();
-		const on = this.meaningPick === "meaning" || auto;
-		return { on, offered: !on && question, auto };
+		// Long searches go by meaning too, when you opted in; a long question is still a question.
+		const long = !question && m.long?.() === true && isLongSearch(text);
+		const auto = this.meaningPick !== null ? null : question && m.questions() ? "question" : long ? "long" : null;
+		const on = this.meaningPick === "meaning" || auto !== null;
+		return { on, offered: !on && (question || long), auto };
 	}
 
 	/** ⌘J or the header's switch: the other kind of results for this search. */
@@ -1190,8 +1198,12 @@ export class JetModal extends Modal {
 			t.appendText(` for “${s.rest}” · ${notes(s.scope.members)}`);
 			keys([["⇥", "Tab"]]);
 		} else if (this.meaningNow.auto && !chip) {
-			// A question went by meaning by itself: say so, once per search.
-			head("sparkles").appendText("A question, so by meaning: notes about what you asked, even in other words");
+			// A question (or a long search, opted in) went by meaning by itself: say so, once per search.
+			head("sparkles").appendText(
+				this.meaningNow.auto === "long"
+					? "A long search, so by meaning: notes about what you wrote, even in other words"
+					: "A question, so by meaning: notes about what you asked, even in other words",
+			);
 			keys([["⌘J", "By words"]]);
 		} else if (this.fix) {
 			const t = head("lightbulb");

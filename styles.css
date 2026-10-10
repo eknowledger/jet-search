@@ -521,9 +521,29 @@
 	z-index: 3;
 	padding: 6px 0;
 	border-radius: 10px;
-	border: 1px solid var(--background-modifier-border);
+	/* Lifted off the window behind it: a lighter face, an edge and a deep shadow. */
+	border: 1px solid rgba(255, 255, 255, 0.22);
+	background: color-mix(in srgb, var(--background-primary) 86%, white 14%);
+	box-shadow:
+		0 22px 56px rgba(0, 0, 0, 0.65),
+		0 3px 10px rgba(0, 0, 0, 0.4),
+		inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.theme-light .jet-setp {
+	border-color: rgba(0, 0, 0, 0.18);
 	background: var(--background-primary);
-	box-shadow: var(--shadow-l);
+	box-shadow:
+		0 18px 48px rgba(0, 0, 0, 0.22),
+		0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.jet-setp .jet-idx {
+	border-color: rgba(255, 255, 255, 0.14);
+}
+
+.theme-light .jet-setp .jet-idx {
+	border-color: var(--background-modifier-border);
 }
 
 .jet-modal .jet-content {

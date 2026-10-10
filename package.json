@@ -12,7 +12,8 @@
 		"format:check": "oxfmt --check src test bench vitest.config.mts",
 		"lint": "oxlint src test bench vitest.config.mts && eslint src package.json",
 		"lint:fix": "oxlint src test bench vitest.config.mts --fix && eslint src package.json --fix",
-		"test": "vitest run",
+		"test": "vitest run --exclude 'test/{names,qa2-generate,excerpt,qa-search,stem,fixture-vaults}.test.ts' && npm run test:timed",
+		"test:timed": "vitest run --no-file-parallelism test/names.test.ts test/qa2-generate.test.ts test/excerpt.test.ts test/qa-search.test.ts test/stem.test.ts test/fixture-vaults.test.ts",
 		"test:watch": "vitest",
 		"check": "npm run format:check && npm run lint && npm run typecheck && npm test"
 	},

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { docText } from "../src/meaning/doc";
 import { embed, MODEL, packModel, unpackModel } from "../src/meaning/model";
-import { contentWords, isQuestion } from "../src/meaning/question";
+import { contentWords, isLongSearch, isQuestion } from "../src/meaning/question";
 import { Vectors } from "../src/meaning/vectors";
 
 /** A safetensors file holding one F32 table. */
@@ -163,5 +163,16 @@ describe("the meaning model's record follows the file", () => {
 		expect(await feeder.meaningModel?.()).toBeNull();
 		expect(m.available()).toBe(false);
 		expect(saved).toBe(1);
+	});
+});
+
+describe("isLongSearch (long searches by meaning, an opt-in)", () => {
+	it("6 words with letters or more, no quote, no filter piece", () => {
+		expect(isLongSearch("the billing service retries failed card payments")).toBe(true);
+		expect(isLongSearch("billing service retries failed payments")).toBe(false);
+		expect(isLongSearch("meeting at 10:30 with the team about budget")).toBe(true);
+		expect(isLongSearch('"the billing service retries failed card payments"')).toBe(false);
+		expect(isLongSearch("the billing service retries failed card tag:x")).toBe(false);
+		expect(isLongSearch("1 2 3 4 5 6 7")).toBe(false);
 	});
 });

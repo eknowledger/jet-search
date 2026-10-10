@@ -90,3 +90,48 @@ describe("by meaning or by words", () => {
 		expect(manual.lists.at(-1)?.[1]).toEqual({ on: false, offered: true });
 	});
 });
+
+describe("long searches by meaning, an opt-in", () => {
+	afterEach(() => document.body.replaceChildren());
+	const withLong = (long: boolean) => {
+		const f = fakeHost();
+		f.host.meaning = { available: () => true, questions: () => true, long: () => long };
+		return f;
+	};
+	const SENTENCE = "the billing service retries failed card payments twice";
+
+	it("off (the default): a long search stays words and is not offered meaning", () => {
+		const { host, lists } = withLong(false);
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		type(m, SENTENCE);
+		expect(lists.at(-1)?.[1]).toEqual({ on: false, offered: false });
+	});
+
+	it("on: 6 words or more go by meaning, and the banner says why; 5 words, quotes or a filter stay words", () => {
+		const { host, lists } = withLong(true);
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		type(m, SENTENCE);
+		expect(lists.at(-1)?.[1]).toEqual({ on: true, offered: false });
+		expect($(".jet-ban")?.textContent).toContain("A long search, so by meaning");
+		type(m, "billing service retries failed payments");
+		expect(lists.at(-1)?.[1]?.on).toBe(false);
+		type(m, '"the billing service retries failed card payments"');
+		expect(lists.at(-1)?.[1]?.on).toBe(false);
+		type(m, "the billing service retries failed card #payments");
+		expect(lists.at(-1)?.[1]?.on).toBe(false);
+	});
+
+	it("a long question is still a question, and ⌘J still switches a long search to words", () => {
+		const { host, lists } = withLong(true);
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		type(m, "why does the billing service retry failed card payments");
+		expect($(".jet-ban")?.textContent).toContain("A question, so by meaning");
+		type(m, "");
+		type(m, SENTENCE);
+		press(m, "j", ["Mod"]);
+		expect(lists.at(-1)?.[1]).toEqual({ on: false, offered: true });
+	});
+});

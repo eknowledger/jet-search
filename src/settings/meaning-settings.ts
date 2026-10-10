@@ -27,6 +27,10 @@ export const MEANING_QUESTIONS =
 	"“who owns the billing service?”. Anything else (“billing service”, “build failure Monday”) stays a word " +
 	"search. ⌘J switches either way. Off: only ⌘J uses meaning.";
 
+export const MEANING_LONG =
+	"Searches of 6 words or more, even without a question word (for example a sentence pasted from a note), " +
+	"are searched by meaning too. A quoted phrase or a filter keeps it a word search. Off by default.";
+
 /** The confirm before anything is fetched. Resolves true once installed. */
 export class MeaningConfirm extends Modal {
 	private done = false;
@@ -193,6 +197,11 @@ export const meaningGroup = (
 				name: "Questions use it by themselves",
 				desc: MEANING_QUESTIONS,
 				control: { type: "toggle", key: "meaningQuestions" },
+			},
+			{
+				name: "Long searches go by meaning too",
+				desc: MEANING_LONG,
+				control: { type: "toggle", key: "meaningLong" },
 			},
 		);
 	}

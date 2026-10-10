@@ -37,6 +37,8 @@ export type JetSettings = {
 	/** Search by meaning: off by default; questions use it by themselves when on. */
 	meaning: boolean;
 	meaningQuestions: boolean;
+	/** Long searches (6+ words, no quotes or filters) go by meaning too: an opt-in. */
+	meaningLong: boolean;
 	/** Reopen with the last scope and filters (off by default). */
 	persistFilters: boolean;
 };
@@ -53,6 +55,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	scopeMode: "suggest",
 	meaning: false,
 	meaningQuestions: true,
+	meaningLong: false,
 	persistFilters: false,
 };
 
@@ -99,6 +102,7 @@ export const normalizeData = (raw: unknown): JetData => {
 		scopeMode: s.scopeMode === "auto" || s.scopeMode === "in-only" ? s.scopeMode : "suggest",
 		meaning: s.meaning === true,
 		meaningQuestions: s.meaningQuestions !== false,
+		meaningLong: s.meaningLong === true,
 		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
 	};
 	const scopeUses: Record<string, number> = {};

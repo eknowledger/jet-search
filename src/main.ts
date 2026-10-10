@@ -191,6 +191,7 @@ export default class JetSearchPlugin extends Plugin {
 		this.host.meaning = {
 			available: () => this.meaning.available(),
 			questions: () => this.data.settings.meaningQuestions,
+			long: () => this.data.settings.meaningLong,
 		};
 		this.host.manageScopes = () => {
 			this.modal?.close();

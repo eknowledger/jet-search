@@ -149,6 +149,7 @@ export class JetSettingTab extends PluginSettingTab {
 		if (key === "scopeMode") return s.scopeMode;
 		if (key === "meaning") return s.meaning && this.owner.meaning.installed();
 		if (key === "meaningQuestions") return s.meaningQuestions;
+		if (key === "meaningLong") return s.meaningLong;
 		if (key.startsWith(STEM)) return s.stemming.includes(key.slice(STEM.length));
 		switch (key) {
 			case "doubleShift":
@@ -202,6 +203,11 @@ export class JetSettingTab extends PluginSettingTab {
 		}
 		if (key === "meaningQuestions") {
 			s.meaningQuestions = value === true;
+			this.owner.save();
+			return;
+		}
+		if (key === "meaningLong") {
+			s.meaningLong = value === true;
 			this.owner.save();
 			return;
 		}
