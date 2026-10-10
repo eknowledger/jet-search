@@ -2,6 +2,7 @@ import { type App, Menu, Modal, setIcon } from "obsidian";
 import { cutPieces, type Filter, filterLabel, type Found, sameFilter, withoutPieces } from "../filters/filter";
 import { isLongSearch, isQuestion } from "../meaning/question";
 import { joinNames, listNames, type Where } from "../scopes/where";
+import { comboLabel, type KeyAction, type KeyMap, keyMap } from "../keys/keymap";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
@@ -240,6 +241,11 @@ export type ModalHost = {
 	restore?(): { scope?: ScopeView; also?: ScopeView[]; filters: Filter[] } | null;
 	/** The footer's settings popover, if this host has one. */
 	renderSettings?(el: HTMLElement): void;
+	/**
+	 * Your keys in the window, and the double tap as the hints write it (null: off).
+	 * Absent: the defaults, and ⇧⇧.
+	 */
+	keys?(): { map: KeyMap; tap: string | null };
 	/** Scopes typed in the box; absent when there are none. */
 	scopes?: {
 		typed(text: string): Typed;
@@ -384,6 +390,13 @@ export class JetModal extends Modal {
 	private cardEl: HTMLElement | null = null;
 	private cardTimer: number | null = null;
 	private measureCtx: CanvasRenderingContext2D | null | undefined;
+	/** Your keys, read once per opening: every hint in the window writes them. */
+	private readonly k: KeyMap;
+	/** The double tap as the hints write it (⇧⇧), or null when you turned it off. */
+	private readonly tap: string | null;
+	private lab(a: KeyAction): string {
+		return comboLabel(this.k[a]);
+	}
 
 	constructor(
 		app: App,
@@ -391,6 +404,9 @@ export class JetModal extends Modal {
 		private readonly initial = "",
 	) {
 		super(app);
+		const keys = host.keys?.();
+		this.k = keys?.map ?? keyMap();
+		this.tap = keys ? keys.tap : "⇧⇧";
 		this.modalEl.addClass("jet-modal");
 		this.modalEl.setAttr("aria-label", "Jet Search");
 		this.contentEl.addClass("jet-content");
@@ -1202,7 +1218,7 @@ export class JetModal extends Modal {
 		this.ihintEl.toggleClass("is-hidden", !hint);
 		this.ihintEl.empty();
 		if (hint) {
-			this.ihintEl.createEl("kbd", { text: "⇥" });
+			this.ihintEl.createEl("kbd", { text: this.lab("accept") });
 			this.ihintEl.appendText(`Search in ${hint.name}`);
 		}
 		this.drawBanner();
@@ -1259,7 +1275,7 @@ export class JetModal extends Modal {
 			const t = head("globe");
 			t.appendText("Searching everywhere · was in ");
 			t.createEl("b", { text: this.widened.chip.name });
-			keys([["⇧⇧", "Back"]]);
+			if (this.tap) keys([[this.tap, "Back"]]);
 		} else if (chip && this.autoUndo) {
 			const t = head("undo-2");
 			t.appendText("Scoped to ");
@@ -1273,8 +1289,8 @@ export class JetModal extends Modal {
 			t.createEl("b", { text: s.scope.name });
 			t.appendText(" to this search");
 			keys([
-				["⇥", "Add"],
-				["⇧⇥", `Only ${s.scope.name}`],
+				[this.lab("accept"), "Add"],
+				[this.lab("back"), `Only ${s.scope.name}`],
 			]);
 		} else if (chip && s && !s.others.length) {
 			// Switch to it (your setting): ⇥ switches, ⇧⇥ adds it instead.
@@ -1285,8 +1301,8 @@ export class JetModal extends Modal {
 				` instead of ${joinNames(this.where().map((x) => x.name))} for “${s.rest}” · ${notes(s.scope.members)}`,
 			);
 			keys([
-				["⇥", "Switch"],
-				["⇧⇥", "Add it"],
+				[this.lab("accept"), "Switch"],
+				[this.lab("back"), "Add it"],
 			]);
 		} else if (chip && this.choices.length > 1) {
 			b.addClass("is-multi");
@@ -1294,8 +1310,8 @@ export class JetModal extends Modal {
 				`${this.choices.length} scopes are named “${chip.name}”`.replace(/^2 /, "Two "),
 			);
 			keys([
-				["⇥", "next"],
-				["⇧⇥", "back"],
+				[this.lab("accept"), "next"],
+				[this.lab("back"), "back"],
 			]);
 			pills(this.choices, chip.id);
 		} else if (s && s.others.length) {
@@ -1318,13 +1334,13 @@ export class JetModal extends Modal {
 					? "A long search, so by meaning: notes about what you wrote, even in other words"
 					: "A question, so by meaning: notes about what you asked, even in other words",
 			);
-			keys([["⌘J", "By words"]]);
+			keys([[this.lab("meaning"), "By words"]]);
 		} else if (this.fix) {
 			const t = head("lightbulb");
 			t.appendText("Did you mean ");
 			t.createEl("code", { text: `${this.fix.key}:` });
 			t.appendText(`? · on ${notes(this.fix.notes)}`);
-			keys([["⇥", "Fix"]]);
+			keys([[this.lab("accept"), "Fix"]]);
 		} else {
 			b.remove();
 			return;
@@ -1435,19 +1451,22 @@ export class JetModal extends Modal {
 		const hints: Array<[string, string]> = this.ac
 			? [
 					["↑↓", "Choose value"],
-					["⇥", "Accept"],
+					[this.lab("accept"), "Accept"],
 					["Esc", "Close list"],
 				]
 			: this.fix && !this.typing.suggest
 				? [
-						["⇥", `Fix to ${this.fix.key}:`],
-						["↵", "Open"],
+						[this.lab("accept"), `Fix to ${this.fix.key}:`],
+						[this.lab("open"), "Open"],
 						["Esc", "Clear"],
 					]
 				: this.host.hints(text, this.hintState());
 		// ⌘J, whenever meaning can answer.
 		if (!this.ac && this.host.meaning?.available() && text.trim())
-			hints.splice(Math.min(3, hints.length), 0, ["⌘J", this.meaningNow.on ? "By words" : "By meaning"]);
+			hints.splice(Math.min(3, hints.length), 0, [
+				this.lab("meaning"),
+				this.meaningNow.on ? "By words" : "By meaning",
+			]);
 		for (const [key, label] of hints) {
 			const h = this.footEl.createSpan({ cls: "jet-ht" });
 			h.createEl("kbd", { text: key });
@@ -1474,6 +1493,16 @@ export class JetModal extends Modal {
 		});
 	}
 
+	/** The keys the rows show (the suggestion cards, the scopes row, the meaning switch). */
+	private get rowKeys(): RowKeys {
+		return {
+			open: this.lab("open"),
+			create: this.lab("create"),
+			accept: this.lab("accept"),
+			meaning: this.lab("meaning"),
+		};
+	}
+
 	private render(): void {
 		const list = this.listEl;
 		this.entries.forEach((e, i) => {
@@ -1482,7 +1511,7 @@ export class JetModal extends Modal {
 				el = list.createDiv();
 				this.pool[i] = el;
 			} else if (el.parentElement !== list) list.append(el);
-			fillRow(el, e, i);
+			fillRow(el, e, i, this.rowKeys);
 		});
 		// Rows beyond this list are kept for reuse, detached.
 		for (let i = this.entries.length; i < this.pool.length; i++) this.pool[i]?.remove();
@@ -1593,8 +1622,12 @@ export class JetModal extends Modal {
 			else this.close();
 			return false;
 		});
+		// Your keys: each action on the key you gave it, the default otherwise.
+		const reg = (a: KeyAction, fn: (e: KeyboardEvent) => false | undefined | void): void => {
+			this.scope.register(this.k[a].mods, this.k[a].key, fn);
+		};
 		// Tab accepts the suggestion, or the name alone with nothing typed yet.
-		this.scope.register(["Shift"], "Tab", (e) => {
+		reg("back", (e) => {
 			if (e.isComposing) return;
 			// A scope offered while one is on: the other choice than ⇥'s.
 			const s = this.typing.suggest;
@@ -1606,7 +1639,7 @@ export class JetModal extends Modal {
 			this.cycle(-1);
 			return false;
 		});
-		this.scope.register([], "Tab", (e) => {
+		reg("accept", (e) => {
 			if (e.isComposing) return;
 			if (this.ac) {
 				this.acceptAC();
@@ -1729,54 +1762,63 @@ export class JetModal extends Modal {
 		};
 		this.scope.register([], "PageDown", () => page(1));
 		this.scope.register([], "PageUp", () => page(-1));
-		this.scope.register([], "Enter", (e) => {
+		reg("open", (e) => {
 			if (e.isComposing) return false;
 			if (this.actPanel) this.runAction();
 			else if (this.ac) this.acceptAC();
 			else this.choose("default");
 			return false;
 		});
-		this.scope.register(["Mod"], "Enter", () => {
+		// Open moved off ↵: ↵ still runs the ⌘K panel's action and takes a value from the list.
+		if (this.k.open.key !== "Enter" || this.k.open.mods.length)
+			this.scope.register([], "Enter", (e) => {
+				if (e.isComposing) return false;
+				if (this.actPanel) this.runAction();
+				else if (this.ac) this.acceptAC();
+				else return;
+				return false;
+			});
+		reg("openOther", () => {
 			this.choose("other");
 			return false;
 		});
-		this.scope.register(["Mod", "Alt"], "Enter", () => {
+		reg("split", () => {
 			this.choose("split");
 			return false;
 		});
 		// ⌘J: by meaning or by words, for this search.
-		this.scope.register(["Mod"], "j", () => {
+		reg("meaning", () => {
 			this.toggleMeaning();
 			return false;
 		});
 		// ⌘⇧S: the next order.
-		this.scope.register(["Mod", "Shift"], "s", () => {
+		reg("sort", () => {
 			const i = SORTS.findIndex(([k]) => k === this.sort);
 			this.setSort((SORTS[(i + 1) % SORTS.length] as [Sort, string])[0]);
 			return false;
 		});
 		// ⌘K: the selected note's actions.
-		this.scope.register(["Mod"], "k", () => {
+		reg("actions", () => {
 			if (this.actPanel) this.closeActions();
 			else this.openActions();
 			return false;
 		});
 		// ⌘⇧L: copy the note's obsidian:// URL.
-		this.scope.register(["Mod", "Shift"], "l", () => {
+		reg("copyUrl", () => {
 			const e = this.entries[this.selected];
 			if (e?.type === "item") this.host.act?.("copy-url", e.path);
 			return false;
 		});
-		this.scope.register(["Mod"], "f", () => {
+		reg("filters", () => {
 			if (!this.host.filters) return;
 			this.toggleBar();
 			return false;
 		});
-		this.scope.register(["Mod"], "g", () => {
+		reg("nextHit", () => {
 			this.preview.step(1);
 			return false;
 		});
-		this.scope.register(["Mod", "Shift"], "g", () => {
+		reg("prevHit", () => {
 			this.preview.step(-1);
 			return false;
 		});
@@ -1788,7 +1830,7 @@ export class JetModal extends Modal {
 			this.preview.scroll(-1);
 			return false;
 		});
-		this.scope.register(["Mod"], ".", () => {
+		reg("preview", () => {
 			this.host.setPreviewOn(!this.host.previewOn());
 			// As the host has it now: a host with no preview (search in this note) stays without.
 			const on = this.host.previewOn();
@@ -1797,12 +1839,12 @@ export class JetModal extends Modal {
 			if (on) this.schedulePreview();
 			return false;
 		});
-		this.scope.register(["Mod"], "l", () => {
+		reg("copyLink", () => {
 			const e = this.entries[this.selected];
 			if (e?.type === "item") this.host.copyLink?.(e.path);
 			return false;
 		});
-		this.scope.register(["Alt"], "Enter", () => {
+		reg("insertLink", () => {
 			const e = this.entries[this.selected];
 			if (e?.type !== "item" || !this.host.insertLink) return false;
 			this.opened = true;
@@ -1810,7 +1852,7 @@ export class JetModal extends Modal {
 			this.close();
 			return false;
 		});
-		this.scope.register(["Shift"], "Enter", () => {
+		reg("create", () => {
 			const text = this.inputEl.value.trim();
 			if (!text || !this.host.create) return false;
 			this.opened = true;
@@ -1916,7 +1958,7 @@ export class JetModal extends Modal {
 	private footerActions(): void {
 		this.footEl.empty();
 		const keys: Array<[string, string]> = [
-			["↵", "Run"],
+			[this.lab("open"), "Run"],
 			["↑↓", "Choose"],
 			["Esc", "Back to results"],
 		];
@@ -1932,8 +1974,8 @@ export class JetModal extends Modal {
 	}
 }
 
-/** The key that switches words ↔ meaning. */
-const MEANING_KEY = "⌘J";
+/** The keys a row shows, as you set them. */
+type RowKeys = { open: string; create: string; accept: string; meaning: string };
 
 /** A scope in a list: "Cobalt · [Projects] (34)". */
 export const scopeListLabel = (v: ScopeView): string =>
@@ -1957,7 +1999,7 @@ const keyOf = (e: Entry): string | null =>
 						: null;
 
 /** Fill a pooled row element for an entry (rebuilt each time: rows are few and small). */
-const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
+const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 	el.replaceChildren();
 	el.className = "";
 	el.dataset.index = String(i);
@@ -1980,7 +2022,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 			});
 			setIcon(sw.createSpan({ cls: "jet-modei" }), e.mode === "meaning" ? "type" : "sparkles");
 			sw.appendText(e.mode === "meaning" ? "Words" : "By meaning");
-			sw.createEl("kbd", { text: MEANING_KEY });
+			sw.createEl("kbd", { text: keys.meaning });
 		}
 		if (e.count !== undefined) el.createSpan({ cls: "jet-hs", text: String(e.count) });
 		return;
@@ -2007,7 +2049,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 			});
 			chip.appendText(c.scope.name);
 			chip.createSpan({ cls: "jet-scn", text: c.scope.members.toLocaleString() });
-			if (c.here) chip.createEl("kbd", { text: "⇥" });
+			if (c.here) chip.createEl("kbd", { text: keys.accept });
 		});
 		row.createSpan({
 			cls: "jet-schip is-all",
@@ -2083,13 +2125,14 @@ const fillRow = (el: HTMLElement, e: Entry, i: number): void => {
 		const b = el.createDiv({ cls: "jet-rb" });
 		const l1 = b.createDiv({ cls: "jet-l1" });
 		l1.createSpan({ cls: "jet-rt", text: title });
-		l1.createSpan({ cls: `jet-skey${key === "↵" ? " is-enter" : ""}` }).createEl("kbd", { text: key });
+		l1.createSpan({ cls: `jet-skey${key === keys.open ? " is-enter" : ""}` }).createEl("kbd", { text: key });
 		if (detail) b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: detail });
 	};
-	if (e.type === "core") return card("search-code", "Search with Obsidian Search", e.detail ?? e.query, "↵");
-	if (e.type === "widen") return card("globe", e.label, e.detail, "↵");
-	if (e.type === "search" && e.spelling) return card("spell-check", `Did you mean “${e.query}”?`, e.detail, "↵");
-	if (e.type === "create" && e.detail) return card("file-plus", `Create “${e.text}”`, e.detail, "⇧↵");
+	if (e.type === "core") return card("search-code", "Search with Obsidian Search", e.detail ?? e.query, keys.open);
+	if (e.type === "widen") return card("globe", e.label, e.detail, keys.open);
+	if (e.type === "search" && e.spelling)
+		return card("spell-check", `Did you mean “${e.query}”?`, e.detail, keys.open);
+	if (e.type === "create" && e.detail) return card("file-plus", `Create “${e.text}”`, e.detail, keys.create);
 	if (e.type === "search" || e.type === "create") {
 		el.className = `jet-row ${e.detail ? "jet-rowt" : "jet-row-search"}`;
 		setIcon(el.createSpan({ cls: "jet-ic" }), e.type === "create" ? "file-plus" : e.detail ? "search" : "history");

@@ -49,8 +49,8 @@ export const vaultId = (app: App): string => internals(app).appId ?? app.vault.g
  * Whether another plugin already turns double Shift into a command (then Jet's own
  * detector stays off and that plugin's binding opens Jet through the stand-in command ids).
  */
-export const shiftOwnedElsewhere = (app: App): boolean => {
-	if (pluginOn(app, "obsidian-doubleshift")) return true;
+export const tapOwnedElsewhere = (app: App, key: string): boolean => {
+	if (key === "Shift" && pluginOn(app, "obsidian-doubleshift")) return true;
 	const jade = plugin(app, "jade") as
 		| {
 				registry?: {
@@ -61,7 +61,7 @@ export const shiftOwnedElsewhere = (app: App): boolean => {
 		| undefined;
 	const r = jade?.registry;
 	if (!r?.isRunning?.("commands")) return false;
-	return !!r.settingsOf?.("commands")?.taps?.some((t) => t.code === "ShiftLeft" || t.code === "ShiftRight");
+	return !!r.settingsOf?.("commands")?.taps?.some((t) => t.code === `${key}Left` || t.code === `${key}Right`);
 };
 
 /**

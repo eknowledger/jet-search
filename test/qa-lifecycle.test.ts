@@ -439,12 +439,12 @@ describe("QA lifecycle: Jade's partner API", () => {
 			rebuild: () => {},
 			excerpts: { get: () => true, set: () => {} },
 			persist: { get: () => false, set: () => {} },
-			doubleShift: () => true,
+			tapKey: () => "Shift",
 			aliases: () => ["omnisearch:show-modal"],
 		});
 		link.start();
 		// Jet's own detector stands down (Jade owns Shift), so Shift-Shift runs the command palette for good.
-		expect(link.ownsShift()).toBe(true);
+		expect(link.ownsTap("Shift")).toBe(true);
 		expect(offers).toEqual([["ShiftLeft", "jet-search:open", "Jet Search"]]);
 	});
 });

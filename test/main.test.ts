@@ -120,7 +120,7 @@ describe("settings tab", () => {
 		// Off by default: only its switch.
 		expect(flat(defs).filter((d) => d.name === "Search by meaning").length).toBe(1);
 		const names = flat(defs).map((d) => d.name);
-		expect(names).toContain("Open with a double tap of ⇧");
+		expect(names).toContain("Double tap");
 		expect(flat(defs).some((d) => d.name === "Folders to leave out" && d.type === "page")).toBe(true);
 		expect(names).toContain("English");
 		expect(names.at(-1)).toBe("Version");

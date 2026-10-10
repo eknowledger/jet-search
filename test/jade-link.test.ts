@@ -49,7 +49,7 @@ const fakeJade = (opts: { features?: string[]; taps?: Record<string, string> } =
 	return { api, added, offers, joins: () => joins, unload: () => (active = false) };
 };
 
-const setup = (jade: ReturnType<typeof fakeJade> | null, doubleShift = true) => {
+const setup = (jade: ReturnType<typeof fakeJade> | null, tapKey = "Shift") => {
 	const app = new App();
 	const handlers = new Map<string, () => void>();
 	(app as unknown as { plugins: unknown }).plugins = {
@@ -68,7 +68,8 @@ const setup = (jade: ReturnType<typeof fakeJade> | null, doubleShift = true) => 
 		rebuild: () => {},
 		excerpts: { get: () => excerpts, set: (v) => (excerpts = v) },
 		persist: { get: () => false, set: () => {} },
-		doubleShift: () => doubleShift,
+		tapKey: () => tapKey,
+		tapLabel: () => (tapKey === "off" ? null : "⇧⇧"),
 		aliases: () => ["omnisearch:show-modal"],
 	});
 	return { link, handlers, opened, excerpts: () => excerpts };
@@ -138,7 +139,7 @@ describe("Search beside the J and one Shift-Shift owner", () => {
 		const jade = fakeJade({ features: ["hub", "commands.tap"], taps: { ShiftLeft: "command-palette:open" } });
 		const { link } = setup(jade);
 		link.start();
-		expect(link.ownsShift()).toBe(true);
+		expect(link.ownsTap("Shift")).toBe(true);
 		expect(jade.offers).toEqual([["ShiftLeft", "jet-search:open", "Jet Search"]]);
 	});
 
@@ -150,7 +151,7 @@ describe("Search beside the J and one Shift-Shift owner", () => {
 		setup(o).link.start();
 		expect(o.offers).toEqual([]);
 		const b = fakeJade({ features: ["commands.tap"], taps: { ShiftLeft: "command-palette:open" } });
-		setup(b, false).link.start();
+		setup(b, "off").link.start();
 		expect(b.offers).toEqual([]);
 	});
 
@@ -158,13 +159,13 @@ describe("Search beside the J and one Shift-Shift owner", () => {
 		const plain = fakeJade();
 		const s = setup(plain);
 		s.link.start();
-		expect(s.link.ownsShift()).toBeNull();
+		expect(s.link.ownsTap("Shift")).toBeNull();
 		const jade = fakeJade({ features: ["commands.tap"], taps: { ShiftRight: "x" } });
 		const t = setup(jade);
 		t.link.start();
-		expect(t.link.ownsShift()).toBe(true);
+		expect(t.link.ownsTap("Shift")).toBe(true);
 		jade.unload();
 		t.handlers.get("jade:unload")?.();
-		expect(t.link.ownsShift()).toBeNull();
+		expect(t.link.ownsTap("Shift")).toBeNull();
 	});
 });

@@ -34,6 +34,7 @@ import { createTarget } from "./scopes/create";
 import { fold } from "./scopes/names";
 import { parseScope } from "./scopes/parse";
 import { joinNames, unionOf, type Where, whereIds } from "./scopes/where";
+import { comboLabel, type KeyAction, type KeyMap, keyMap, tapLabel } from "./keys/keymap";
 import { MODE_LABEL } from "./settings/scopes-page";
 import type { Search } from "./search";
 import type { IndexStatus } from "./index-status";
@@ -323,18 +324,24 @@ export class JetHost implements ModalHost {
 		const backlinks = Object.values(this.app.metadataCache.resolvedLinks ?? {}).filter((t) => path in t).length;
 		const tab = this.newTab();
 		return [
-			{ id: "open", label: "Open", icon: "file", key: "↵", group: 0 },
+			{ id: "open", label: "Open", icon: "file", key: this.lab("open"), group: 0 },
 			{
 				id: "other",
 				label: tab ? "Open in the same tab" : "Open in new tab",
 				icon: "app-window",
-				key: "⌘↵",
+				key: this.lab("openOther"),
 				group: 0,
 			},
-			{ id: "split", label: "Open to the right", icon: "columns-2", key: "⌘⌥↵", group: 0 },
-			{ id: "insert", label: "Insert link at cursor", icon: "text-cursor-input", key: "⌥↵", group: 0 },
-			{ id: "copy-link", label: "Copy wikilink", icon: "link", key: "⌘L", group: 1 },
-			{ id: "copy-url", label: "Copy obsidian:// URL", icon: "link-2", key: "⌘⇧L", group: 1 },
+			{ id: "split", label: "Open to the right", icon: "columns-2", key: this.lab("split"), group: 0 },
+			{
+				id: "insert",
+				label: "Insert link at cursor",
+				icon: "text-cursor-input",
+				key: this.lab("insertLink"),
+				group: 0,
+			},
+			{ id: "copy-link", label: "Copy wikilink", icon: "link", key: this.lab("copyLink"), group: 1 },
+			{ id: "copy-url", label: "Copy obsidian:// URL", icon: "link-2", key: this.lab("copyUrl"), group: 1 },
 			{ id: "reveal", label: "Reveal in file explorer", icon: "folder-open", group: 2 },
 			{ id: "move", label: "Move to scope or folder…", icon: "folder-input", group: 2 },
 			{ id: "bookmark", label: "Bookmark", icon: "bookmark", group: 2 },
@@ -574,14 +581,18 @@ export class JetHost implements ModalHost {
 			tog.toggleClass("is-enabled", s.excerpts);
 			this.save();
 		});
-		const win = row("Double tap window", "Two clean taps of ⇧ within this time");
-		const sel = win.createEl("select", { cls: "dropdown" });
-		for (const ms of [250, 350, 500]) sel.createEl("option", { text: `${ms} ms`, attr: { value: String(ms) } });
-		sel.value = String(s.shiftInterval);
-		sel.addEventListener("change", () => {
-			s.shiftInterval = Number(sel.value);
-			this.save();
-		});
+		// The double tap's window, while a double tap opens Jet.
+		const tap = tapLabel(s.tapKey);
+		if (tap) {
+			const win = row("Double tap window", `Two clean taps (${tap}) within this time`);
+			const sel = win.createEl("select", { cls: "dropdown" });
+			for (const ms of [250, 350, 500]) sel.createEl("option", { text: `${ms} ms`, attr: { value: String(ms) } });
+			sel.value = String(s.shiftInterval);
+			sel.addEventListener("change", () => {
+				s.shiftInterval = Number(sel.value);
+				this.save();
+			});
+		}
 		const a = this.scopeAccess;
 		if (a) {
 			const all = a.all();
@@ -790,49 +801,59 @@ export class JetHost implements ModalHost {
 		})().catch((e: unknown) => console.error("Jet Search: the note could not be opened", e));
 	}
 
+	/** Your keys in the window and the double tap as hints write it (null: off). */
+	keys(): { map: KeyMap; tap: string | null } {
+		const st = this.data().settings;
+		return { map: keyMap(st.keys), tap: tapLabel(st.tapKey) };
+	}
+
+	/** An action's key as the hints write it (your keys). */
+	private lab(a: KeyAction): string {
+		return comboLabel(keyMap(this.data().settings.keys)[a]);
+	}
+
 	hints(text: string, state: HintState = {}): Array<[string, string]> {
 		const t = text.trim();
 		const short = t.length > 18 ? `${t.slice(0, 17)}…` : t;
 		const tab = this.newTab() ? "Same tab" : "New tab";
+		const k = (a: KeyAction): string => this.lab(a);
+		// Widen (⇧⇧) follows your double tap; with none, it is not offered as a key.
+		const tap = tapLabel(this.data().settings.tapKey);
+		const widen = (label: string): Array<[string, string]> => (tap ? [[tap, label]] : []);
 		if (state.chip && state.auto)
-			return [
-				["⌫", "Undo scope"],
-				["↵", "Open"],
-				["⌘↵", tab],
-				["⇧⇧", "Widen"],
-			];
+			return [["⌫", "Undo scope"], [k("open"), "Open"], [k("openOther"), tab], ...widen("Widen")];
 		if (state.widened)
 			return [
-				["⇧⇧", `Back to ${state.widened}`],
-				["↵", "Open"],
-				["⌘↵", tab],
-				["⌥↵", "Insert link"],
+				...widen(`Back to ${state.widened}`),
+				[k("open"), "Open"],
+				[k("openOther"), tab],
+				[k("insertLink"), "Insert link"],
 			];
 		if (state.chip && state.more && !state.selected)
 			return [
-				["⇥", "Next scope"],
-				["⇧⇥", "Back"],
-				["↵", "Open"],
+				[k("accept"), "Next scope"],
+				[k("back"), "Back"],
+				[k("open"), "Open"],
 				["⌫", `Remove ${state.chip}`],
-				["⇧⇧", "Widen"],
+				...widen("Widen"),
 			];
 		if (state.chip && state.selected)
 			return [
 				["⌫", `Remove ${state.chip} (it returns as text)`],
 				["Esc", "Keep it"],
-				["↵", "Open"],
+				[k("open"), "Open"],
 			];
 		if (state.chip)
 			return t
 				? [
-						["↵", "Open"],
-						["⌘↵", tab],
-						["⇧↵", `Create in ${state.create ?? state.chip}`],
+						[k("open"), "Open"],
+						[k("openOther"), tab],
+						[k("create"), `Create in ${state.create ?? state.chip}`],
 						["⌫", `Remove ${state.chip}`],
-						["⇧⇧", "Widen"],
+						...widen("Widen"),
 					]
 				: [
-						["↵", "Open"],
+						[k("open"), "Open"],
 						["↑↓", "Choose"],
 						["⌫", `Remove ${state.chip}`],
 						["Esc", "Clear"],
@@ -840,24 +861,24 @@ export class JetHost implements ModalHost {
 		const named = state.suggest ?? state.hint;
 		if (named)
 			return [
-				["⇥", `Search in ${named}`],
-				["↵", "Open"],
-				["⌘↵", tab],
-				["⌥↵", "Insert link"],
-				state.hint ? ["⇧↵", `Create “${short}”`] : ["⌘.", "Preview"],
+				[k("accept"), `Search in ${named}`],
+				[k("open"), "Open"],
+				[k("openOther"), tab],
+				[k("insertLink"), "Insert link"],
+				state.hint ? [k("create"), `Create “${short}”`] : [k("preview"), "Preview"],
 			];
 		return t
 			? [
-					["↵", "Open"],
-					["⌘↵", this.newTab() ? "Same tab" : "New tab"],
-					["⌥↵", "Insert link"],
-					["⇧↵", `Create “${short}”`],
-					["⌘.", "Preview"],
+					[k("open"), "Open"],
+					[k("openOther"), tab],
+					[k("insertLink"), "Insert link"],
+					[k("create"), `Create “${short}”`],
+					[k("preview"), "Preview"],
 				]
 			: [
-					["↵", "Open"],
+					[k("open"), "Open"],
 					["↑↓", "Choose"],
-					["⌘L", "Copy link"],
+					[k("copyLink"), "Copy link"],
 					// With filters on, the first Esc clears them.
 					["Esc", state.filters ? "Clear" : "Close"],
 				];

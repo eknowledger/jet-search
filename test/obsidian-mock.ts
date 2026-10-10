@@ -102,6 +102,8 @@ export class Scope {
 	}
 }
 
+export const Platform = { isMacOS: true, isMobile: false, isDesktop: true, isDesktopApp: true };
+
 export const MarkdownRenderer = {
 	render: (_app: unknown, markdown: string, el: HTMLElement): Promise<void> => {
 		el.createEl("p", { text: markdown });

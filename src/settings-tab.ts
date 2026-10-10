@@ -1,3 +1,4 @@
+import { TAP_KEYS, type TapKey } from "./keys/keymap";
 import {
 	type App,
 	Notice,
@@ -55,10 +56,20 @@ export class JetSettingTab extends PluginSettingTab {
 				heading: "Open",
 				items: [
 					{
-						name: "Open with a double tap of ⇧",
-						desc: "Two quick taps of ⇧. Off when another plugin already handles a double tap of ⇧.",
+						name: "Double tap",
+						desc: "Two quick taps of one key, alone, open Jet. Off when another plugin already handles that key.",
 						aliases: ["Shift-Shift", "double shift", "shortcut", "hotkey"],
-						control: { type: "toggle", key: "doubleShift" },
+						control: {
+							type: "dropdown",
+							key: "tapKey",
+							options: {
+								Shift: "⇧ Shift",
+								Control: "⌃ Control",
+								Alt: "⌥ Option",
+								Meta: "⌘ Command",
+								off: "Off",
+							},
+						},
 					},
 					{
 						name: "Double tap window",
@@ -153,8 +164,8 @@ export class JetSettingTab extends PluginSettingTab {
 		if (key === "meaningLong") return s.meaningLong;
 		if (key.startsWith(STEM)) return s.stemming.includes(key.slice(STEM.length));
 		switch (key) {
-			case "doubleShift":
-				return s.doubleShift;
+			case "tapKey":
+				return s.tapKey;
 			case "shiftInterval":
 				return String(s.shiftInterval);
 			case "newTab":
@@ -236,8 +247,8 @@ export class JetSettingTab extends PluginSettingTab {
 			return;
 		}
 		switch (key) {
-			case "doubleShift":
-				s.doubleShift = value === true;
+			case "tapKey":
+				s.tapKey = TAP_KEYS.some(([k]) => k === value) ? (value as TapKey) : s.tapKey;
 				break;
 			case "shiftInterval":
 				{

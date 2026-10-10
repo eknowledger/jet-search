@@ -1,4 +1,4 @@
-import { type Command, debounce, MarkdownView, Plugin, TFile } from "obsidian";
+import { type Command, debounce, MarkdownView, Platform, Plugin, TFile } from "obsidian";
 import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
@@ -15,7 +15,7 @@ import {
 	openSettingsAt,
 	plugin,
 	removeCommand,
-	shiftOwnedElsewhere,
+	tapOwnedElsewhere,
 	vaultId,
 } from "./internals";
 import { InNoteHost } from "./innote";
@@ -31,6 +31,7 @@ import { ScopeWatcher } from "./scopes/watcher";
 import { Search } from "./search";
 import { JetSettingTab } from "./settings-tab";
 import { DoubleTap } from "./shift";
+import { setMac, tapLabel } from "./keys/keymap";
 import { JetClient } from "./worker/jet-client";
 
 /** The first build starts this long after the layout is ready, the first time (within 5 s). */
@@ -83,6 +84,8 @@ export default class JetSearchPlugin extends Plugin {
 		// Turned off while its data was read: nothing is made.
 		if (this.unloaded) return;
 		this.data = normalizeData(raw);
+		// Key hints as this platform writes them (⌘L on macOS, Ctrl+L elsewhere).
+		setMac(Platform.isMacOS);
 		// The first run: Jade's search settings, once. A file read only then.
 		if (this.data.indexedAt === null && !this.data.imported.includes("jade-search")) {
 			const jade = await this.readJadeData();
@@ -335,7 +338,11 @@ export default class JetSearchPlugin extends Plugin {
 			return;
 		}
 		this.modal?.close();
-		const modal = new JetModal(this.app, new InNoteHost(this.app, view.file, view), text);
+		const modal = new JetModal(
+			this.app,
+			new InNoteHost(this.app, view.file, view, undefined, () => this.host.keys()),
+			text,
+		);
 		this.modal = modal;
 		modal.open();
 	}
@@ -364,7 +371,10 @@ export default class JetSearchPlugin extends Plugin {
 		const standIns = window.setTimeout(() => this.standIn(), 0);
 		this.register(() => window.clearTimeout(standIns));
 		// Shift-Shift, unless another plugin already owns double Shift.
-		const tap = new DoubleTap(() => this.data.settings.shiftInterval);
+		const tap = new DoubleTap(
+			() => this.data.settings.shiftInterval,
+			() => this.data.settings.tapKey,
+		);
 		const watched = new Map<Document, () => void>();
 		const watch = (doc: Document): void => {
 			if (watched.has(doc)) return;
@@ -373,8 +383,9 @@ export default class JetSearchPlugin extends Plugin {
 			const up = (e: KeyboardEvent): void => {
 				if (!tap.keyup(e.key, e.timeStamp)) return;
 				// One owner: Jade says whether it owns a double Shift; else its settings are read.
-				if (!this.data.settings.doubleShift) return;
-				if (this.jade?.ownsShift() ?? shiftOwnedElsewhere(this.app)) return;
+				const k = this.data.settings.tapKey;
+				if (k === "off") return;
+				if (this.jade?.ownsTap(k) ?? tapOwnedElsewhere(this.app, k)) return;
 				this.open();
 			};
 			// A mouse press between taps is a Shift-click (selecting a range), not a double tap.
@@ -516,7 +527,8 @@ export default class JetSearchPlugin extends Plugin {
 					this.save();
 				},
 			},
-			doubleShift: () => this.data.settings.doubleShift,
+			tapKey: () => this.data.settings.tapKey,
+			tapLabel: () => tapLabel(this.data.settings.tapKey),
 			aliases: () => (plugin(this.app, "omnisearch") ? [] : [STAND_INS.open]),
 		});
 		// Last, and never in the way: a Jade that throws must not stop Jet listening.

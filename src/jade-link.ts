@@ -17,14 +17,17 @@ export type JadeHost = {
 	rebuild(): void;
 	excerpts: { get(): boolean; set(v: boolean): void };
 	persist: { get(): boolean; set(v: boolean): void };
-	/** Jet's own double-Shift setting (no offer to Jade when you turned it off). */
-	doubleShift(): boolean;
+	/** The key whose double tap opens Jet, or off: no offer to Jade then. */
+	tapKey(): string;
+	/** The double tap as hints write it (⇧⇧), or null when off. */
+	tapLabel?(): string | null;
 	/** Other command ids that open Jet now (Omnisearch's, while Jet stands in for it). */
 	aliases(): string[];
 };
 
 const OPEN = "jet-search:open";
-const SHIFTS = ["ShiftLeft", "ShiftRight"] as const;
+/** The two keys of a modifier, as Jade's taps name them (ShiftLeft, ShiftRight). */
+const codesOf = (key: string): string[] => [`${key}Left`, `${key}Right`];
 
 export class JadeLink {
 	private partner: JadePartner | null = null;
@@ -49,11 +52,11 @@ export class JadeLink {
 		return !!this.partner?.active;
 	}
 
-	/** Whether Jade owns a double Shift (null: Jade does not say; the caller reads its settings). */
-	ownsShift(): boolean | null {
+	/** Whether Jade owns a double tap of this key (null: Jade does not say; the caller reads its settings). */
+	ownsTap(key: string): boolean | null {
 		const p = this.partner;
 		if (!p?.active || !this.taps) return null;
-		return SHIFTS.some((c) => p.commands.owns(c));
+		return codesOf(key).some((c) => p.commands.owns(c));
 	}
 
 	private join(): void {
@@ -95,7 +98,7 @@ export class JadeLink {
 				id: "open",
 				type: "action",
 				label: "Search notes",
-				desc: "Jet Search (⇧⇧)",
+				desc: this.host.tapLabel ? `Jet Search (${this.host.tapLabel() ?? "a hotkey"})` : "Jet Search",
 				button: "Open",
 				run: () => this.host.open(""),
 			});
@@ -126,8 +129,9 @@ export class JadeLink {
 		if (has("quick"))
 			p.quick.add({ id: "search", icon: "search", label: "Search", order: 30, run: () => this.host.open("") });
 		this.taps = has("commands.tap");
-		if (this.taps && this.host.doubleShift()) {
-			const owned = SHIFTS.find((c) => p.commands.owns(c));
+		const key = this.host.tapKey();
+		if (this.taps && key !== "off") {
+			const owned = codesOf(key).find((c) => p.commands.owns(c));
 			// Jade remembers the answer; an offer for a tap that already opens Jet is never made.
 			// The Shift tap Jade owns, not any tap: Ctrl-Ctrl opening Jet leaves Shift-Shift elsewhere.
 			const opensJet = [OPEN, ...this.host.aliases()].some((c) => p.commands.tapFor(c) === owned);

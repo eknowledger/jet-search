@@ -1,3 +1,4 @@
+import { comboLabel, type KeyMap, keyMap } from "./keys/keymap";
 import { type App, type MarkdownView, type TFile } from "obsidian";
 import { normalize, tokenize } from "./engine/analyzer";
 import { clusterEnd, clusterStart } from "./excerpt/chars";
@@ -24,6 +25,8 @@ export class InNoteHost implements ModalHost {
 		private readonly file: TFile,
 		private readonly view: MarkdownView,
 		private readonly later: (fn: () => void) => void = (fn) => window.setTimeout(fn, 30),
+		/** Your keys, so ↵ (or the key you gave Open) jumps here too. */
+		readonly keys?: () => { map: KeyMap; tap: string | null },
 	) {}
 
 	list(text: string, paint: (entries: Entry[], status?: string) => void): void {
@@ -150,7 +153,7 @@ export class InNoteHost implements ModalHost {
 
 	hints(): Array<[string, string]> {
 		return [
-			["↵", "Jump"],
+			[comboLabel((this.keys?.().map ?? keyMap()).open), "Jump"],
 			["↑↓", "Choose"],
 			["Esc", "Close"],
 		];

@@ -1,5 +1,6 @@
 import { type Filter, validFilter } from "./filters/filter";
 import { normalizeScopes, type OwnMode, type Scope } from "./scopes/model";
+import { type Combo, KEY_ACTIONS, type TapKey } from "./keys/keymap";
 
 /**
  * Data saved before "every scope" existed (no `scopeMode` yet): Suggest was the default then, so a
@@ -16,10 +17,15 @@ const migrateModes = (scopes: Scope[], before: boolean): Scope[] => {
  */
 
 export type JetSettings = {
-	/** Shift-Shift opens Jet (when no other plugin owns double Shift). */
-	doubleShift: boolean;
+	/**
+	 * The key whose double tap opens Jet, or off: Obsidian's Hotkeys are the
+	 * usual way; this is extra. Was `doubleShift` (true: Shift, false: off). Not when another plugin owns it.
+	 */
+	tapKey: TapKey;
 	/** Most time between the two taps, in ms. */
 	shiftInterval: number;
+	/** The keys in the window you changed; the others keep their default. */
+	keys: Partial<Record<string, Combo>>;
 	/** Open results in a new tab by default (⌘↵ does the other). */
 	newTab: boolean;
 	/** Show the preview pane (⌘. toggles). */
@@ -46,8 +52,9 @@ export type JetSettings = {
 };
 
 export const DEFAULT_SETTINGS: JetSettings = {
-	doubleShift: true,
+	tapKey: "Shift",
 	shiftInterval: 350,
+	keys: {},
 	newTab: false,
 	preview: true,
 	excerpts: true,
@@ -87,11 +94,35 @@ const HALF_LIFE = 30 * 86_400_000;
 const MAX_OPENED = 2000;
 export const MAX_SEARCHES = 10;
 
+const MODS = new Set(["Mod", "Ctrl", "Meta", "Shift", "Alt"]);
+/** Your changed keys, for actions Jet knows, each a key with known modifiers (a hand-edited file stays safe). */
+const validKeys = (raw: unknown): Partial<Record<string, Combo>> => {
+	const out: Partial<Record<string, Combo>> = {};
+	if (!raw || typeof raw !== "object") return out;
+	const known = new Set<string>(KEY_ACTIONS.map((a) => a.id));
+	for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+		const c = v as { mods?: unknown; key?: unknown } | null;
+		if (!known.has(id) || !c || typeof c.key !== "string" || !c.key || !Array.isArray(c.mods)) continue;
+		if (!c.mods.every((m) => typeof m === "string" && MODS.has(m))) continue;
+		out[id] = { mods: [...(c.mods as Combo["mods"])], key: c.key };
+	}
+	return out;
+};
+
 export const normalizeData = (raw: unknown): JetData => {
 	const r = (raw && typeof raw === "object" ? raw : {}) as Partial<JetData>;
-	const s = (r.settings && typeof r.settings === "object" ? r.settings : {}) as Partial<JetSettings>;
+	const s = (r.settings && typeof r.settings === "object" ? r.settings : {}) as Partial<JetSettings> & {
+		doubleShift?: unknown;
+	};
+	const TAPS: readonly TapKey[] = ["Shift", "Control", "Alt", "Meta", "off"];
 	const settings: JetSettings = {
-		doubleShift: typeof s.doubleShift === "boolean" ? s.doubleShift : DEFAULT_SETTINGS.doubleShift,
+		// Before the choice of key: the double Shift on or off.
+		tapKey: TAPS.includes(s.tapKey as TapKey)
+			? (s.tapKey as TapKey)
+			: s.doubleShift === false
+				? "off"
+				: DEFAULT_SETTINGS.tapKey,
+		keys: validKeys(s.keys),
 		shiftInterval:
 			typeof s.shiftInterval === "number" && s.shiftInterval >= 150 && s.shiftInterval <= 1000
 				? s.shiftInterval
