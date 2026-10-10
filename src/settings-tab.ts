@@ -9,7 +9,7 @@ import { type App, Menu, Notice, PluginSettingTab, setIcon } from "obsidian";
 import { BUILD_ID } from "./build-id";
 import { STEM_LANGUAGES } from "./engine/stem";
 import { clearIndex, rebuild, statusNow } from "./index-status";
-import { hotkeyLabel, openHotkeys, openJetSettings } from "./internals";
+import { hotkeyLabel, openHotkeys, openJetSettings, tapOwnedElsewhere } from "./internals";
 import {
 	type Combo,
 	comboLabel,
@@ -483,11 +483,24 @@ export class JetSettingTab extends PluginSettingTab {
 			cls: "jet-set-kbd",
 			text: hotkeyLabel(this.app, `${this.owner.manifest.id}:open`) ?? "not set",
 		});
+		// Jade may already open Jet with a double tap of its own (you accepted its offer): say so, it wins.
+		// A key another plugin taps for something else: Jet's own double tap stands down, so say that too.
+		const name = (k: string): string => tapKeyNames().find(([x]) => x === k)?.[1] ?? k;
+		const jade = this.owner.jade?.jadeTap() ?? null;
+		const jadeName = jade ? name(jade) : null;
+		const taken =
+			s.tapKey !== "off" &&
+			s.tapKey !== jade &&
+			(this.owner.jade?.ownsTap(s.tapKey) ?? tapOwnedElsewhere(this.app, s.tapKey));
 		this.dropdown(
 			settingRow(
 				o,
 				"Double tap",
-				"Two quick taps of one key, alone, open Jet. Off when another plugin already handles that key.",
+				"Two quick taps of one key, alone, open Jet. Off when another plugin already handles that key." +
+					(taken ? ` Another plugin already uses a double tap of ${name(s.tapKey)}: pick another key.` : "") +
+					(jadeName
+						? ` Jade opens Jet with a double tap of ${jadeName} too; change that in Jade's settings.`
+						: ""),
 			),
 			"tapKey",
 			tapKeyNames(),

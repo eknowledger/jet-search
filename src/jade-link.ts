@@ -59,6 +59,14 @@ export class JadeLink {
 		return codesOf(key).some((c) => p.commands.owns(c));
 	}
 
+	/** The double tap Jade points at Jet (its key, Shift for ShiftLeft), or null: then Jade opens Jet with it, whatever Jet's own choice. */
+	jadeTap(): string | null {
+		const p = this.partner;
+		if (!p?.active || !this.taps) return null;
+		const code = [OPEN, ...this.host.aliases()].map((c) => p.commands.tapFor(c)).find((c) => !!c);
+		return code ? code.replace(/(Left|Right)$/, "") : null;
+	}
+
 	private join(): void {
 		if (this.partner?.active) return;
 		const plugins = (this.app as unknown as { plugins?: { getPlugin(id: string): unknown } }).plugins;

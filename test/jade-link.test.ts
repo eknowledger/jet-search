@@ -155,6 +155,30 @@ describe("Search beside the J and one Shift-Shift owner", () => {
 		expect(b.offers).toEqual([]);
 	});
 
+	it("says which double tap Jade points at Jet (the settings tell you it wins), or none", () => {
+		const a = fakeJade({ features: ["commands.tap"], taps: { ShiftLeft: "jet-search:open" } });
+		const s = setup(a, "Control");
+		s.link.start();
+		expect(s.link.jadeTap()).toBe("Shift");
+		const o = fakeJade({ features: ["commands.tap"], taps: { ControlRight: "omnisearch:show-modal" } });
+		const t = setup(o);
+		t.link.start();
+		expect(t.link.jadeTap()).toBe("Control");
+		const n = fakeJade({ features: ["commands.tap"], taps: { ShiftLeft: "command-palette:open" } });
+		const u = setup(n, "off");
+		u.link.start();
+		expect(u.link.jadeTap()).toBeNull();
+	});
+
+	it("asks Jade about the tap of the key you chose: Control, not Shift", () => {
+		const jade = fakeJade({ features: ["commands.tap"], taps: { ControlLeft: "command-palette:open" } });
+		const { link } = setup(jade, "Control");
+		link.start();
+		expect(link.ownsTap("Control")).toBe(true);
+		expect(link.ownsTap("Shift")).toBe(false);
+		expect(jade.offers).toEqual([["ControlLeft", "jet-search:open", "Jet Search"]]);
+	});
+
 	it("unknown without the feature (the caller falls back to reading Jade's settings); false once Jade goes", () => {
 		const plain = fakeJade();
 		const s = setup(plain);
