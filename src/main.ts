@@ -209,7 +209,7 @@ export default class JetSearchPlugin extends Plugin {
 				return;
 			}
 			last = Date.now();
-			this.settingTab.refresh();
+			this.settingTab.progressChanged();
 		};
 		this.meaning.onChange = show;
 		this.feeder.onMeaningProgress = show;

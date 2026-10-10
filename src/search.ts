@@ -408,12 +408,15 @@ export class Search {
 		const q = (v: string): string => (/[\s"]/u.test(v) ? `"${v.replace(/"/g, "")}"` : v);
 		const parts: string[] = [];
 		const left: string[] = [];
-		// Several scopes: any of them, ORed; one Obsidian has no syntax for is named.
-		const ds = whereIds(c.scope).map((id) => this.scopes?.describe?.(id) ?? null);
-		const queries = ds.flatMap((d) => (d?.query ? [d.query] : []));
-		for (const d of ds) if (d && !d.query) left.push(d.name);
-		if (queries.length === 1) parts.push(queries[0] as string);
-		else if (queries.length) parts.push(`(${queries.map((x) => `(${x})`).join(" OR ")})`);
+		// Several scopes: any of them, ORed. One Obsidian has no syntax for would make the ORed rest
+		// narrower than the search, so then no scope is written and they are all named (wider, as for one).
+		const ds = whereIds(c.scope).flatMap((id) => {
+			const d = this.scopes?.describe?.(id) ?? null;
+			return d ? [d] : [];
+		});
+		if (ds.some((d) => !d.query)) left.push(...ds.map((d) => d.name));
+		else if (ds.length === 1) parts.push(ds[0]?.query as string);
+		else if (ds.length) parts.push(`(${ds.map((d) => `(${d.query})`).join(" OR ")})`);
 		for (const f of c.filters ?? [])
 			if (f.kind === "tag") parts.push(`tag:${f.tag}`);
 			else if (f.kind === "path") parts.push(`path:${q(f.prefix)}`);

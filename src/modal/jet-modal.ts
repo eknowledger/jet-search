@@ -1079,10 +1079,12 @@ export class JetModal extends Modal {
 		how: "add" | "switch" = this.another(),
 	): void {
 		const cur = this.chip;
-		// A scope already on just becomes the last chip.
-		if (cur && how === "add" && cur.id !== scope.id)
-			this.kept = [...this.kept, cur].filter((s) => s.id !== scope.id);
+		// A scope already on stays where it is (the first one is where ⇧↵ creates): only its name is used up.
+		const on = cur && how === "add" && this.kept.some((s) => s.id === scope.id);
+		if (on) scope = cur;
+		else if (cur && how === "add" && cur.id !== scope.id) this.kept = [...this.kept, cur];
 		else if (how === "switch") this.kept = [];
+		if (on) choices = this.choices;
 		this.chip = scope;
 		this.choices = choices;
 		this.widened = null;

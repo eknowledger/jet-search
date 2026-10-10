@@ -57,10 +57,11 @@ export const KEY_ACTIONS: ReadonlyArray<{ id: KeyAction; what: string; key: Comb
 export type KeyMap = Record<KeyAction, Combo>;
 
 const ORDER: readonly Modifier[] = ["Mod", "Ctrl", "Meta", "Alt", "Shift"];
-const norm = (c: Combo): Combo => ({
-	mods: ORDER.filter((m) => c.mods.includes(m)),
-	key: c.key.length === 1 ? c.key.toLowerCase() : c.key,
-});
+/** Off macOS, Ctrl is Mod (Obsidian maps Mod to Ctrl there): the same key, compared and shown once. */
+const norm = (c: Combo): Combo => {
+	const mods = mac ? c.mods : c.mods.map((m): Modifier => (m === "Ctrl" ? "Mod" : m));
+	return { mods: ORDER.filter((m) => mods.includes(m)), key: c.key.length === 1 ? c.key.toLowerCase() : c.key };
+};
 
 /** Your keys over the defaults. */
 export const keyMap = (custom: Partial<Record<string, Combo>> = {}): KeyMap => {
@@ -106,6 +107,14 @@ const typesText = (c: Combo): boolean =>
 export const refusal = (map: KeyMap, action: KeyAction, combo: Combo): string | null => {
 	for (const [c, what] of FIXED) if (sameCombo(c, combo)) return `${comboLabel(combo)} is kept for ${what}.`;
 	if (typesText(combo)) return "That key is for typing in the search box. Use it with ⌘, Ctrl or ⌥.";
+	// macOS types a character for ⌥ and a letter (⌥L is ¬), and the window sees that character: it never fires.
+	if (mac && combo.mods.includes("Alt") && /^[a-z]$/.test(norm(combo).key))
+		return "⌥ with a letter types a character on macOS (⌥L is ¬). Use ⌘ or ⌃ with it.";
+	// ↵ and ⇥ alone also run the lists in the window (a value, the ⌘K panel): only Open and Accept take them.
+	if (!combo.mods.length && combo.key === "Enter" && action !== "open")
+		return "↵ alone is kept for opening and for the lists in the window.";
+	if (!combo.mods.length && combo.key === "Tab" && action !== "accept")
+		return "⇥ alone is kept for taking a suggestion.";
 	for (const a of KEY_ACTIONS)
 		if (a.id !== action && sameCombo(map[a.id], combo)) return `${comboLabel(combo)} already does: ${a.what}.`;
 	return null;

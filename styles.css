@@ -1696,14 +1696,14 @@ input.jet-set-search {
 }
 .jet-set-kbd {
 	display: inline-block;
-	min-width: 26px;
-	padding: 2px 8px;
-	border: 1px solid var(--background-modifier-border);
-	border-bottom-width: 2px;
-	border-radius: 6px;
-	background: var(--background-primary);
+	min-width: 22px;
+	padding: 1px 7px;
+	border: 1px solid var(--background-modifier-border-hover);
+	border-radius: 5px;
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
 	font-family: var(--font-interface);
-	font-size: var(--font-ui-small);
+	font-size: 12px;
 	text-align: center;
 	white-space: nowrap;
 }

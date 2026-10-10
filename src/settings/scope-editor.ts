@@ -59,7 +59,19 @@ export const drawScopeEditor = (el: HTMLElement, h: ScopesHost, s: Scope, change
 		redraw();
 	});
 	const typed = whenTyped(h, s);
-	const sel = settingRow(el, typed.name, typed.desc).createEl("select", { cls: "dropdown" });
+	const modeRow = settingRow(el, typed.name, typed.desc);
+	const sel = modeRow.createEl("select", { cls: "dropdown" });
+	// Not measured yet ("Checking how often…"): its words once the count is in, nothing else redrawn.
+	if (!h.mentions(s.id)) {
+		const desc = modeRow.parentElement?.querySelector(".setting-item-description");
+		let tries = 0;
+		const later = (): void => {
+			if (!el.isConnected || ++tries > 30) return;
+			if (h.mentions(s.id)) desc?.setText(whenTyped(h, s).desc);
+			else window.setTimeout(later, 400);
+		};
+		window.setTimeout(later, 400);
+	}
 	for (const [v, label] of Object.entries(typed.control.options))
 		sel.createEl("option", { text: label, attr: { value: v } });
 	sel.value = s.mode;

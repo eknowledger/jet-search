@@ -251,3 +251,21 @@ describe("several scopes in one search: Add it, the default", () => {
 		expect((also as ScopeView[]).map((s) => s.id)).toEqual(["bridge"]);
 	});
 });
+
+describe("a scope already on, named again", () => {
+	afterEach(() => document.body.replaceChildren());
+
+	it("stays where it is: the first scope stays first (⇧↵ creates there)", () => {
+		const { m, created } = open("add");
+		type(m, "@cob ");
+		type(m, "Moonbridge ");
+		expect(kept()).toEqual(["Cobalt"]);
+		type(m, "x");
+		type(m, "@cob plan");
+		expect(kept()).toEqual(["Cobalt"]);
+		expect(chip()).toBe("Moonbridge");
+		expect(m.inputEl.value).toBe("plan");
+		(m.scope as unknown as { press(k: string, m: unknown[]): boolean }).press("Enter", ["Shift"]);
+		expect(created.at(-1)).toEqual(["plan", "cobalt"]);
+	});
+});

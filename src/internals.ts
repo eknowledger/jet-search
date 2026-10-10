@@ -18,7 +18,7 @@ type Internals = {
 		open?: () => void;
 		openTabById?: (
 			id: string,
-		) => { searchComponent?: { setValue(v: string): void }; updateHotkeyVisibility?(): void } | void;
+		) => { searchComponent?: { setValue(v: string): void; inputEl?: HTMLInputElement } } | void;
 		modalEl?: HTMLElement;
 		activeTab?: unknown;
 	};
@@ -122,8 +122,9 @@ export const openHotkeys = (app: App, filter: string): void => {
 	const s = internals(app).setting;
 	const tab = s?.openTabById?.("hotkeys");
 	if (!tab) return;
+	// The Hotkeys tab filters on its search box's input event (checked on Obsidian 1.14).
 	tab.searchComponent?.setValue(filter);
-	tab.updateHotkeyVisibility?.();
+	tab.searchComponent?.inputEl?.dispatchEvent(new Event("input"));
 };
 
 /** Open the settings at Jet's tab; returns the tab Obsidian shows. Internal API. */

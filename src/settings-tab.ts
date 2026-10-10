@@ -239,8 +239,18 @@ export class JetSettingTab extends PluginSettingTab {
 		if (!a) return;
 		const keys = this.owner.data.settings.keys;
 		const c = value as Combo | null;
-		if (c === null) delete keys[a.id];
-		else {
+		if (c === null) {
+			// Its default back, unless another action has that key now (both would sit on it).
+			const rest = { ...keys };
+			delete rest[a.id];
+			const why = refusal(keyMap(rest), a.id, a.key);
+			if (why) {
+				this.keyMsg = `${why} Change that one first.`;
+				this.redraw();
+				return;
+			}
+			delete keys[a.id];
+		} else {
 			if (!c || typeof c.key !== "string" || !Array.isArray(c.mods)) return;
 			const why = refusal(keyMap(keys), a.id, c);
 			if (why) {
@@ -286,7 +296,11 @@ export class JetSettingTab extends PluginSettingTab {
 		this.query = "";
 		openJetSettings(this.app, this.owner.manifest.id);
 		const s = scopeId ? this.owner.data.scopes.find((x) => x.id === scopeId) : undefined;
-		if (s) openScopeEditor(this.scopesHost(), s);
+		if (s)
+			openScopeEditor(
+				this.scopesHost(() => true),
+				s,
+			);
 	}
 
 	/** Draw the tab again with fresh values (after a rebuild or a clear, or a change made elsewhere). */
@@ -294,12 +308,25 @@ export class JetSettingTab extends PluginSettingTab {
 		this.redraw();
 	}
 
-	/** Drawn again in place, where you were scrolled to. */
+	/** Drawn again in place, where you were scrolled to, typing in the search box if you were. */
 	private redraw(): void {
 		if (!this.shown) return;
 		const top = this.containerEl.scrollTop;
+		const box = this.containerEl.querySelector<HTMLInputElement>("input.jet-set-search");
+		const typing = !!box && box.ownerDocument.activeElement === box;
+		const caret = typing ? [box.selectionStart ?? 0, box.selectionEnd ?? 0] : null;
 		this.display();
 		this.containerEl.scrollTop = top;
+		if (caret) {
+			const again = this.containerEl.querySelector<HTMLInputElement>("input.jet-set-search");
+			again?.focus();
+			again?.setSelectionRange(caret[0] ?? 0, caret[1] ?? 0);
+		}
+	}
+
+	/** Search by meaning's progress: drawn again only while its tab is the one shown (twice a second at most). */
+	progressChanged(): void {
+		if (this.page === "meaning" && !this.query) this.redraw();
 	}
 
 	private header(root: HTMLElement): void {
@@ -331,6 +358,7 @@ export class JetSettingTab extends PluginSettingTab {
 		});
 		search.value = this.query;
 		search.addEventListener("input", () => {
+			this.stopRecording?.();
 			this.query = search.value.trim().toLowerCase();
 			const body = this.containerEl.querySelector<HTMLElement>(".jet-set-body");
 			if (body) this.drawBody(body);
@@ -348,6 +376,8 @@ export class JetSettingTab extends PluginSettingTab {
 				attr: { "data-page": t.id, role: "tab", tabindex: "0" },
 			});
 			const go = (): void => {
+				// A key waiting for its press is let go: the press would land on a page you no longer see.
+				this.stopRecording?.();
 				this.page = t.id;
 				this.query = "";
 				this.redraw();
@@ -409,7 +439,7 @@ export class JetSettingTab extends PluginSettingTab {
 	/** One feature (Jade's cards): its icon, name and what it does, a control on the right, options under. */
 	private card(
 		parent: HTMLElement,
-		o: { icon: string; name: string; desc: string; aliases?: string; off?: boolean },
+		o: { icon: string; name: string; desc: string; aliases?: string; off?: boolean; bold?: string },
 	): Card {
 		const card = parent.createDiv({
 			cls: `jet-set-card${o.off ? " is-off" : ""}`,
@@ -419,7 +449,17 @@ export class JetSettingTab extends PluginSettingTab {
 		setIcon(row.createDiv({ cls: "jet-set-icon" }), o.icon);
 		const text = row.createDiv({ cls: "jet-set-text" });
 		text.createDiv({ cls: "jet-set-name", text: o.name });
-		if (o.desc) text.createDiv({ cls: "jet-set-desc", text: o.desc });
+		if (o.desc) {
+			const d = text.createDiv({ cls: "jet-set-desc" });
+			// One phrase in bold (a command's name).
+			const at = o.bold ? o.desc.indexOf(o.bold) : -1;
+			if (at < 0 || !o.bold) d.setText(o.desc);
+			else {
+				d.appendText(o.desc.slice(0, at));
+				d.createEl("b", { text: o.bold });
+				d.appendText(o.desc.slice(at + o.bold.length));
+			}
+		}
 		let opts: HTMLElement | null = null;
 		return { card, row, opts: () => (opts ??= card.createDiv({ cls: "jet-set-opts" })) };
 	}
@@ -474,7 +514,8 @@ export class JetSettingTab extends PluginSettingTab {
 		const open = this.card(body, {
 			icon: "search",
 			name: "Open Jet",
-			desc: "Give “Jet Search: Search notes” any hotkey in Obsidian's Hotkeys: that is the usual way. A double tap of a modifier is extra, for those who like it.",
+			desc: "Give Jet Search: Search notes any hotkey in Obsidian's Hotkeys: that is the usual way. A double tap of a modifier is extra, for those who like it.",
+			bold: "Jet Search: Search notes",
 			aliases: "hotkey shortcut Shift-Shift double shift tap",
 		});
 		this.button(open.row, "Set a hotkey ↗", () => openHotkeys(this.app, "Jet Search"));
@@ -709,7 +750,8 @@ export class JetSettingTab extends PluginSettingTab {
 			text: all.length ? `${all.length} scope${all.length === 1 ? "" : "s"}` : "No scopes yet",
 		});
 		if (fresh) head.createSpan({ cls: "jet-set-new", text: ` · ${fresh} new` });
-		this.button(head, "Add scope", () => openScopeEditor(h, addScope(h)));
+		const editor = this.scopesHost(() => true);
+		this.button(head, "Add scope", () => openScopeEditor(editor, addScope(editor)));
 		if (!all.length) list.createDiv({ cls: "jet-set-empty", text: "Generate them, or add one by hand." });
 		const every = this.owner.data.settings.scopeMode;
 		for (const s of all) {
@@ -725,7 +767,7 @@ export class JetSettingTab extends PluginSettingTab {
 				cls: "jet-set-m",
 				text: s.mode === "default" ? `${MODE_LABEL[modeOf(s, every)]} · every scope` : MODE_LABEL[s.mode],
 			});
-			this.button(row, "Edit", () => openScopeEditor(h, s));
+			this.button(row, "Edit", () => openScopeEditor(editor, s));
 		}
 	}
 
@@ -733,9 +775,13 @@ export class JetSettingTab extends PluginSettingTab {
 	 * What the scope editor and Generate need. Counts are worked out only while the tab is on screen
 	 * (Jet does nothing at start).
 	 */
-	private scopesHost(): ScopesHost {
+	/**
+	 * `onScreen`: whether counts may be worked out now; the tab while it is shown, the scope editor
+	 * always (it is on screen while it asks, and on 1.13+ the tab under it is not).
+	 */
+	private scopesHost(onScreen: () => boolean = () => this.containerEl.isConnected): ScopesHost {
 		const keeper = this.owner.scopes;
-		const shown = (): boolean => this.containerEl.isConnected;
+		const shown = onScreen;
 		return {
 			app: this.app,
 			scopes: () => this.owner.data.scopes,
