@@ -113,7 +113,7 @@ export class Search {
 		paint: (entries: Entry[], status?: string) => void;
 		scope?: Where;
 		filters?: readonly Filter[];
-		meaning?: { on: boolean; offered: boolean };
+		meaning?: { on: boolean; offered: boolean; both?: boolean };
 		/** The order chosen: a live refresh keeps it. */
 		order?: Sort;
 	} | null = null;
@@ -137,7 +137,7 @@ export class Search {
 		paint: (entries: Entry[], status?: string) => void,
 		scope?: Where,
 		filters: readonly Filter[] = [],
-		meaning?: { on: boolean; offered: boolean },
+		meaning?: { on: boolean; offered: boolean; both?: boolean },
 		order: Sort = "best",
 	): void {
 		this.current = { text, paint, scope, filters, meaning, order };
@@ -192,14 +192,39 @@ export class Search {
 		// Title only means names alone: headings and properties are left out too.
 		const meta = titleOnly ? [] : this.metaHits(nq.text, allowed);
 		const now = Date.now();
-		// Search by meaning: its own list, never merged with words.
-		if (meaning?.on && !titleOnly) {
+		// By words and by meaning at once: both lists painted together, each
+		// as it arrives; meaning's rows carry `meaning: true`, and the modal groups them as you chose.
+		let out = paint;
+		if (meaning?.both && !titleOnly) {
+			let w: Entry[] = [];
+			let m: Entry[] = [];
+			let ws = "";
+			let ms = "";
+			const draw = (): void => paint([...w, ...m], ws || ms);
+			this.byMeaning(
+				text,
+				(e, st) => {
+					m = e.filter((x) => x.type === "item");
+					ms = st ?? "";
+					draw();
+				},
+				scope,
+				narrowed,
+				now,
+			);
+			out = (e, st) => {
+				w = e;
+				ws = st ?? "";
+				draw();
+			};
+		} else if (meaning?.on && !titleOnly) {
+			// Search by meaning alone: its own list.
 			this.byMeaning(text, paint, scope, narrowed, now);
 			return;
 		}
 		const words = this.compose(tier0, null, now, new Map(), meta);
 		// Nothing yet from the names: the full text is on its way, said so.
-		paint(
+		out(
 			meaning?.offered ? this.offerMeaning(words) : words,
 			this.status() || (words.length || titleOnly ? "" : "Searching…"),
 		);
@@ -211,7 +236,7 @@ export class Search {
 				// Cleared or rebuilt meanwhile: names stay; the next key searches the new index.
 				if (e instanceof Cancelled) return;
 				console.error("Jet Search: the index could not be opened", e);
-				paint(this.compose(tier0, null, now, new Map(), meta), "Full text unavailable (see console)");
+				out(this.compose(tier0, null, now, new Map(), meta), "Full text unavailable (see console)");
 				return;
 			}
 			// Quoted phrases: more candidates from the worker, kept if their text has the phrase.
@@ -231,10 +256,10 @@ export class Search {
 			const offer = (e: Entry[]): Entry[] => (meaning?.offered ? this.offerMeaning(e) : e);
 			const first = this.compose(tier0, reply, now, new Map(), meta);
 			if (!first.length) {
-				paint(offer(await this.recovery(text, scope)), this.status());
+				out(offer(await this.recovery(text, scope)), this.status());
 				return;
 			}
-			paint(offer(first), this.status());
+			out(offer(first), this.status());
 			// Excerpts for the rows people see, cut from Obsidian's cached text, unless turned off.
 			if (!this.data().settings.excerpts) return;
 			const typed = typedWords(text);
@@ -244,7 +269,7 @@ export class Search {
 				typed,
 				/\s$/u.test(text) ? undefined : typed.at(-1),
 			);
-			if (excerpts.size) paint(offer(this.compose(tier0, reply, now, excerpts, meta)), this.status());
+			if (excerpts.size) out(offer(this.compose(tier0, reply, now, excerpts, meta)), this.status());
 		})().catch((e: unknown) => console.error("Jet Search: search failed", e));
 	}
 

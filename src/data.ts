@@ -1,6 +1,7 @@
 import { type Filter, validFilter } from "./filters/filter";
 import { normalizeScopes, type OwnMode, type Scope } from "./scopes/model";
 import { type Combo, KEY_ACTIONS, TAP_KEYS, type TapKey } from "./keys/keymap";
+import type { BothLayout, MeaningMode } from "./modal/both";
 
 /**
  * Data saved before "every scope" existed (no `scopeMode` yet): Suggest was the default then, so a
@@ -42,9 +43,15 @@ export type JetSettings = {
 	scopeMode: OwnMode;
 	/** Another scope typed or picked while one is on: added beside it, or in its place. */
 	scopeAnother: "add" | "switch";
-	/** Search by meaning: off by default; questions use it by themselves when on. */
+	/** Search by meaning: off by default. */
 	meaning: boolean;
-	meaningQuestions: boolean;
+	/**
+	 * What a question shows by itself: by words and by meaning at once (the
+	 * default), by meaning, or by words (meaning only on ⌘J). Was `meaningQuestions` (true: by meaning).
+	 */
+	questionShows: MeaningMode;
+	/** How "both" is shown: two groups (A, the default), found both ways first (B), one list (C). */
+	bothLayout: BothLayout;
 	/** Long searches (6+ words, no quotes or filters) go by meaning too: an opt-in. */
 	meaningLong: boolean;
 	/** Reopen with the last scope and filters (off by default). */
@@ -66,7 +73,8 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	scopeMode: "suggest",
 	scopeAnother: "add",
 	meaning: false,
-	meaningQuestions: true,
+	questionShows: "both",
+	bothLayout: "groups",
 	meaningLong: false,
 	persistFilters: false,
 	fixKeys: true,
@@ -116,6 +124,7 @@ export const normalizeData = (raw: unknown): JetData => {
 	const r = (raw && typeof raw === "object" ? raw : {}) as Partial<JetData>;
 	const s = (r.settings && typeof r.settings === "object" ? r.settings : {}) as Partial<JetSettings> & {
 		doubleShift?: unknown;
+		meaningQuestions?: unknown;
 	};
 	const settings: JetSettings = {
 		// Before the choice of key: the double Shift on or off.
@@ -138,7 +147,14 @@ export const normalizeData = (raw: unknown): JetData => {
 		scopeMode: s.scopeMode === "auto" || s.scopeMode === "in-only" ? s.scopeMode : "suggest",
 		scopeAnother: s.scopeAnother === "switch" ? "switch" : "add",
 		meaning: s.meaning === true,
-		meaningQuestions: s.meaningQuestions !== false,
+		// Before the choice: questions by meaning (now both, the new default) or only on ⌘J (by words).
+		questionShows:
+			s.questionShows === "both" || s.questionShows === "meaning" || s.questionShows === "words"
+				? s.questionShows
+				: s.meaningQuestions === false
+					? "words"
+					: DEFAULT_SETTINGS.questionShows,
+		bothLayout: s.bothLayout === "first" || s.bothLayout === "ranked" ? s.bothLayout : "groups",
 		meaningLong: s.meaningLong === true,
 		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
 		fixKeys: s.fixKeys !== false,

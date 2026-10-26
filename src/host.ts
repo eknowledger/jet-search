@@ -646,7 +646,7 @@ export class JetHost implements ModalHost {
 		paint: (entries: Entry[], status?: string) => void,
 		scope?: Where,
 		filters: readonly Filter[] = [],
-		meaning?: { on: boolean; offered: boolean },
+		meaning?: { on: boolean; offered: boolean; both?: boolean },
 		order?: Sort,
 	): void {
 		if (!text.trim() && !filters.length) {

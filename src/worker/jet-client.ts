@@ -13,6 +13,11 @@ export class JetClient {
 	private url: string | null = null;
 	private id = 0;
 	private seq = 0;
+	/**
+	 * Questions count apart from queries: both are asked for one search when words and meaning show at
+	 * once, and a shared count made the question cancel the words.
+	 */
+	private nearSeq = 0;
 	private readonly pending = new Map<number, Pending>();
 	/** Called when the worker fails; the caller restarts it. */
 	onCrash: ((message: string) => void) | null = null;
@@ -56,14 +61,17 @@ export class JetClient {
 		return this.call({ op: "query", seq: 0, text, limit: opts.limit ?? 50, now: Date.now() });
 	}
 
-	/** The notes nearest a question; null if a newer query or question was asked meanwhile. */
+	/**
+	 * The notes nearest a question; null if a newer question was asked meanwhile. A newer query does
+	 * not cancel it (the caller drops answers for a text no longer in the box).
+	 */
 	async nearest(
 		text: string,
 		opts: { k?: number; allow?: string[]; scope?: string | string[] } = {},
 	): Promise<NearReply | null> {
-		const seq = ++this.seq;
+		const seq = ++this.nearSeq;
 		const r = await this.call({ op: "nearest", seq, text, k: opts.k ?? 50, allow: opts.allow, scope: opts.scope });
-		return r.stale || r.seq !== this.seq ? null : r;
+		return r.stale || r.seq !== this.nearSeq ? null : r;
 	}
 
 	stop(): void {

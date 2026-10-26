@@ -3,6 +3,7 @@ import { cutPieces, type Filter, filterLabel, type Found, sameFilter, withoutPie
 import { isLongSearch, isQuestion } from "../meaning/question";
 import { joinNames, listNames, type Where } from "../scopes/where";
 import { comboLabel, type KeyAction, type KeyMap, keyMap, systemCopy } from "../keys/keymap";
+import { type BothLayout, layoutBoth, type MeaningMode } from "./both";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
@@ -21,7 +22,11 @@ export type Entry =
 			plain?: boolean;
 			/** Search by meaning: the switch at the header's right, to the other kind of results. */
 			mode?: "words" | "meaning";
+			/** Set by the modal: the three-way switch (words, meaning, both), showing the one on. */
+			switch?: MeaningMode;
 	  }
+	/** The rest of a group (by words and meaning at once): chosen, it opens in place. */
+	| { type: "more"; group: string; n: number; label: string }
 	| {
 			type: "item";
 			path: string;
@@ -165,8 +170,11 @@ export const sortEntries = (entries: Entry[], sort: Sort): Entry[] => {
 };
 
 /** How to open a note. */
-/** This search by meaning or by words; `auto` says why it went by meaning by itself. */
-type MeaningNow = { on: boolean; offered: boolean; auto: "question" | "long" | null };
+/**
+ * This search by words, by meaning or both (`on`: meaning has a part); `auto` says why it went beyond
+ * words by itself; `offered`: a question searched by words, the switch shown.
+ */
+type MeaningNow = { on: boolean; mode: MeaningMode; offered: boolean; auto: "question" | "long" | null };
 
 export type OpenHow = "default" | "other" | "split";
 
@@ -193,7 +201,7 @@ export type ModalHost = {
 		paint: (entries: Entry[], status?: string) => void,
 		scope?: Where,
 		filters?: readonly Filter[],
-		meaning?: { on: boolean; offered: boolean },
+		meaning?: { on: boolean; offered: boolean; both?: boolean },
 		/** The order chosen; the notes kept by filters alone are sorted by it before the first ones are taken. */
 		order?: Sort,
 	): void;
@@ -201,7 +209,14 @@ export type ModalHost = {
 	 * Search by meaning: whether it can answer (on, model installed), whether questions use it by
 	 * themselves, and whether long searches do too (an opt-in, off by default).
 	 */
-	meaning?: { available(): boolean; questions(): boolean; long?(): boolean };
+	meaning?: {
+		available(): boolean;
+		/** What a question shows by itself (your setting): both (the default), by meaning, or by words. */
+		questions(): MeaningMode;
+		long?(): boolean;
+		/** How both are shown (your setting). */
+		layout?(): BothLayout;
+	};
 	open(path: string, how: OpenHow, at?: OpenAt): void;
 	/** Footer hints for the current text and scope state. */
 	hints(text: string, state?: HintState): Array<[key: string, label: string]>;
@@ -339,9 +354,11 @@ export class JetModal extends Modal {
 	/** Auto scopes you undid or removed in this search: their names stay text until the box is cleared. */
 	private readonly suppressAuto = new Set<string>();
 	/** ⌘J's choice for this search: words or meaning; null follows the question rule. */
-	private meaningPick: "words" | "meaning" | null = null;
+	private meaningPick: MeaningMode | null = null;
+	/** Groups whose "more" row was chosen (both at once); a new search closes them. */
+	private readonly expanded = new Set<string>();
 	/** The last search's meaning state, for the header switch, the footer and the banner. */
-	private meaningNow: MeaningNow = { on: false, offered: false, auto: null };
+	private meaningNow: MeaningNow = { on: false, mode: "words", offered: false, auto: null };
 	private clearEl!: HTMLElement;
 	/** The chips an Auto scope replaced just now (Switch to it): ⌫ undoes back to them. */
 	private autoPrev: { chip: ScopeView; kept: ScopeView[] } | null = null;
@@ -472,6 +489,7 @@ export class JetModal extends Modal {
 		this.footEl = this.contentEl.createDiv({ cls: "jet-ft" });
 
 		this.inputEl.addEventListener("input", () => {
+			this.expanded.clear();
 			this.chipSelected = false;
 			this.filterSel = false;
 			this.autoUndo = false;
@@ -508,9 +526,10 @@ export class JetModal extends Modal {
 				this.sortMenu(s);
 				return;
 			}
-			if ((e.target as HTMLElement).closest(".jet-mode")) {
+			const seg = (e.target as HTMLElement).closest<HTMLElement>(".jet-seg [data-mode]");
+			if (seg) {
 				e.stopPropagation();
-				this.toggleMeaning();
+				this.setMeaningMode(seg.dataset.mode as MeaningMode);
 				this.inputEl.focus();
 				return;
 			}
@@ -634,12 +653,21 @@ export class JetModal extends Modal {
 				? "everywhere"
 				: "";
 		const note = [where, n ? `${n} filter${n === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") || undefined;
+		// Sorting is for a search (text or filters), not the recents with nothing typed.
+		const searching = !!this.inputEl.value.trim() || this.filters.length > 0;
+		// By words and by meaning at once: grouped as you chose (each group in the order chosen).
+		const both = searching && this.meaningNow.mode === "both";
+		if (both) entries = layoutBoth(entries, this.host.meaning?.layout?.() ?? "groups", this.sort, this.expanded);
+		else if (searching && this.host.sortable !== false) entries = sortEntries(entries, this.sort);
 		const h = entries.findIndex((e) => e.type === "header" && !e.plain);
 		const first = entries[h];
 		if (note && first?.type === "header") entries = entries.map((e, i) => (i === h ? { ...first, note } : e));
-		// Sorting is for a search (text or filters), not the recents with nothing typed.
-		const searching = !!this.inputEl.value.trim() || this.filters.length > 0;
-		if (searching && this.host.sortable !== false) entries = sortEntries(entries, this.sort);
+		// The switch (words, meaning, both) on the first header, whenever meaning has a part or is offered.
+		const sw = this.host.meaning?.available() && (this.meaningNow.on || this.meaningNow.offered);
+		const hw = entries.findIndex((e) => e.type === "header");
+		const fw = entries[hw];
+		if (sw && fw?.type === "header")
+			entries = entries.map((e, i) => (i === hw ? { ...fw, switch: this.meaningNow.mode } : e));
 		// The sort control sits on the first header, once there is something to order.
 		const hs = entries.findIndex((e) => e.type === "header" && !e.plain);
 		const hh = entries[hs];
@@ -781,7 +809,9 @@ export class JetModal extends Modal {
 			},
 			scope,
 			[...this.filters],
-			this.host.meaning ? { on: this.meaningNow.on, offered: this.meaningNow.offered } : undefined,
+			this.host.meaning
+				? { on: this.meaningNow.on, offered: this.meaningNow.offered, both: this.meaningNow.mode === "both" }
+				: undefined,
 			this.sort,
 		);
 		this.footer(shown);
@@ -1183,19 +1213,28 @@ export class JetModal extends Modal {
 	private meaningState(text: string): MeaningNow {
 		const m = this.host.meaning;
 		if (!text.trim()) this.meaningPick = null;
-		if (!m?.available() || !text.trim()) return { on: false, offered: false, auto: null };
+		if (!m?.available() || !text.trim()) return { on: false, mode: "words", offered: false, auto: null };
 		const question = isQuestion(text);
 		// Long searches go by meaning too, when you opted in; a long question is still a question.
 		const long = !question && m.long?.() === true && isLongSearch(text);
-		const auto = this.meaningPick !== null ? null : question && m.questions() ? "question" : long ? "long" : null;
-		const on = this.meaningPick === "meaning" || auto !== null;
-		return { on, offered: !on && (question || long), auto };
+		const asked = m.questions();
+		// A question shows what you chose (both, by default); a long search, opted in, at least meaning.
+		const own: MeaningMode = question ? asked : long ? (asked === "both" ? "both" : "meaning") : "words";
+		const auto = this.meaningPick !== null || own === "words" ? null : question ? "question" : "long";
+		const mode = this.meaningPick ?? own;
+		return { on: mode !== "words", mode, offered: mode === "words" && (question || long), auto };
 	}
 
-	/** ⌘J or the header's switch: the other kind of results for this search. */
+	/** ⌘J: the next kind of results for this search, words → meaning → both → words. */
 	private toggleMeaning(): void {
+		const next: Record<MeaningMode, MeaningMode> = { words: "meaning", meaning: "both", both: "words" };
+		this.setMeaningMode(next[this.meaningNow.mode]);
+	}
+
+	/** The header's switch, or ⌘J: this search by words, by meaning or both. */
+	private setMeaningMode(mode: MeaningMode): void {
 		if (!this.host.meaning?.available() || !this.inputEl.value.trim()) return;
-		this.meaningPick = this.meaningNow.on ? "words" : "meaning";
+		this.meaningPick = mode;
 		this.refresh();
 	}
 
@@ -1339,13 +1378,18 @@ export class JetModal extends Modal {
 			t.appendText(` for “${s.rest}” · ${notes(s.scope.members)}`);
 			keys([["⇥", "Tab"]]);
 		} else if (this.meaningNow.auto && !chip) {
-			// A question (or a long search, opted in) went by meaning by itself: say so, once per search.
+			// A question (or a long search, opted in) went beyond words by itself: say so, once per search.
+			const long = this.meaningNow.auto === "long";
 			head("sparkles").appendText(
-				this.meaningNow.auto === "long"
-					? "A long search, so by meaning: notes about what you wrote, even in other words"
-					: "A question, so by meaning: notes about what you asked, even in other words",
+				this.meaningNow.mode === "both"
+					? long
+						? "A long search: by words and by meaning"
+						: "A question: by words and by meaning"
+					: long
+						? "A long search, so by meaning: notes about what you wrote, even in other words"
+						: "A question, so by meaning: notes about what you asked, even in other words",
 			);
-			keys([[this.lab("meaning"), "By words"]]);
+			keys([[this.lab("meaning"), "Words · Meaning · Both"]]);
 		} else if (this.fix) {
 			const t = head("lightbulb");
 			t.appendText("Did you mean ");
@@ -1476,7 +1520,7 @@ export class JetModal extends Modal {
 		if (!this.ac && this.host.meaning?.available() && text.trim())
 			hints.splice(Math.min(3, hints.length), 0, [
 				this.lab("meaning"),
-				this.meaningNow.on ? "By words" : "By meaning",
+				{ words: "By meaning", meaning: "Both", both: "By words" }[this.meaningNow.mode],
 			]);
 		for (const [key, label] of hints) {
 			const h = this.footEl.createSpan({ cls: "jet-ht" });
@@ -1596,6 +1640,12 @@ export class JetModal extends Modal {
 		}
 		if (e.type === "widen") {
 			this.widen();
+			return;
+		}
+		if (e.type === "more") {
+			// The rest of the group, in place; the row that was "more" is now its next note.
+			this.expanded.add(e.group);
+			this.paint(this.lastEntries, this.statusEl.textContent ?? "");
 			return;
 		}
 		if (e.type === "core") {
@@ -2014,6 +2064,11 @@ export const scopeListLabel = (v: ScopeView): string =>
 const CHIP_KEYS = new Set(["Backspace", "ArrowLeft", "Escape", "Tab", "Shift", "Meta", "Alt", "Control"]);
 
 const selectable = (e: Entry): boolean => e.type !== "header" && e.type !== "notice" && e.type !== "scopes";
+const MODE_NAMES: ReadonlyArray<[MeaningMode, string]> = [
+	["words", "Words"],
+	["meaning", "Meaning"],
+	["both", "Both"],
+];
 const keyOf = (e: Entry): string | null =>
 	e.type === "item"
 		? `n:${e.path}${e.at ? `:${e.at.line}` : ""}`
@@ -2025,7 +2080,9 @@ const keyOf = (e: Entry): string | null =>
 					? `w:${e.label}`
 					: e.type === "core"
 						? `o:${e.query}`
-						: null;
+						: e.type === "more"
+							? `m:${e.group}`
+							: null;
 
 /** Fill a pooled row element for an entry (rebuilt each time: rows are few and small). */
 const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
@@ -2038,20 +2095,23 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 		el.removeAttribute("role");
 		el.createSpan({ text: e.label });
 		if (e.note) el.createSpan({ cls: "jet-hscope", text: `· ${e.note}` });
+		if (e.switch) {
+			// Words, meaning or both, one click away; ⌘J (your key) moves to the next.
+			const seg = el.createSpan({
+				cls: "jet-seg",
+				attr: { role: "group", "aria-label": `Words, meaning or both (${keys.meaning})` },
+			});
+			for (const [m, name] of MODE_NAMES)
+				seg.createSpan({
+					cls: `jet-segb${m === e.switch ? " is-on" : ""}`,
+					text: name,
+					attr: { role: "button", "data-mode": m, "aria-pressed": String(m === e.switch) },
+				});
+		}
 		if (e.sort) {
 			const s = el.createSpan({ cls: "jet-sort", attr: { role: "button", "aria-label": `Sort (${keys.sort})` } });
 			s.appendText(e.sort);
 			setIcon(s.createSpan({ cls: "jet-sorti" }), "chevron-down");
-		}
-		if (e.mode) {
-			// The other kind of results, one click or ⌘J away.
-			const sw = el.createSpan({
-				cls: "jet-mode",
-				attr: { role: "button", "aria-label": `Switch between words and meaning (${keys.meaning})` },
-			});
-			setIcon(sw.createSpan({ cls: "jet-modei" }), e.mode === "meaning" ? "type" : "sparkles");
-			sw.appendText(e.mode === "meaning" ? "Words" : "By meaning");
-			sw.createEl("kbd", { text: keys.meaning });
 		}
 		if (e.count !== undefined) el.createSpan({ cls: "jet-hs", text: String(e.count) });
 		return;
@@ -2157,6 +2217,13 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 		l1.createSpan({ cls: `jet-skey${key === keys.open ? " is-enter" : ""}` }).createEl("kbd", { text: key });
 		if (detail) b.createDiv({ cls: "jet-l2" }).createSpan({ cls: "jet-cr", text: detail });
 	};
+	if (e.type === "more") {
+		el.className = "jet-row jet-more";
+		const t = el.createDiv({ cls: "jet-moret" });
+		t.appendText(`${e.n.toLocaleString()} more ${e.label.toLowerCase()} · `);
+		t.createSpan({ cls: "jet-morel", text: "Show them" });
+		return;
+	}
 	if (e.type === "core") return card("search-code", "Search with Obsidian Search", e.detail ?? e.query, keys.open);
 	if (e.type === "widen") return card("globe", e.label, e.detail, keys.open);
 	if (e.type === "search" && e.spelling)
@@ -2186,7 +2253,17 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 	const body = el.createDiv({ cls: "jet-rb" });
 	const l1 = body.createDiv({ cls: "jet-l1" });
 	highlight(l1.createSpan({ cls: "jet-rt" }), e.title, e.titleRanges, "jet-th");
-	if (e.badge) l1.createSpan({ cls: e.meaning ? "jet-bdg is-meaning" : "jet-bdg", text: e.badge });
+	if (e.badge) {
+		// Found by meaning; found both ways (by words and meaning); by words, in a list of both.
+		const kind = e.meaning
+			? " is-meaning"
+			: e.badge === "both" || e.badge === "also by meaning"
+				? " is-both"
+				: e.badge === "by words"
+					? " is-words"
+					: "";
+		l1.createSpan({ cls: `jet-bdg${kind}`, text: e.badge });
+	}
 	l1.createSpan({ cls: "jet-rm", text: e.meta });
 	const l2 = body.createDiv({ cls: "jet-l2" });
 	if (e.crumb) l2.createSpan({ cls: "jet-cr", text: e.crumb });

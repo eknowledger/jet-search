@@ -253,6 +253,7 @@ describe("copy keys and key tooltips", () => {
 			previewOn: () => true,
 			setPreviewOn: () => {},
 			keys: () => ({ map: keys, tap: "⇧⇧" }),
+			meaning: { available: () => true, questions: () => "words" },
 			filters: {
 				find: () => [],
 				values: () => [],
@@ -266,10 +267,10 @@ describe("copy keys and key tooltips", () => {
 		};
 		const m = new JetModal(new App() as never, host);
 		m.open();
-		m.inputEl.value = "x";
+		m.inputEl.value = "how do we ship it";
 		m.inputEl.dispatchEvent(new Event("input"));
 		const label = (sel: string) => document.querySelector(sel)?.getAttribute("aria-label");
-		expect(label(".jet-h .jet-mode")).toBe("Switch between words and meaning (⌘M)");
+		expect(label(".jet-h .jet-seg")).toBe("Words, meaning or both (⌘M)");
 		expect(label(".jet-h .jet-sort")).toBe("Sort (⌘⇧O)");
 		expect(label(".jet-fbtn")).toBe("Filters (⌘⌥F)");
 		expect([...document.querySelectorAll(".jet-pb")].map((b) => b.getAttribute("aria-label"))).toEqual([
@@ -277,5 +278,59 @@ describe("copy keys and key tooltips", () => {
 			"Open to the side (⌘⌥↵)",
 			"Open (↵)",
 		]);
+	});
+});
+
+describe("by words and by meaning at once: the search and the settings", () => {
+	it("one search asks both and paints them together, meaning's rows marked", async () => {
+		const app = new App();
+		const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
+		for (const p of ["A/One.md", "B/Two.md"]) files.set(p, new TFile(p));
+		const client = {
+			query: () =>
+				Promise.resolve({ seq: 1, terms: ["ship"], hits: [{ path: "A/One.md", score: 1, matched: 1 }] }),
+			nearest: () => Promise.resolve({ seq: 1, near: [{ path: "B/Two.md", score: 0.8 }], ms: 1 }),
+		};
+		const feeder = {
+			progress: null,
+			meaningProgress: null,
+			ensure: () => Promise.resolve(),
+			ensureMeaning: () => Promise.resolve(),
+		};
+		const data = normalizeData(null);
+		data.indexedAt = 1;
+		data.settings.excerpts = false;
+		const s = new Search(app as never, client as never, feeder as never, () => data);
+		const paints: Array<Array<{ type: string; path?: string; meaning?: boolean }>> = [];
+		s.list("how do we ship", (e) => paints.push(e as never), undefined, [], {
+			on: true,
+			offered: false,
+			both: true,
+		});
+		for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+		const last = (paints.at(-1) ?? []).filter((e) => e.type === "item");
+		expect(last.map((e) => [e.path, !!e.meaning])).toEqual([
+			["A/One.md", false],
+			["B/Two.md", true],
+		]);
+	});
+
+	it("saved data: the old switch migrates (on → both, the new default; off → words); the layout is checked", () => {
+		expect(normalizeData(null).settings.questionShows).toBe("both");
+		expect(normalizeData({ settings: { meaningQuestions: true } }).settings.questionShows).toBe("both");
+		expect(normalizeData({ settings: { meaningQuestions: false } }).settings.questionShows).toBe("words");
+		expect(normalizeData({ settings: { questionShows: "meaning" } }).settings.questionShows).toBe("meaning");
+		expect(normalizeData(null).settings.bothLayout).toBe("groups");
+		expect(normalizeData({ settings: { bothLayout: "ranked" } }).settings.bothLayout).toBe("ranked");
+		expect(normalizeData({ settings: { bothLayout: "columns" } }).settings.bothLayout).toBe("groups");
+	});
+
+	it("the settings read and write both choices", async () => {
+		const { plugin, tab } = await loaded();
+		tab.setControlValue("questionShows", "meaning");
+		tab.setControlValue("bothLayout", "first");
+		expect([plugin.data.settings.questionShows, plugin.data.settings.bothLayout]).toEqual(["meaning", "first"]);
+		tab.setControlValue("bothLayout", "nope");
+		expect(tab.getControlValue("bothLayout")).toBe("first");
 	});
 });

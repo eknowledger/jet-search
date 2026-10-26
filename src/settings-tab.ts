@@ -97,7 +97,8 @@ export class JetSettingTab extends PluginSettingTab {
 		if (key === "scopeMode") return s.scopeMode;
 		if (key === "scopeAnother") return s.scopeAnother;
 		if (key === "meaning") return s.meaning && this.owner.meaning.installed();
-		if (key === "meaningQuestions") return s.meaningQuestions;
+		if (key === "questionShows") return s.questionShows;
+		if (key === "bothLayout") return s.bothLayout;
 		if (key === "meaningLong") return s.meaningLong;
 		if (key.startsWith(STEM)) return s.stemming.includes(key.slice(STEM.length));
 		switch (key) {
@@ -156,8 +157,13 @@ export class JetSettingTab extends PluginSettingTab {
 				.then(() => this.redraw());
 			return;
 		}
-		if (key === "meaningQuestions") {
-			s.meaningQuestions = value === true;
+		if (key === "questionShows") {
+			if (value === "both" || value === "meaning" || value === "words") s.questionShows = value;
+			this.owner.save();
+			return;
+		}
+		if (key === "bothLayout") {
+			if (value === "groups" || value === "first" || value === "ranked") s.bothLayout = value;
 			this.owner.save();
 			return;
 		}
@@ -869,9 +875,24 @@ export class JetSettingTab extends PluginSettingTab {
 		this.toggle(c.row, "meaning");
 		if (!on) return;
 		const o = c.opts();
-		this.toggle(
-			settingRow(o, "Questions go by meaning by themselves", questionsText(this.lab("meaning"))),
-			"meaningQuestions",
+		this.dropdown(settingRow(o, "A question shows", questionsText(this.lab("meaning"))), "questionShows", [
+			["both", "Both"],
+			["meaning", "By meaning"],
+			["words", "By words"],
+		]);
+		// How both are shown: a setting with three layouts.
+		this.dropdown(
+			settingRow(
+				o,
+				"Both, shown as",
+				"Two groups: by words, then what only meaning found. Found both ways first: those, then words, then meaning. One list: ranked together, a badge on each row.",
+			),
+			"bothLayout",
+			[
+				["groups", "Two groups"],
+				["first", "Found both ways first"],
+				["ranked", "One list"],
+			],
 		);
 		this.toggle(settingRow(o, "Long searches go by meaning too", MEANING_LONG), "meaningLong");
 		const p = this.owner.feeder.meaningProgress;

@@ -13,12 +13,12 @@ export const MEANING_WHAT =
 	"“recipes without dairy” finds “Vegan dinners”. Word searches like “deployment checklist” are unchanged. " +
 	"Off: nothing is downloaded and Jet works exactly as before.";
 
-/** What "Questions go by meaning by themselves" does; `key` is the switch's key as you set it (⌘J). */
+/** What "A question shows" does; `key` is the switch's key as you set it (⌘J). */
 export const questionsText = (key: string): string =>
-	"When a search reads like a question, its results are by meaning first. A question starts with how, why, what, " +
-	"when, where, who, which, can, should, does, is… or ends with “?”: “why did the build fail on Monday”, " +
-	"“who owns the billing service?”. Anything else (“billing service”, “build failure Monday”) stays a word " +
-	`search. ${key} switches either way. Off: only ${key} uses meaning.`;
+	"A question starts with how, why, what, when, where, who, which, can, should, does, is… or ends with “?” " +
+	"(“why did the build fail on Monday”). Both: by words and by meaning at once. By meaning: only meaning. " +
+	"By words: as any other search. A search that is not a question stays words. " +
+	`${key} moves this search to words, meaning or both.`;
 
 export const MEANING_LONG =
 	"Searches of 6 words or more, even without a question word (for example a sentence pasted from a note), " +

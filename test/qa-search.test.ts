@@ -237,6 +237,34 @@ describe("QA: recovery inside a scope does not cancel a newer query (latest wins
 	});
 });
 
+describe("a query and a question at once (words and meaning together)", () => {
+	const g = globalThis as unknown as { Worker?: unknown };
+	const saved = g.Worker;
+	afterEach(() => {
+		g.Worker = saved;
+	});
+
+	it("neither cancels the other; a newer question still drops the older one", async () => {
+		g.Worker = FakeWorker;
+		const client = new JetClient();
+		const q = client.query("ship");
+		const n1 = client.nearest("how do we ship");
+		const w = FakeWorker.last as FakeWorker;
+		const [mq, mn] = w.sent as Array<{ id: number; req: { seq?: number } }>;
+		w.reply(mq?.id ?? 0, { seq: mq?.req.seq, hits: [], terms: [], ms: 0 });
+		w.reply(mn?.id ?? 0, { seq: mn?.req.seq, near: [], ms: 0 });
+		expect(await q).not.toBeNull();
+		expect(await n1).not.toBeNull();
+		const older = client.nearest("how do we");
+		const newer = client.nearest("how do we ship it");
+		const [, , mo, mw] = w.sent as Array<{ id: number; req: { seq?: number } }>;
+		w.reply(mo?.id ?? 0, { seq: mo?.req.seq, near: [], ms: 0 });
+		w.reply(mw?.id ?? 0, { seq: mw?.req.seq, near: [], ms: 0 });
+		expect(await older).toBeNull();
+		expect(await newer).not.toBeNull();
+	});
+});
+
 // ── Excerpts and phrases ───────────────────────────────────────────────────────
 
 describe("QA: the excerpt's best line prefers the words as typed", () => {
