@@ -13,6 +13,7 @@ export type KeyAction =
 	| "insertLink"
 	| "copyLink"
 	| "copyUrl"
+	| "copyPath"
 	| "preview"
 	| "actions"
 	| "meaning"
@@ -33,8 +34,17 @@ export const KEY_ACTIONS: ReadonlyArray<{ id: KeyAction; what: string; key: Comb
 	{ id: "split", what: "Open to the right", key: { mods: ["Mod", "Alt"], key: "Enter" } },
 	{ id: "create", what: "Create a note named after the text", key: { mods: ["Shift"], key: "Enter" } },
 	{ id: "insertLink", what: "Insert a link to the note", key: { mods: ["Alt"], key: "Enter" } },
-	{ id: "copyLink", what: "Copy a link to the note", key: { mods: ["Mod"], key: "l" } },
-	{ id: "copyUrl", what: "Copy the note's obsidian:// URL", key: { mods: ["Mod", "Shift"], key: "l" } },
+	// Your defaults: ⌘C, ⌘⇧C, ⌘⌃C. ⌘C still copies text you selected (see `systemCopy`).
+	{ id: "copyLink", what: "Copy a link to the note", key: { mods: ["Mod"], key: "c" } },
+	{ id: "copyUrl", what: "Copy the note's obsidian:// URL", key: { mods: ["Mod", "Shift"], key: "c" } },
+	{
+		id: "copyPath",
+		what: "Copy the note's full path on disk",
+		// Off macOS, Ctrl is Mod, so ⌘⌃C would be Ctrl+C itself: Ctrl+Alt+C there.
+		get key(): Combo {
+			return mac ? { mods: ["Mod", "Ctrl"], key: "c" } : { mods: ["Mod", "Alt"], key: "c" };
+		},
+	},
 	{ id: "preview", what: "Show or hide the preview", key: { mods: ["Mod"], key: "." } },
 	{ id: "actions", what: "The note's actions", key: { mods: ["Mod"], key: "k" } },
 	{ id: "meaning", what: "Words or meaning", key: { mods: ["Mod"], key: "j" } },
@@ -122,6 +132,17 @@ export const refusal = (map: KeyMap, action: KeyAction, combo: Combo): string | 
 
 /** macOS shows ⌘ ⌥ ⌃ ⇧; elsewhere Ctrl+Alt+Shift+. Set once by the plugin from Obsidian's Platform. */
 let mac = true;
+
+/** ⌘C (Ctrl+C), the system's copy: an action on it lets the copy through while text is selected. */
+export const systemCopy = (c: Combo): boolean => sameCombo(c, { mods: ["Mod"], key: "c" });
+
+/** Actions on the same key (an older saved key on a new default): the settings say so. */
+export const clashes = (map: KeyMap): Array<[KeyAction, KeyAction]> => {
+	const out: Array<[KeyAction, KeyAction]> = [];
+	for (const [i, a] of KEY_ACTIONS.entries())
+		for (const b of KEY_ACTIONS.slice(i + 1)) if (sameCombo(map[a.id], map[b.id])) out.push([a.id, b.id]);
+	return out;
+};
 export const setMac = (on: boolean): void => {
 	mac = on;
 };

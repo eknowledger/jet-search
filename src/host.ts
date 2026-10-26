@@ -344,6 +344,7 @@ export class JetHost implements ModalHost {
 			},
 			{ id: "copy-link", label: "Copy wikilink", icon: "link", key: this.lab("copyLink"), group: 1 },
 			{ id: "copy-url", label: "Copy obsidian:// URL", icon: "link-2", key: this.lab("copyUrl"), group: 1 },
+			{ id: "copy-path", label: "Copy file path", icon: "copy", key: this.lab("copyPath"), group: 1 },
 			{ id: "reveal", label: "Reveal in file explorer", icon: "folder-open", group: 2 },
 			{ id: "move", label: "Move to scope or folder…", icon: "folder-input", group: 2 },
 			{ id: "bookmark", label: "Bookmark", icon: "bookmark", group: 2 },
@@ -374,6 +375,13 @@ export class JetHost implements ModalHost {
 			case "copy-link":
 				this.copyLink(path);
 				return false;
+			case "copy-path": {
+				// The note's full path on disk (desktop); on a phone, where there is none to show, its vault path.
+				const adapter = this.app.vault.adapter as { getFullPath?: (p: string) => string } | undefined;
+				const full = adapter?.getFullPath?.(path) ?? path;
+				void navigator.clipboard.writeText(full).then(() => new Notice("Path copied"));
+				return false;
+			}
 			case "copy-url": {
 				const url = `obsidian://open?vault=${encodeURIComponent(this.app.vault.getName())}&file=${encodeURIComponent(path)}`;
 				void navigator.clipboard.writeText(url).then(() => new Notice("URL copied"));

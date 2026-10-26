@@ -11,6 +11,7 @@ import { STEM_LANGUAGES } from "./engine/stem";
 import { clearIndex, rebuild, statusNow } from "./index-status";
 import { hotkeyLabel, openHotkeys, openJetSettings, tapOwnedElsewhere } from "./internals";
 import {
+	clashes,
 	type Combo,
 	comboLabel,
 	KEY_ACTIONS,
@@ -411,27 +412,47 @@ export class JetSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Every page's cards, kept where the search matches: a card whose name or words match whole, else
-	 * only its rows that match (a key, a scope, a folder).
+	 * Every page's cards, kept where the search matches ("window" found the Keys
+	 * card by its description). Names first: a card's name or search words keep it whole; a row's name
+	 * (a setting, a key's action, a scope) keeps that row in its card. Descriptions count only when no
+	 * name matches anywhere.
 	 */
 	private searchResults(body: HTMLElement): void {
 		const q = this.query;
 		const lead = body.createDiv({ cls: "jet-set-lead" });
-		const all = body.createDiv();
-		for (const t of TABS) this.drawPage(all, t.id);
-		let n = 0;
-		for (const card of Array.from(all.querySelectorAll<HTMLElement>(".jet-set-card"))) {
-			if ((card.dataset.search ?? "").toLowerCase().includes(q)) {
-				n++;
-				continue;
+		const draw = (): HTMLElement => {
+			const all = body.createDiv();
+			for (const t of TABS) this.drawPage(all, t.id);
+			return all;
+		};
+		const has = (t: string | null | undefined): boolean => (t ?? "").toLowerCase().includes(q);
+		const ROWS = ".setting-item, .jet-set-scope, tr";
+		const rowName = (r: HTMLElement): string =>
+			r.querySelector(".setting-item-name, b, td")?.textContent ?? r.textContent ?? "";
+		const filter = (all: HTMLElement, byDesc: boolean): number => {
+			let n = 0;
+			for (const card of Array.from(all.querySelectorAll<HTMLElement>(".jet-set-card"))) {
+				const name = card.querySelector(".jet-set-name")?.textContent ?? "";
+				const head = byDesc ? (card.dataset.search ?? "") : `${name} ${card.dataset.words ?? ""}`;
+				if (has(head)) {
+					n++;
+					continue;
+				}
+				let kept = 0;
+				for (const r of Array.from(card.querySelectorAll<HTMLElement>(ROWS)))
+					if (has(byDesc ? r.textContent : rowName(r))) kept++;
+					else r.remove();
+				if (kept) n++;
+				else card.remove();
 			}
-			const rows = Array.from(card.querySelectorAll<HTMLElement>(".setting-item, .jet-set-scope, tr"));
-			let kept = 0;
-			for (const r of rows)
-				if ((r.textContent ?? "").toLowerCase().includes(q)) kept++;
-				else r.remove();
-			if (kept) n++;
-			else card.remove();
+			return n;
+		};
+		let all = draw();
+		let n = filter(all, false);
+		if (!n) {
+			all.remove();
+			all = draw();
+			n = filter(all, true);
 		}
 		lead.setText(n ? `${n} matching` : "Nothing matches.");
 	}
@@ -443,7 +464,7 @@ export class JetSettingTab extends PluginSettingTab {
 	): Card {
 		const card = parent.createDiv({
 			cls: `jet-set-card${o.off ? " is-off" : ""}`,
-			attr: { "data-search": `${o.name} ${o.desc} ${o.aliases ?? ""}` },
+			attr: { "data-search": `${o.name} ${o.desc} ${o.aliases ?? ""}`, "data-words": o.aliases ?? "" },
 		});
 		const row = card.createDiv({ cls: "jet-set-row" });
 		setIcon(row.createDiv({ cls: "jet-set-icon" }), o.icon);
@@ -592,7 +613,8 @@ export class JetSettingTab extends PluginSettingTab {
 				td.createSpan({ cls: "jet-set-rec", text: "Press a key… (Esc to cancel)" });
 				continue;
 			}
-			const changed = !!s.keys[a.id];
+			// Changed from its default (a saved key that is now the default is not marked).
+			const changed = !sameCombo(map[a.id], a.key);
 			const k = td.createSpan({
 				cls: `jet-set-kbd is-key${changed ? " is-changed" : ""}`,
 				text: comboLabel(map[a.id]),
@@ -616,6 +638,13 @@ export class JetSettingTab extends PluginSettingTab {
 			attr: { title: "Your double tap, above" },
 		});
 		if (this.keyMsg) o.createDiv({ cls: "jet-set-keymsg", text: this.keyMsg });
+		// Two actions on one key (a key you saved before it became another action's default): one never runs.
+		const what = (id: KeyAction): string => KEY_ACTIONS.find((x) => x.id === id)?.what ?? id;
+		for (const [x, y] of clashes(map))
+			o.createDiv({
+				cls: "jet-set-keymsg",
+				text: `${comboLabel(map[x])} is on two actions: ${what(x)}, and ${what(y)}. Change one of them.`,
+			});
 	}
 
 	/** Wait for the next key press for `a` (Esc cancels); the window's own keys are not run meanwhile. */

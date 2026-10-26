@@ -30,6 +30,14 @@ export class Preview {
 		private readonly app: App,
 		parent: HTMLElement,
 		private readonly act: (action: PreviewAction, path: string) => void,
+		/** Your keys for its buttons, shown in their tooltips. */
+		keys: { prev: string; next: string; link: string; split: string; open: string } = {
+			prev: "⌘⇧G",
+			next: "⌘G",
+			link: "⌘C",
+			split: "⌘⌥↵",
+			open: "↵",
+		},
 	) {
 		this.el = parent.createDiv({ cls: "jet-pv" });
 		const card = this.el.createDiv({ cls: "jet-pc" });
@@ -37,9 +45,9 @@ export class Preview {
 		const pa = this.headEl.createDiv({ cls: "jet-pa" });
 		const nav = pa.createDiv({ cls: "jet-hitnav" });
 		const hb = nav.createDiv({ cls: "jet-hb" });
-		const up = hb.createSpan({ attr: { "aria-label": "Previous hit" } });
+		const up = hb.createSpan({ attr: { "aria-label": `Previous hit (${keys.prev})` } });
 		setIcon(up, "chevron-up");
-		const down = hb.createSpan({ attr: { "aria-label": "Next hit" } });
+		const down = hb.createSpan({ attr: { "aria-label": `Next hit (${keys.next})` } });
 		setIcon(down, "chevron-down");
 		// A click keeps the focus in the search box.
 		for (const b of [up, down]) b.addEventListener("mousedown", (e) => e.preventDefault());
@@ -49,9 +57,9 @@ export class Preview {
 		pa.createDiv({ cls: "jet-sp" });
 		const acts = pa.createDiv({ cls: "jet-pacts" });
 		for (const [a, icon, label] of [
-			["link", "link", "Copy link"],
-			["split", "columns-2", "Open to the side"],
-			["open", "arrow-up-right", "Open"],
+			["link", "link", `Copy link (${keys.link})`],
+			["split", "columns-2", `Open to the side (${keys.split})`],
+			["open", "arrow-up-right", `Open (${keys.open})`],
 		] as const) {
 			const b = acts.createSpan({ cls: "jet-pb", attr: { "aria-label": label } });
 			setIcon(b, icon);

@@ -2,7 +2,7 @@ import { type App, Menu, Modal, setIcon } from "obsidian";
 import { cutPieces, type Filter, filterLabel, type Found, sameFilter, withoutPieces } from "../filters/filter";
 import { isLongSearch, isQuestion } from "../meaning/question";
 import { joinNames, listNames, type Where } from "../scopes/where";
-import { comboLabel, type KeyAction, type KeyMap, keyMap } from "../keys/keymap";
+import { comboLabel, type KeyAction, type KeyMap, keyMap, systemCopy } from "../keys/keymap";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 
@@ -446,7 +446,10 @@ export class JetModal extends Modal {
 			this.inputEl.focus();
 		});
 		if (host.filters) {
-			const fb = top.createSpan({ cls: "jet-fbtn", attr: { "aria-label": "Filters (⌘F)", role: "button" } });
+			const fb = top.createSpan({
+				cls: "jet-fbtn",
+				attr: { "aria-label": `Filters (${this.lab("filters")})`, role: "button" },
+			});
 			setIcon(fb, "list-filter");
 			fb.addEventListener("mousedown", (e) => e.preventDefault());
 			fb.addEventListener("click", () => this.toggleBar());
@@ -458,7 +461,13 @@ export class JetModal extends Modal {
 		// The banner sits above the rows while a scope is suggested; detached otherwise.
 		this.bannerEl = this.listEl.createDiv({ cls: "jet-ban" });
 		this.bannerEl.remove();
-		this.preview = new Preview(app, body, (a, p) => this.act(a, p));
+		this.preview = new Preview(app, body, (a, p) => this.act(a, p), {
+			prev: this.lab("prevHit"),
+			next: this.lab("nextHit"),
+			link: this.lab("copyLink"),
+			split: this.lab("split"),
+			open: this.lab("open"),
+		});
 		this.modalEl.toggleClass("is-preview-off", !host.previewOn());
 		this.footEl = this.contentEl.createDiv({ cls: "jet-ft" });
 
@@ -1502,7 +1511,16 @@ export class JetModal extends Modal {
 			create: this.lab("create"),
 			accept: this.lab("accept"),
 			meaning: this.lab("meaning"),
+			sort: this.lab("sort"),
 		};
+	}
+
+	/** Text selected in the search box, or anywhere in the window (the preview): ⌘C copies it. */
+	private textSelected(): boolean {
+		const i = this.inputEl;
+		if ((i.selectionStart ?? 0) !== (i.selectionEnd ?? 0)) return true;
+		const sel = this.modalEl.win?.getSelection?.() ?? window.getSelection?.();
+		return !!sel && !sel.isCollapsed && this.modalEl.contains(sel.anchorNode) && !!sel.toString();
 	}
 
 	private render(): void {
@@ -1626,7 +1644,10 @@ export class JetModal extends Modal {
 		});
 		// Your keys: each action on the key you gave it, the default otherwise.
 		const reg = (a: KeyAction, fn: (e: KeyboardEvent) => false | undefined | void): void => {
-			this.scope.register(this.k[a].mods, this.k[a].key, fn);
+			const combo = this.k[a];
+			// On ⌘C (your default for Copy link), text you selected (in the box, the preview) is copied as usual.
+			const copy = systemCopy(combo);
+			this.scope.register(combo.mods, combo.key, (e) => (copy && this.textSelected() ? undefined : fn(e)));
 		};
 		// Tab accepts the suggestion, or the name alone with nothing typed yet.
 		reg("back", (e) => {
@@ -1811,6 +1832,12 @@ export class JetModal extends Modal {
 			if (e?.type === "item") this.host.act?.("copy-url", e.path);
 			return false;
 		});
+		// ⌘⌃C: the note's full path on disk.
+		reg("copyPath", () => {
+			const e = this.entries[this.selected];
+			if (e?.type === "item") this.host.act?.("copy-path", e.path);
+			return false;
+		});
 		reg("filters", () => {
 			if (!this.host.filters) return;
 			this.toggleBar();
@@ -1977,7 +2004,7 @@ export class JetModal extends Modal {
 }
 
 /** The keys a row shows, as you set them. */
-type RowKeys = { open: string; create: string; accept: string; meaning: string };
+type RowKeys = { open: string; create: string; accept: string; meaning: string; sort: string };
 
 /** A scope in a list: "Cobalt · [Projects] (34)". */
 export const scopeListLabel = (v: ScopeView): string =>
@@ -2012,7 +2039,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 		el.createSpan({ text: e.label });
 		if (e.note) el.createSpan({ cls: "jet-hscope", text: `· ${e.note}` });
 		if (e.sort) {
-			const s = el.createSpan({ cls: "jet-sort", attr: { role: "button", "aria-label": "Sort (⌘⇧S)" } });
+			const s = el.createSpan({ cls: "jet-sort", attr: { role: "button", "aria-label": `Sort (${keys.sort})` } });
 			s.appendText(e.sort);
 			setIcon(s.createSpan({ cls: "jet-sorti" }), "chevron-down");
 		}
@@ -2020,7 +2047,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 			// The other kind of results, one click or ⌘J away.
 			const sw = el.createSpan({
 				cls: "jet-mode",
-				attr: { role: "button", "aria-label": "Switch between words and meaning (⌘J)" },
+				attr: { role: "button", "aria-label": `Switch between words and meaning (${keys.meaning})` },
 			});
 			setIcon(sw.createSpan({ cls: "jet-modei" }), e.mode === "meaning" ? "type" : "sparkles");
 			sw.appendText(e.mode === "meaning" ? "Words" : "By meaning");

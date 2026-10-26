@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { App, TFile } from "obsidian";
 import JetSearchPlugin from "../src/main";
 import { normalizeData } from "../src/data";
-import { keyMap, refusal, setMac, comboLabel } from "../src/keys/keymap";
+import { clashes, comboLabel, keyMap, refusal, setMac } from "../src/keys/keymap";
+import { JetModal, type ModalHost } from "../src/modal/jet-modal";
+import type { JetHost } from "../src/host";
 import type { Scope } from "../src/scopes/model";
 import { Search } from "../src/search";
 import { drawScopeEditor } from "../src/settings/scope-editor";
@@ -147,5 +149,133 @@ describe("the scope editor", () => {
 		await new Promise((r) => setTimeout(r, 450));
 		expect(el.textContent).toContain("is rare outside it");
 		expect(el.querySelector("input")).toBe(name);
+	});
+});
+
+describe("copy keys and key tooltips", () => {
+	const item = {
+		type: "item" as const,
+		path: "A/One.md",
+		title: "One",
+		titleRanges: [],
+		crumb: "",
+		meta: "",
+		icon: "file-text",
+	};
+
+	it("the copy keys: ⌘C a link, ⌘⇧C the URL, ⌘⌃C the path on disk (Ctrl+Alt+C off macOS)", () => {
+		const m = keyMap();
+		expect([m.copyLink, m.copyUrl, m.copyPath].map(comboLabel)).toEqual(["⌘C", "⌘⇧C", "⌘⌃C"]);
+		expect(clashes(m)).toEqual([]);
+		setMac(false);
+		expect(comboLabel(keyMap().copyPath)).toBe("Ctrl+Alt+C");
+		expect(clashes(keyMap())).toEqual([]);
+	});
+
+	it("a key saved before it became another action's default is shown as a clash, and not as changed", async () => {
+		const { plugin, tab } = await loaded();
+		plugin.data.settings.keys = {
+			preview: { mods: ["Mod", "Shift"], key: "c" },
+			copyLink: { mods: ["Mod"], key: "c" },
+		};
+		const el = goTo(tab, "open");
+		expect(el.querySelector(".jet-set-keymsg")?.textContent).toContain("⌘⇧C is on two actions");
+		expect(el.querySelector('tr[data-action="copyLink"] .jet-set-kbd.is-changed')).toBeNull();
+	});
+
+	it("⌘C copies a link to the note, but text you selected in the box is copied as usual", async () => {
+		const copied: string[] = [];
+		const host: ModalHost = {
+			placeholder: "",
+			list: (_t, paint) => paint([{ type: "header", label: "Results", count: 1 }, item]),
+			open: () => {},
+			hints: () => [],
+			closed: () => {},
+			previewOn: () => false,
+			setPreviewOn: () => {},
+			copyLink: (p) => copied.push(p),
+		};
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		const press = (k: string, mods: string[]) =>
+			(m.scope as unknown as { press(k: string, m: unknown[]): boolean }).press(k, mods);
+		m.inputEl.value = "one two";
+		m.inputEl.dispatchEvent(new Event("input"));
+		m.inputEl.setSelectionRange(0, 3);
+		expect(press("c", ["Mod"])).toBe(false);
+		expect(copied).toEqual([]);
+		m.inputEl.setSelectionRange(7, 7);
+		expect(press("c", ["Mod"])).toBe(true);
+		expect(copied).toEqual(["A/One.md"]);
+	});
+
+	it("⌘⌃C copies the note's full path on disk; the ⌘K panel lists it with its key", async () => {
+		const { plugin } = await loaded();
+		(plugin.app.vault as unknown as { adapter: unknown }).adapter = {
+			getFullPath: (p: string) => `/Vaults/demo/${p}`,
+		};
+		const written: string[] = [];
+		const clip = navigator.clipboard;
+		Object.defineProperty(navigator, "clipboard", {
+			configurable: true,
+			value: { writeText: (t: string) => (written.push(t), Promise.resolve()) },
+		});
+		try {
+			const host = (plugin as unknown as { host: JetHost }).host;
+			expect(host.actions("A/One.md").find((a) => a.id === "copy-path")).toMatchObject({
+				label: "Copy file path",
+				key: "⌘⌃C",
+			});
+			host.act("copy-path", "A/One.md");
+			expect(written).toEqual(["/Vaults/demo/A/One.md"]);
+		} finally {
+			Object.defineProperty(navigator, "clipboard", { configurable: true, value: clip });
+		}
+	});
+
+	it("tooltips follow your keys: words or meaning, sort, filters, the preview's buttons", () => {
+		const keys = keyMap({
+			meaning: { mods: ["Mod"], key: "m" },
+			sort: { mods: ["Mod", "Shift"], key: "o" },
+			filters: { mods: ["Mod", "Alt"], key: "f" },
+		});
+		const host: ModalHost = {
+			placeholder: "",
+			list: (_t, paint) =>
+				paint([
+					{ type: "header", label: "Results", count: 2, mode: "words", sort: "Best match" },
+					item,
+					{ ...item, path: "B.md" },
+				]),
+			open: () => {},
+			hints: () => [],
+			closed: () => {},
+			previewOn: () => true,
+			setPreviewOn: () => {},
+			keys: () => ({ map: keys, tap: "⇧⇧" }),
+			filters: {
+				find: () => [],
+				values: () => [],
+				tags: () => [],
+				keys: () => [],
+				scopes: () => [],
+				complete: () => null,
+				fix: () => null,
+				preview: () => [],
+			},
+		};
+		const m = new JetModal(new App() as never, host);
+		m.open();
+		m.inputEl.value = "x";
+		m.inputEl.dispatchEvent(new Event("input"));
+		const label = (sel: string) => document.querySelector(sel)?.getAttribute("aria-label");
+		expect(label(".jet-h .jet-mode")).toBe("Switch between words and meaning (⌘M)");
+		expect(label(".jet-h .jet-sort")).toBe("Sort (⌘⇧O)");
+		expect(label(".jet-fbtn")).toBe("Filters (⌘⌥F)");
+		expect([...document.querySelectorAll(".jet-pb")].map((b) => b.getAttribute("aria-label"))).toEqual([
+			"Copy link (⌘C)",
+			"Open to the side (⌘⌥↵)",
+			"Open (↵)",
+		]);
 	});
 });

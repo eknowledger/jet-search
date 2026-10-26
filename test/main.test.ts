@@ -178,6 +178,13 @@ describe("settings tab", () => {
 		expect(textsOf(el, ".jet-set-name")).toContain("Open Jet");
 		expect(rowNamed(el, "Double tap window")).not.toBeNull();
 		expect(rowNamed(el, "Hotkey")).toBeNull();
+		// The Keys card says "search window" in its words, but no name matches there.
+		expect(textsOf(el, ".jet-set-name")).toEqual(["Open Jet"]);
+		expect(el.querySelector(".jet-set-keys tr")).toBeNull();
+		// A word only in descriptions still finds something.
+		box.value = "pin dot";
+		box.dispatchEvent(new Event("input"));
+		expect(textsOf(el, ".jet-set-name")).toEqual(["Keep the last scope and filters"]);
 		box.value = "zzqx";
 		box.dispatchEvent(new Event("input"));
 		expect(el.querySelector(".jet-set-lead")?.textContent).toBe("Nothing matches.");
@@ -196,13 +203,13 @@ describe("the keys in the window, in settings", () => {
 		const cell = () =>
 			goTo(tab, "open").querySelector<HTMLElement>('tr[data-action="copyLink"] .jet-set-kbd') as HTMLElement;
 		goTo(tab, "open");
-		expect(cell().textContent).toBe("⌘L");
+		expect(cell().textContent).toBe("⌘C");
 		cell().click();
 		expect(tab.containerEl.querySelector('tr[data-action="copyLink"] .jet-set-rec')).not.toBeNull();
-		key("c", "KeyC", { metaKey: true });
-		expect(plugin.data.settings.keys.copyLink).toEqual({ mods: ["Mod"], key: "c" });
+		key("l", "KeyL", { metaKey: true });
+		expect(plugin.data.settings.keys.copyLink).toEqual({ mods: ["Mod"], key: "l" });
 		expect(tab.containerEl.querySelector('tr[data-action="copyLink"] .jet-set-kbd.is-changed')?.textContent).toBe(
-			"⌘C",
+			"⌘L",
 		);
 		// Another action's key is refused, and the tab says which.
 		tab.containerEl.querySelector<HTMLElement>('tr[data-action="preview"] .jet-set-kbd')?.click();
@@ -215,7 +222,7 @@ describe("the keys in the window, in settings", () => {
 		expect(plugin.data.settings.keys.preview).toBeUndefined();
 		tab.containerEl.querySelector<HTMLElement>('tr[data-action="copyLink"] .jet-set-reset')?.click();
 		expect(plugin.data.settings.keys.copyLink).toBeUndefined();
-		expect(tab.getControlValue("key:copyLink")).toBe("⌘L");
+		expect(tab.getControlValue("key:copyLink")).toBe("⌘C");
 		tab.setControlValue("key:sort", { mods: ["Mod"], key: "o" });
 		buttonNamed(tab.containerEl, "Reset all")?.click();
 		expect(plugin.data.settings.keys).toEqual({});

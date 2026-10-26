@@ -459,7 +459,7 @@ describe("QA2 modal: the preview pane, continued", () => {
 	it("a click on the preview's buttons keeps the focus in the search box", () => {
 		const m = new JetModal(new App() as never, baseHost({ previewOn: () => true }));
 		m.open();
-		const copy = $('.jet-pv .jet-pb[aria-label="Copy link"]');
+		const copy = $('.jet-pv .jet-pb[aria-label^="Copy link"]');
 		const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
 		copy?.dispatchEvent(down);
 		// Every other control in the modal (×, the filter button, the list, the chips) keeps the focus.
