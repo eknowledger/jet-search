@@ -1,10 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	type AnswerCandidate,
 	answerKind,
 	answerOrder,
 	answerShapes,
-	clearAnswerCache,
 	contentTerms,
 	fuseOrders,
 	linesOf,
@@ -23,8 +22,6 @@ const note = (path: string, text: string, from: AnswerCandidate["from"] = "words
 	bodyStart: 0,
 	from,
 });
-
-beforeEach(() => clearAnswerCache());
 
 describe("a note's lines (answers experiment)", () => {
 	it("reads list items, table rows and sentences, each with its heading and where it starts", () => {

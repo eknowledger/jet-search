@@ -218,28 +218,6 @@ const keyOf = (w: string, s: string): string => {
 /** A line as scored: its text read for words (lower case, letters folded) kept once made. */
 type Line = AnswerLine & { low?: string };
 
-/**
- * Lines split once per note text, for the last 120 notes: a question typed on reads mostly the same
- * notes again, and each line is read for words once.
- */
-const CACHE = 120;
-const split = new Map<string, { text: string; bodyStart: number; lines: Line[] }>();
-const linesCached = (c: AnswerCandidate): Line[] => {
-	const hit = split.get(c.path);
-	if (hit && hit.text === c.text && hit.bodyStart === c.bodyStart) {
-		split.delete(c.path);
-		split.set(c.path, hit);
-		return hit.lines;
-	}
-	const lines = linesOf(c.text, c.bodyStart);
-	split.set(c.path, { text: c.text, bodyStart: c.bodyStart, lines });
-	if (split.size > CACHE) split.delete(split.keys().next().value as string);
-	return lines;
-};
-
-/** Forget the split lines (tests, the bench's cold timings, and when the experiment is turned off). */
-export const clearAnswerCache = (): void => split.clear();
-
 /** The scorer for one question: its words by rarity, the answer's kind and shape, word forms met once. */
 const scorer = (terms: readonly Term[], kind: AnswerKind, shapes: readonly RegExp[], tune: AnswerTuning) => {
 	const stems = new Map<string, string>();
@@ -367,7 +345,7 @@ export const rankAnswers = async (
 		if (deps.pause && i && i % SLICE === 0 && (await deps.pause())) return null;
 		const ctx = score.context(c.path);
 		const scored: Array<{ l: Line; s: number }> = [];
-		for (const l of linesCached(c)) {
+		for (const l of linesOf(c.text, c.bodyStart) as Line[]) {
 			const s = score.line(l, true, ctx);
 			if (s > 0) scored.push({ l, s });
 		}
