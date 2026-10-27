@@ -182,6 +182,8 @@ export const answerSpans = (question: string, text: string): Array<[number, numb
 export type AnswerTuning = {
 	/** A question word only in the line's heading counts this much of itself. */
 	heading: number;
+	/** A question word only in the note's name or folders (what the whole note is about) counts this much. */
+	context: number;
 	/** The line has the shape of the answer asked for (a "%" for a share). */
 	shape: number;
 	/** The line has the kind of answer asked for (a number for "how much"), without the exact shape. */
@@ -196,7 +198,8 @@ export type AnswerTuning = {
 const englishStem = (w: string): string => (/^[a-z]+$/.test(w) && w.length > 3 ? stemEnglish(w) : w);
 export const TUNING: AnswerTuning = {
 	heading: 0.5,
-	shape: 1.6,
+	context: 0.5,
+	shape: 2,
 	kind: 1.15,
 	closeness: 0.6,
 	title: 0.8,
@@ -253,7 +256,6 @@ const scorer = (terms: readonly Term[], kind: AnswerKind, shapes: readonly RegEx
 	const has = (low: string): Set<string> | null => {
 		let own: Set<string> | null = null;
 		for (const t of terms) {
-			if (own?.has(t.stem)) continue;
 			for (let i = low.indexOf(t.key); i >= 0; i = low.indexOf(t.key, i + 1)) {
 				if (i > 0 && wordChar(low, i - 1)) continue;
 				let end = i + t.key.length;
@@ -275,20 +277,26 @@ const scorer = (terms: readonly Term[], kind: AnswerKind, shapes: readonly RegEx
 	};
 	const total = terms.reduce((n, t) => n + t.weight, 0) || 1;
 	return {
-		/** How much of the question's weight a line holds (its heading's words for less). */
-		cover(l: Line): number {
+		/** The question's words in a note's name and folders: what every line of it is about. */
+		context(path: string): Set<string> | null {
+			return tune.context ? has(readable(path.replace(/\.md$/i, "").replace(/\//g, " "))) : null;
+		},
+		/** How much of the question's weight a line holds (its heading's and its note's words for less). */
+		cover(l: Line, ctx: Set<string> | null = null): number {
 			const own = has((l.low ??= readable(l.text)));
 			const head = headOf(l.heading);
 			let w = 0;
 			for (const t of terms)
 				if (own?.has(t.stem)) w += t.weight;
 				else if (head?.has(t.stem)) w += t.weight * tune.heading;
+				else if (ctx?.has(t.stem)) w += t.weight * tune.context;
 			return w / total;
 		},
 		/** A line's score: its question words by rarity, its heading's for less, all of them together, the answer's shape. */
-		line(l: Line, useShape = true): number {
+		line(l: Line, useShape = true, ctx: Set<string> | null = null): number {
 			const own = has((l.low ??= readable(l.text)));
 			const head = headOf(l.heading);
+			// A line needs a question word of its own or under its heading: the note's name alone is the title's.
 			if (!own && !head) return 0;
 			let score = 0;
 			let found = 0;
@@ -299,6 +307,9 @@ const scorer = (terms: readonly Term[], kind: AnswerKind, shapes: readonly RegEx
 				} else if (head?.has(t.stem)) {
 					score += t.weight * tune.heading;
 					found += tune.heading;
+				} else if (ctx?.has(t.stem)) {
+					score += t.weight * tune.context;
+					found += tune.context;
 				}
 			if (!score) return 0;
 			score *= 0.5 + 0.5 * (found / terms.length);
@@ -315,7 +326,15 @@ export type AnswerDeps = {
 	rarity(terms: readonly string[]): Promise<{ notes: number; df: number[] }>;
 	/** The static model's closeness of each line to the question (0–1); empty when there is no model. */
 	closeness?(question: string, lines: readonly string[]): Promise<number[]>;
+	/**
+	 * Called between notes: lets other work run (a query typed meanwhile), and answers true when this
+	 * re-rank is no longer wanted (a newer question came): it stops with null.
+	 */
+	pause?(): Promise<boolean>;
 };
+
+/** Notes read between two pauses. */
+const SLICE = 8;
 
 /**
  * The candidates re-ranked by their best line for the question (each result carries its line). The
@@ -326,7 +345,7 @@ export const rankAnswers = async (
 	candidates: readonly AnswerCandidate[],
 	deps: AnswerDeps,
 	tune: AnswerTuning = TUNING,
-): Promise<AnswerResult[]> => {
+): Promise<AnswerResult[] | null> => {
 	const content = contentTerms(question);
 	if (!content.length) return candidates.map((c) => ({ path: c.path, score: 0, line: null, cover: 0, from: c.from }));
 	const { notes, df } = await deps.rarity(content);
@@ -336,10 +355,20 @@ export const rankAnswers = async (
 		return { stem, weight: Math.log(1 + n / (1 + (df[i] ?? 0))), key: keyOf(w, stem) };
 	});
 	const score = scorer(terms, answerKind(question), answerShapes(question), tune);
-	const best = candidates.map((c, i) => {
+	const best: Array<{
+		c: AnswerCandidate;
+		ctx: Set<string> | null;
+		top: Array<{ l: Line; s: number }>;
+		title: number;
+		name: Line;
+		prior: number;
+	}> = [];
+	for (const [i, c] of candidates.entries()) {
+		if (deps.pause && i && i % SLICE === 0 && (await deps.pause())) return null;
+		const ctx = score.context(c.path);
 		const scored: Array<{ l: Line; s: number }> = [];
 		for (const l of linesCached(c)) {
-			const s = score.line(l);
+			const s = score.line(l, true, ctx);
 			if (s > 0) scored.push({ l, s });
 		}
 		scored.sort((a, b) => b.s - a.s);
@@ -348,13 +377,13 @@ export const rankAnswers = async (
 		const title = score.line(name, false) * tune.title;
 		// A little of the first order stays: ties go to the note words or meaning put first.
 		const prior = (0.02 * (candidates.length - i)) / Math.max(1, candidates.length);
-		return { c, top: scored.slice(0, SIMILAR_LINES), title, name, prior };
-	});
+		best.push({ c, ctx, top: scored.slice(0, SIMILAR_LINES), title, name, prior });
+	}
 	// The static model on each note's best lines: one call for all of them.
 	const flat = best.flatMap((b) => b.top.map((x) => x.l.text));
 	const close = flat.length && deps.closeness && tune.closeness ? await deps.closeness(question, flat) : [];
 	let k = 0;
-	const out: AnswerResult[] = best.map(({ c, top, title, name, prior }) => {
+	const out: AnswerResult[] = best.map(({ c, ctx, top, title, name, prior }) => {
 		let pick: { l: Line; s: number } | null = null;
 		for (const x of top) {
 			const s = x.s * (1 + tune.closeness * Math.max(0, close[k++] ?? 0));
@@ -366,7 +395,7 @@ export const rankAnswers = async (
 					path: c.path,
 					score: lineScore + prior,
 					line: { text: pick.l.text, heading: pick.l.heading, offset: pick.l.offset },
-					cover: score.cover(pick.l),
+					cover: score.cover(pick.l, ctx),
 					from: c.from,
 				}
 			: { path: c.path, score: title + prior, line: null, cover: score.cover(name), from: c.from };

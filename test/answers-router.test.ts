@@ -71,4 +71,26 @@ describe("answers in the worker (experiment)", () => {
 		expect(reply.ranked[0]?.line?.text).toBe("- Kiosk screens are ~20-30% of the sales");
 		expect(reply.ranked[0]?.from).toBe("both");
 	});
+
+	it("stops a re-rank when a newer search waits, as stale", async () => {
+		const r = await router();
+		let asked = 0;
+		r.interrupted = () => ++asked > 1;
+		const notes = Array.from({ length: 30 }, (_, i) => ({
+			path: `N${i}.md`,
+			title: `N${i}`,
+			text: `- kiosk screens line ${i}`,
+			bodyStart: 0,
+			from: "words" as const,
+		}));
+		const reply = (await r.handle({
+			op: "answers:rank",
+			seq: 3,
+			text: "what about kiosk screens?",
+			notes,
+			meaning: [],
+		})) as AnswersReply;
+		expect(reply.stale).toBe(true);
+		expect(reply.order).toEqual([]);
+	});
 });

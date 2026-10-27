@@ -90,6 +90,8 @@ const firstLine = (body: string): string | null => {
 const MAX_TITLES = 8;
 /** Answers (experiment): notes taken from each list, by words and by meaning, for the re-rank. */
 const ANSWER_POOL = 50;
+/** Answers (experiment): how long the text rests before its answers are looked for. */
+const ANSWER_PAUSE_MS = 250;
 /** Excerpts are cut for this many content rows (the visible ones and a little more). */
 const EXCERPT_ROWS = 24;
 /** Notes found by a heading, tag or property while the index builds. */
@@ -404,6 +406,9 @@ export class Search {
 		now: number,
 	): void {
 		void (async () => {
+			// Once typing pauses: a question typed on is not re-ranked at every key.
+			await new Promise((r) => window.setTimeout(r, ANSWER_PAUSE_MS));
+			if (this.current?.text !== text) return;
 			try {
 				await this.feeder.ensure();
 			} catch {

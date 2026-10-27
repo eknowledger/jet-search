@@ -169,6 +169,24 @@ describe("re-ranking notes by their best line", () => {
 	});
 });
 
+describe("a re-rank no longer wanted", () => {
+	it("pauses between slices of notes and stops with nothing when told", async () => {
+		const notes = Array.from({ length: 20 }, (_, i) => note(`N${i}.md`, `- kiosk line ${i} here`));
+		let pauses = 0;
+		const r = await rankAnswers("what about kiosks?", notes, {
+			...rare({ kiosks: 4 }),
+			pause: async () => ++pauses >= 2,
+		});
+		expect(r).toBeNull();
+		expect(pauses).toBe(2);
+		const all = await rankAnswers("what about kiosks?", notes, {
+			...rare({ kiosks: 4 }),
+			pause: async () => false,
+		});
+		expect(all).toHaveLength(20);
+	});
+});
+
 describe("the order shown", () => {
 	const ranked = (paths: string[], cover: number) =>
 		paths.map((path, i) => ({ path, score: 10 - i, line: null, cover, from: "words" as const }));

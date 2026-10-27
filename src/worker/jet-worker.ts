@@ -17,6 +17,11 @@ const router = new Router((vaultId) => (typeof indexedDB === "undefined" ? memor
 });
 const queue: Envelope[] = [];
 let busy = false;
+// Answers (experiment): a re-rank stops when a newer search is queued (a query typed, another question).
+router.interrupted = () =>
+	queue.some(
+		(x) => (x.req.op === "query" && x.req.seq !== 0) || x.req.op === "answers:pool" || x.req.op === "answers:rank",
+	);
 
 const pump = async (): Promise<void> => {
 	if (busy) return;
@@ -30,6 +35,10 @@ const pump = async (): Promise<void> => {
 		}
 		if (req.op === "nearest" && queue.some((x) => x.req.op === "nearest")) {
 			scope.postMessage({ id, result: { seq: req.seq, near: [], ms: 0, stale: true } });
+			continue;
+		}
+		if (req.op === "answers:rank" && queue.some((x) => x.req.op === "answers:rank")) {
+			scope.postMessage({ id, result: { seq: req.seq, ranked: [], order: [], ms: 0, stale: true } });
 			continue;
 		}
 		try {

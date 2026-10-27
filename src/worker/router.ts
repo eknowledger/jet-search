@@ -295,6 +295,10 @@ export class Router {
 		const t0 = performance.now();
 		const m = this.meaning;
 		const ranked = await rankAnswers(req.text, req.notes, {
+			// Between slices of notes: messages that came meanwhile are queued, and a newer search (a
+			// query or another question) ends this one: its answers would be for a text no longer typed.
+			pause: () =>
+				new Promise<boolean>((resolve) => this.timers.set(() => resolve(this.interrupted?.() ?? false), 0)),
 			rarity: async (terms) => ({ notes: this.engine.size, df: this.engine.docFreq(terms) }),
 			closeness: m
 				? async (question, lines) => {
@@ -309,8 +313,12 @@ export class Router {
 					}
 				: undefined,
 		});
+		if (!ranked) return { seq: req.seq, ranked: [], order: [], ms: performance.now() - t0, stale: true };
 		return { seq: req.seq, ranked, order: answerOrder(req.text, ranked, req.meaning), ms: performance.now() - t0 };
 	}
+
+	/** Whether a newer search is waiting (set by the worker, which holds the queue): a re-rank stops for it. */
+	interrupted: (() => boolean) | null = null;
 
 	private configure(langs: readonly string[]): void {
 		const known = new Set<string>(STEM_LANGUAGES);

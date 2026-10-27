@@ -8,7 +8,9 @@ import type { JetClient } from "../src/worker/jet-client";
 import type { AnswersReply } from "../src/worker/protocol";
 
 type Item = Extract<Entry, { type: "item" }>;
+/** Past the pause before answers are looked for, and the promises after it. */
 const settle = async (): Promise<void> => {
+	await new Promise((r) => setTimeout(r, 300));
 	for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
