@@ -7,6 +7,7 @@ import { type BothLayout, layoutBoth, type MeaningMode } from "./both";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
 import { closeness } from "../answers/show";
+import { themeMark } from "./theme-mark";
 
 export type Ranges = ReadonlyArray<readonly [number, number]>;
 
@@ -567,6 +568,8 @@ export class JetModal extends Modal {
 
 	onOpen(): void {
 		this.shown = true;
+		// Marks in the theme's own highlight colours (some themes pair an opaque highlight with dark text).
+		this.modalEl.setCssProps(themeMark(this.modalEl.doc));
 		this.inputEl.value = this.initial;
 		this.inputEl.select();
 		// Persisted filters: the last scope and filters, pinned.

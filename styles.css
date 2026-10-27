@@ -227,8 +227,8 @@
 }
 
 .jet-l3 mark.jet-mark {
-	background: var(--text-highlight-bg);
-	color: var(--text-normal);
+	background: var(--jet-mark-bg, var(--text-highlight-bg));
+	color: var(--jet-mark-fg, var(--text-normal));
 	font-weight: 600;
 	border-radius: 3px;
 	padding: 0 2px;
@@ -430,8 +430,8 @@
 }
 
 .jet-pin mark.jet-pmark {
-	background: var(--text-highlight-bg);
-	color: var(--text-normal);
+	background: var(--jet-mark-bg, var(--text-highlight-bg));
+	color: var(--jet-mark-fg, var(--text-normal));
 	border-radius: 3px;
 }
 

@@ -139,8 +139,8 @@ export const answerKind = (q: string): AnswerKind => {
 
 const DATE =
 	/\b(20\d\d-\d\d-\d\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s?\d{1,2}|\b(end of|by) (january|february|march|april|may|june|july|august|september|october|november|december|q[1-4])|\b\d{1,2}[/-]\d{1,2}\b/i;
-/** An amount of money: €1,180, $6, 1,150 euros. */
-const MONEY = /[€$£¥₹]\s?\d|\d[\d.,]*\s?(€|£|¥|eur\b|euros?\b|usd\b|dollars?\b|yen\b)/i;
+/** An amount of money, the whole of it: €1,180, $6, 1,150 euros. */
+const MONEY = /[€$£¥₹]\s?\d(?:[\d.,]*\d)?|\d[\d.,]*\s?(€|£|¥|eur\b|euros?\b|usd\b|dollars?\b|yen\b)/i;
 const KIND: Record<Exclude<AnswerKind, null>, RegExp> = {
 	number: new RegExp(
 		`\\d[\\d.,]*\\s?(%|×|x\\b|ms|s\\b|mb|gb|kb|k\\b|m\\b|tps|staff|engineers|weeks?|days?|hours?)|\\d+[-–]\\d+|~\\d|\\d+\\.\\d|${MONEY.source}`,

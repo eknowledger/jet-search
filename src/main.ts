@@ -11,6 +11,7 @@ import { indexStatus, rebuild } from "./index-status";
 import { addCommandAs, commandAt, hasCommand, plugin, removeCommand, tapOwnedElsewhere, vaultId } from "./internals";
 import { InNoteHost } from "./innote";
 import { JetModal } from "./modal/jet-modal";
+import { forgetThemeMark } from "./modal/theme-mark";
 import { FilterSets } from "./filters/sets";
 import { ambiguity } from "./scopes/auto";
 import { coreQuery, createDetail, createTarget } from "./scopes/create";
@@ -421,6 +422,8 @@ export default class JetSearchPlugin extends Plugin {
 				this.standIn();
 			}),
 		);
+		// A theme or its mode changed: Jet's marks measure its highlight again.
+		this.registerEvent(this.app.workspace.on("css-change", forgetThemeMark));
 		// Recents and frecency: every note opened, however it was opened.
 		this.registerEvent(
 			this.app.workspace.on("file-open", (file) => {

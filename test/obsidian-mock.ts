@@ -55,6 +55,17 @@ Object.defineProperty(proto, "win", {
 		return this.ownerDocument.defaultView;
 	},
 });
+Object.defineProperty(proto, "doc", {
+	get(this: HTMLElement) {
+		return this.ownerDocument;
+	},
+});
+proto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
+	for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
+};
+proto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
+	Object.assign(this.style, styles);
+};
 
 // Obsidian's global createEl: an element not yet attached.
 (globalThis as unknown as Record<string, unknown>).createEl = (tag: string, o: DomInfo | string = {}): HTMLElement => {

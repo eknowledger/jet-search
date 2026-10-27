@@ -4,6 +4,7 @@ import {
 	answerKind,
 	answerOrder,
 	answerShapes,
+	answerSpans,
 	contentTerms,
 	fuseOrders,
 	linesOf,
@@ -182,6 +183,12 @@ describe("money, and lines that only point elsewhere", () => {
 		);
 		expect(r?.[0]?.path).toBe("Bookshelf — walnut.md");
 		expect(r?.[0]?.line?.text).toContain("€1,180");
+	});
+
+	it("colours the whole amount, not its first figure", () => {
+		const text = "Walnut bookshelf · €1,180 · €300 deposit";
+		const spans = answerSpans("how much was the walnut bookshelf?", text).map(([a, b]) => text.slice(a, b));
+		expect(spans).toEqual(["€1,180", "€300"]);
 	});
 });
 
