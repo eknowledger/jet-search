@@ -90,6 +90,9 @@ const STOP = new Set(
 /** The question's content words, as the index reads them (no small words). */
 export const contentTerms = (q: string): string[] => [...new Set(tokenize(q).filter((w) => !STOP.has(w)))];
 
+/** The question's content words as stems: marked as word starts, they mark every form ("devic"). */
+export const questionStems = (q: string): string[] => [...new Set(contentTerms(q).map((w) => TUNING.stem(w)))];
+
 /** A line's text as read for words: a link's shown text, not its target; lower case, letters folded. */
 const readable = (s: string): string =>
 	normalize(
@@ -151,6 +154,27 @@ export const answerShapes = (q: string): RegExp[] => {
 		out.push(/\b(won|winner|chose|chosen|decided|decision|picked|preferred|recommend)/i);
 	if (/^who\b|\bwho (owns|is|leads|runs)\b/.test(t)) out.push(KIND.who);
 	if (/^when\b|\bby when\b|\bdeadline\b|\bdue\b/.test(t)) out.push(DATE);
+	return out;
+};
+
+/**
+ * Where a text has the answer's shape or kind (a "%" figure for a share, a date for "when"), merged:
+ * what the row and the preview colour as the answer.
+ */
+export const answerSpans = (question: string, text: string): Array<[number, number]> => {
+	const kind = answerKind(question);
+	const res = [...answerShapes(question), ...(kind === "number" || kind === "when" ? [KIND[kind]] : [])];
+	const spans: Array<[number, number]> = [];
+	for (const r of res)
+		for (const m of text.matchAll(new RegExp(r.source, r.flags.includes("g") ? r.flags : `${r.flags}g`)))
+			if (m[0].trim()) spans.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
+	spans.sort((a, b) => a[0] - b[0]);
+	const out: Array<[number, number]> = [];
+	for (const [a, b] of spans) {
+		const last = out[out.length - 1];
+		if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+		else out.push([a, b]);
+	}
 	return out;
 };
 

@@ -1,3 +1,4 @@
+import { answerOrder, contentTerms, rankAnswers } from "../answers/answers";
 import { fieldsFromRaw } from "../engine/fields";
 import { JetEngine } from "../engine/jet-engine";
 import { parseQuery } from "../engine/query";
@@ -6,7 +7,7 @@ import { docText } from "../meaning/doc";
 import { embed, type MeaningModel, unpackModel } from "../meaning/model";
 import { Vectors } from "../meaning/vectors";
 import type { RawNote } from "../engine/fields";
-import type { NearReply, QueryReply, Request, Stats } from "./protocol";
+import type { AnswerPoolReply, AnswersReply, NearReply, QueryReply, Request, Stats } from "./protocol";
 import type { Store } from "./store";
 
 /**
@@ -125,6 +126,10 @@ export class Router {
 				return this.query(req);
 			case "nearest":
 				return this.nearest(req);
+			case "answers:pool":
+				return this.answerPool(req);
+			case "answers:rank":
+				return this.answers(req);
 			case "meaning:load": {
 				const model = unpackModel(req.buf, req.model);
 				let vectors = new Vectors(model.id, model.dim);
@@ -264,6 +269,47 @@ export class Router {
 		const allow = this.allowOf(req);
 		const near = m.vectors.nearest(q, req.k, allow ? (p) => allow.has(p) : undefined);
 		return { seq: req.seq, near, ms: performance.now() - t0 };
+	}
+
+	/** Answers (experiment): the notes words and meaning give a question, before the re-rank. */
+	answerPool(req: Extract<Request, { op: "answers:pool" }>): AnswerPoolReply {
+		const allow = this.allowOf(req);
+		const keep = allow ? (p: string) => allow.has(p) : undefined;
+		const content = contentTerms(req.text).join(" ");
+		const words = content
+			? this.engine
+					.query(parseQuery(content), { limit: req.k, now: Date.now(), allow: keep, any: true })
+					.hits.map((h) => h.path)
+			: [];
+		const m = this.meaning;
+		const q = m && embed(m.model, req.text, 64);
+		const meaning = m && q ? m.vectors.nearest(q, req.k, keep).map((n) => n.path) : [];
+		return { words, meaning };
+	}
+
+	/**
+	 * Answers (experiment): the notes re-ranked by their best line, with the rarity of the question's
+	 * words from the index and, while meaning is on, the model's closeness of each note's best lines.
+	 */
+	async answers(req: Extract<Request, { op: "answers:rank" }>): Promise<AnswersReply> {
+		const t0 = performance.now();
+		const m = this.meaning;
+		const ranked = await rankAnswers(req.text, req.notes, {
+			rarity: async (terms) => ({ notes: this.engine.size, df: this.engine.docFreq(terms) }),
+			closeness: m
+				? async (question, lines) => {
+						const q = embed(m.model, question, 64);
+						return lines.map((l) => {
+							const v = q && embed(m.model, l, 96);
+							if (!q || !v) return 0;
+							let s = 0;
+							for (let i = 0; i < q.length; i++) s += (q[i] as number) * (v[i] as number);
+							return s;
+						});
+					}
+				: undefined,
+		});
+		return { seq: req.seq, ranked, order: answerOrder(req.text, ranked, req.meaning), ms: performance.now() - t0 };
 	}
 
 	private configure(langs: readonly string[]): void {

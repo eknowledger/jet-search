@@ -6,6 +6,7 @@ import { comboLabel, type KeyAction, type KeyMap, keyMap, systemCopy } from "../
 import { type BothLayout, layoutBoth, type MeaningMode } from "./both";
 import { Preview, type PreviewAction } from "../preview/preview";
 import { highlight } from "./format";
+import { closeness } from "../answers/show";
 
 export type Ranges = ReadonlyArray<readonly [number, number]>;
 
@@ -24,6 +25,8 @@ export type Entry =
 			mode?: "words" | "meaning";
 			/** Set by the modal: the three-way switch (words, meaning, both), showing the one on. */
 			switch?: MeaningMode;
+			/** Answers (experiment): the list is the notes by the line that answers the question, in order. */
+			answers?: boolean;
 	  }
 	/** The rest of a group (by words and meaning at once): chosen, it opens in place. */
 	| { type: "more"; group: string; n: number; label: string }
@@ -51,6 +54,12 @@ export type Entry =
 			ctime?: number;
 			/** Found by meaning: its badge says so. */
 			meaning?: boolean;
+			/**
+			 * Answers (experiment): the excerpt is the line that answers the question, `nums` its
+			 * figures (within the excerpt), `cover` how much of the question it holds, `line` the line as
+			 * written, for the preview to outline.
+			 */
+			answer?: { cover: number; nums: Ranges; line: string };
 	  }
 	/** A recent search; `parts` shows its scope and filters as chips. */
 	| {
@@ -613,10 +622,15 @@ export class JetModal extends Modal {
 			const file = this.app.vault.getFileByPath(e.path);
 			if (!file) return;
 			// The same note with other words, or the full-text answer: drawn again.
-			const key = JSON.stringify([e.path, e.hit?.terms ?? [], e.hit?.offset ?? null]);
+			const key = JSON.stringify([e.path, e.hit?.terms ?? [], e.hit?.offset ?? null, e.answer?.line ?? null]);
 			if (this.preview.path === e.path && this.previewKey === key) return;
 			this.previewKey = key;
-			void this.preview.show(file, e.hit?.terms ?? [], e.hit?.offset);
+			void this.preview.show(
+				file,
+				e.hit?.terms ?? [],
+				e.hit?.offset,
+				e.answer?.line ? { line: e.answer.line, question: this.inputEl.value } : undefined,
+			);
 		}, PREVIEW_REST_MS);
 	}
 
@@ -639,6 +653,8 @@ export class JetModal extends Modal {
 	/** Paint a list (called by the host, maybe several times per keystroke as tiers answer). */
 	/** The entries as the host gave them (re-sorted without asking again). */
 	private lastEntries: Entry[] = [];
+	/** Answers (experiment): the list shown is the notes by the line that answers the question. */
+	private answersShown = false;
 
 	paint(entries: Entry[], status = ""): void {
 		// An answer that arrives after Jet closed draws nothing (and loads no preview).
@@ -656,7 +672,13 @@ export class JetModal extends Modal {
 		// Sorting is for a search (text or filters), not the recents with nothing typed.
 		const searching = !!this.inputEl.value.trim() || this.filters.length > 0;
 		// By words and by meaning at once: grouped as you chose (each group in the order chosen).
-		const both = searching && this.meaningNow.mode === "both";
+		// Answers (experiment): one list, in the order of the lines that answer the question.
+		const answers = entries.some((e) => e.type === "header" && e.answers);
+		if (answers !== this.answersShown) {
+			this.answersShown = answers;
+			this.drawBanner();
+		}
+		const both = searching && this.meaningNow.mode === "both" && !answers;
 		if (both) entries = layoutBoth(entries, this.host.meaning?.layout?.() ?? "groups", this.sort, this.expanded);
 		else if (searching && this.host.sortable !== false) entries = sortEntries(entries, this.sort);
 		const h = entries.findIndex((e) => e.type === "header" && !e.plain);
@@ -1381,13 +1403,15 @@ export class JetModal extends Modal {
 			// A question (or a long search, opted in) went beyond words by itself: say so, once per search.
 			const long = this.meaningNow.auto === "long";
 			head("sparkles").appendText(
-				this.meaningNow.mode === "both"
-					? long
-						? "A long search: by words and by meaning"
-						: "A question: by words and by meaning"
-					: long
-						? "A long search, so by meaning: notes about what you wrote, even in other words"
-						: "A question, so by meaning: notes about what you asked, even in other words",
+				this.answersShown
+					? "A question: notes by the line that answers it"
+					: this.meaningNow.mode === "both"
+						? long
+							? "A long search: by words and by meaning"
+							: "A question: by words and by meaning"
+						: long
+							? "A long search, so by meaning: notes about what you wrote, even in other words"
+							: "A question, so by meaning: notes about what you asked, even in other words",
 			);
 			keys([[this.lab("meaning"), "Words · Meaning · Both"]]);
 		} else if (this.fix) {
@@ -2264,12 +2288,46 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 					: "";
 		l1.createSpan({ cls: `jet-bdg${kind}`, text: e.badge });
 	}
+	if (e.answer) {
+		// Answers (experiment): how much of the question the row's line holds.
+		const c = closeness(e.answer.cover);
+		const m = l1.createSpan({
+			cls: `jet-close is-${c.word}`,
+			attr: { "aria-label": `Its line holds ${c.pct}% of your question's words, by how rare they are` },
+		});
+		m.createSpan({ cls: "jet-cbar" }).createSpan({ cls: "jet-cfill" }).style.width = `${c.pct}%`;
+		m.appendText(c.word);
+	}
 	l1.createSpan({ cls: "jet-rm", text: e.meta });
 	const l2 = body.createDiv({ cls: "jet-l2" });
 	if (e.crumb) l2.createSpan({ cls: "jet-cr", text: e.crumb });
 	for (const r of e.reasons ?? []) l2.createSpan({ cls: "jet-rsn", text: r });
 	if (e.excerpt) {
 		if (e.excerpt.more) l2.createSpan({ cls: "jet-more", text: `+${e.excerpt.more} more` });
-		highlight(body.createDiv({ cls: "jet-l3" }), e.excerpt.text, e.excerpt.marks, "jet-mark", "mark");
+		const l3 = body.createDiv({ cls: "jet-l3" });
+		if (e.answer) answerHighlight(l3, e.excerpt.text, e.excerpt.marks, e.answer.nums);
+		else highlight(l3, e.excerpt.text, e.excerpt.marks, "jet-mark", "mark");
+	}
+};
+
+/**
+ * An answer line (experiment): the question's words marked as in any excerpt, the answer's figures
+ * coloured; a figure that is also a question word is coloured.
+ */
+const answerHighlight = (el: HTMLElement, text: string, marks: Ranges, nums: Ranges): void => {
+	el.replaceChildren();
+	const kind = new Uint8Array(text.length);
+	for (const [a, b] of marks) kind.fill(1, Math.max(0, a), Math.min(text.length, b));
+	for (const [a, b] of nums) kind.fill(2, Math.max(0, a), Math.min(text.length, b));
+	let at = 0;
+	while (at < text.length) {
+		const k = kind[at] as number;
+		let end = at + 1;
+		while (end < text.length && kind[end] === k) end++;
+		const piece = text.slice(at, end);
+		if (k === 1) el.createEl("mark", { cls: "jet-mark", text: piece });
+		else if (k === 2) el.createSpan({ cls: "jet-num", text: piece });
+		else el.appendText(piece);
+		at = end;
 	}
 };

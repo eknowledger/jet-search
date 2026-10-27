@@ -64,6 +64,9 @@ Object.defineProperty(proto, "win", {
 	return el;
 };
 
+(globalThis as unknown as Record<string, unknown>).createSpan = (o: DomInfo | string = {}): HTMLElement =>
+	(globalThis as unknown as { createEl: (t: string, o: DomInfo | string) => HTMLElement }).createEl("span", o);
+
 export const setIcon = (el: HTMLElement, icon: string): void => {
 	el.setAttribute("data-icon", icon);
 };

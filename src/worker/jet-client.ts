@@ -1,5 +1,6 @@
 import code from "worker:./jet-worker";
-import type { Answer, NearReply, QueryReply, Reply, Request } from "./protocol";
+import type { AnswerCandidate } from "../answers/answers";
+import type { Answer, AnswerPoolReply, AnswersReply, NearReply, QueryReply, Reply, Request } from "./protocol";
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -18,6 +19,8 @@ export class JetClient {
 	 * once, and a shared count made the question cancel the words.
 	 */
 	private nearSeq = 0;
+	/** Answers (experiment) count apart too: a re-rank cancels only an older re-rank. */
+	private answerSeq = 0;
 	private readonly pending = new Map<number, Pending>();
 	/** Called when the worker fails; the caller restarts it. */
 	onCrash: ((message: string) => void) | null = null;
@@ -72,6 +75,21 @@ export class JetClient {
 		const seq = ++this.nearSeq;
 		const r = await this.call({ op: "nearest", seq, text, k: opts.k ?? 50, allow: opts.allow, scope: opts.scope });
 		return r.stale || r.seq !== this.nearSeq ? null : r;
+	}
+
+	/** Answers (experiment): where the question's answer is looked for, by its words and by meaning. */
+	answerPool(
+		text: string,
+		opts: { k?: number; allow?: string[]; scope?: string | string[] } = {},
+	): Promise<AnswerPoolReply> {
+		return this.call({ op: "answers:pool", text, k: opts.k ?? 50, allow: opts.allow, scope: opts.scope });
+	}
+
+	/** Answers (experiment): the notes re-ranked by their best line; null if a newer re-rank was asked. */
+	async answers(text: string, notes: AnswerCandidate[], meaning: string[]): Promise<AnswersReply | null> {
+		const seq = ++this.answerSeq;
+		const r = await this.call({ op: "answers:rank", seq, text, notes, meaning });
+		return r.stale || r.seq !== this.answerSeq ? null : r;
 	}
 
 	stop(): void {

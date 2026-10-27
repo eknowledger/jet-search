@@ -1877,3 +1877,69 @@ table.jet-set-keys {
 .jet-row.jet-more.is-selected .jet-morel {
 	text-decoration: underline;
 }
+
+/* ── Answers (experiment) ───────────────────── */
+/* How much of the question a row's line holds. */
+.jet-close {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: 4px;
+	margin-left: 6px;
+	font-size: 11px;
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+.jet-cbar {
+	display: inline-block;
+	width: 34px;
+	height: 5px;
+	border-radius: 3px;
+	background: var(--background-modifier-border);
+	overflow: hidden;
+}
+.jet-cfill {
+	display: block;
+	height: 100%;
+	background: var(--interactive-accent);
+}
+.jet-close.is-loose .jet-cfill {
+	opacity: 0.55;
+}
+/* The answer's figures, in the row and in the preview. */
+.jet-l3 .jet-num,
+.jet-pin .jet-num {
+	color: var(--text-accent);
+	font-weight: 600;
+}
+/* The line that answers, outlined in the preview. */
+.jet-pin .jet-answer {
+	position: relative;
+	margin: 14px 0;
+	padding: 10px 12px 10px 14px;
+	border-left: 3px solid var(--interactive-accent);
+	border-radius: 4px;
+	background: hsla(var(--interactive-accent-hsl), 0.09);
+}
+.jet-pin tr.jet-answer {
+	outline: 2px solid hsla(var(--interactive-accent-hsl), 0.6);
+}
+.jet-pin .jet-alabel {
+	position: absolute;
+	top: -9px;
+	left: 10px;
+	padding: 0 6px;
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-accent);
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+.jet-pin tr.jet-answer .jet-alabel {
+	position: static;
+	display: block;
+	padding: 0;
+	background: none;
+}

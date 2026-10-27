@@ -36,7 +36,9 @@ export const namesQuery = (text: string): { text: string; excluded: Set<string> 
 	}
 	return { text: kept.join(" ") + (/\s$/u.test(text) ? " " : ""), excluded };
 };
-import { contentWords } from "./meaning/question";
+import type { AnswerCandidate } from "./answers/answers";
+import { answerExcerpt } from "./answers/show";
+import { contentWords, isQuestion } from "./meaning/question";
 import { joinNames, unionOf, type Where, whereIds, wireWhere } from "./scopes/where";
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
@@ -86,6 +88,8 @@ const firstLine = (body: string): string | null => {
 
 /** Titles shown above the text hits for a name-like query. */
 const MAX_TITLES = 8;
+/** Answers (experiment): notes taken from each list, by words and by meaning, for the re-rank. */
+const ANSWER_POOL = 50;
 /** Excerpts are cut for this many content rows (the visible ones and a little more). */
 const EXCERPT_ROWS = 24;
 /** Notes found by a heading, tag or property while the index builds. */
@@ -192,6 +196,16 @@ export class Search {
 		// Title only means names alone: headings and properties are left out too.
 		const meta = titleOnly ? [] : this.metaHits(nq.text, allowed);
 		const now = Date.now();
+		// Answers (experiment): a question searched by meaning, or both ways, is re-ranked by the line
+		// that answers it once the first lists are shown; from then on they paint no more.
+		if (meaning?.on && !titleOnly && this.data().settings.answers && isQuestion(text)) {
+			const show = paint;
+			let answered = false;
+			paint = (e, st) => {
+				if (!answered) show(e, st);
+			};
+			this.answers(text, show, () => (answered = true), scope, narrowed, now);
+		}
 		// By words and by meaning at once: both lists painted together, each
 		// as it arrives; meaning's rows carry `meaning: true`, and the modal groups them as you chose.
 		let out = paint;
@@ -374,6 +388,81 @@ export class Search {
 			);
 			if (this.current?.text === text) paint(rows(ex), this.status());
 		})().catch((e: unknown) => console.error("Jet Search: search by meaning failed", e));
+	}
+
+	/**
+	 * Answers (experiment): the notes the question's content words and its meaning find, read
+	 * from Obsidian's cache and re-ranked in the worker by the line that best answers it. Each row shows
+	 * that line, its figures coloured, with a meter of how much of the question it holds.
+	 */
+	private answers(
+		text: string,
+		paint: (entries: Entry[], status?: string) => void,
+		done: () => void,
+		scope: Where | undefined,
+		narrowed: Set<string> | null,
+		now: number,
+	): void {
+		void (async () => {
+			try {
+				await this.feeder.ensure();
+			} catch {
+				return;
+			}
+			await this.feeder.ensureMeaning?.();
+			if (this.current?.text !== text) return;
+			const pool = await this.client.answerPool(text, {
+				k: ANSWER_POOL,
+				scope: narrowed ? undefined : wireWhere(scope),
+				allow: narrowed ? [...narrowed] : undefined,
+			});
+			if (this.current?.text !== text) return;
+			const byWords = new Set(pool.words);
+			const byMeaning = new Set(pool.meaning);
+			const notes = await Promise.all(
+				[...new Set([...pool.words, ...pool.meaning])].map(async (path): Promise<AnswerCandidate | null> => {
+					const file = this.app.vault.getFileByPath(path);
+					if (!file) return null;
+					const body = await this.app.vault.cachedRead(file);
+					const fm = this.app.metadataCache.getFileCache(file)?.frontmatterPosition;
+					const both = byWords.has(path) && byMeaning.has(path);
+					return {
+						path,
+						title: titleOf(path),
+						text: body,
+						bodyStart: fm ? Math.min(body.length, fm.end.offset) : 0,
+						from: both ? "both" : byWords.has(path) ? "words" : "meaning",
+					};
+				}),
+			);
+			if (this.current?.text !== text) return;
+			const r = await this.client.answers(
+				text,
+				notes.filter((n): n is AnswerCandidate => !!n),
+				pool.meaning,
+			);
+			if (!r || this.current?.text !== text || !r.order.length) return;
+			const by = new Map(r.ranked.map((x) => [x.path, x]));
+			const excerpts = this.data().settings.excerpts;
+			const items: Item[] = [];
+			for (const path of r.order) {
+				const a = by.get(path);
+				const file = this.app.vault.getFileByPath(path);
+				if (!a || !file) continue;
+				const shown = a.line && excerpts ? answerExcerpt(a.line.text, text) : null;
+				items.push(
+					this.item(file, now, {
+						badge: a.from === "both" ? "both" : a.from === "words" ? "by words" : "by meaning",
+						meaning: a.from === "meaning",
+						excerpt: shown ? { text: shown.text, marks: shown.marks, more: 0 } : null,
+						hit: { terms: contentWords(text), offset: a.line?.offset },
+						answer: { cover: a.cover, nums: shown?.nums ?? [], line: a.line?.text ?? "" },
+					}),
+				);
+			}
+			done();
+			paint([{ type: "header", label: "Answers", count: items.length, answers: true }, ...items], this.status());
+		})().catch((e: unknown) => console.error("Jet Search: finding answers failed", e));
 	}
 
 	/** Nothing by meaning: the same words searched as words is one key away. */

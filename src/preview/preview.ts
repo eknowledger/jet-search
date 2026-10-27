@@ -1,4 +1,5 @@
 import { type App, Component, MarkdownRenderer, setIcon, type TFile } from "obsidian";
+import { answerSpans } from "../answers/answers";
 import { findHits } from "../excerpt/excerpt";
 import { crumb, titleOf } from "../modal/format";
 import { sectionAround } from "./section";
@@ -74,8 +75,16 @@ export class Preview {
 		this.ticksEl = wrap.createDiv({ cls: "jet-ticks" });
 	}
 
-	/** Show a note: around `offset` (the excerpt's hit), with `terms` marked. */
-	async show(file: TFile, terms: readonly string[], offset?: number): Promise<void> {
+	/**
+	 * Show a note: around `offset` (the excerpt's hit), with `terms` marked. `answer` (experiment):
+	 * the line that answers the question, outlined and labelled, and the preview at it.
+	 */
+	async show(
+		file: TFile,
+		terms: readonly string[],
+		offset?: number,
+		answer?: { line: string; question: string },
+	): Promise<void> {
 		const token = ++this.token;
 		this.path = file.path;
 		this.unload();
@@ -100,6 +109,61 @@ export class Preview {
 		}
 		if (token !== this.token) return;
 		this.mark(terms);
+		if (answer) this.outline(answer.line, answer.question);
+	}
+
+	/**
+	 * Answers (experiment): the rendered block that holds the answer line (its list item, table row or
+	 * paragraph) outlined, labelled "Closest to your question", and scrolled to; the hit walk starts
+	 * at its first mark.
+	 */
+	private outline(line: string, question: string): void {
+		const words = (s: string): string =>
+			s
+				.replace(/!?\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2")
+				.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+				// Letters, digits and % only: a table row's cells run together as rendered.
+				.replace(/[^\p{L}\p{N}%]+/gu, "")
+				.toLowerCase();
+		const want = words(line).slice(0, 60);
+		if (want.length < 6) return;
+		let best: HTMLElement | null = null;
+		for (const el of Array.from(
+			this.bodyEl.querySelectorAll<HTMLElement>("li, tr, p, blockquote, td, h1, h2, h3, h4, h5, h6"),
+		)) {
+			if (!words(el.textContent ?? "").includes(want)) continue;
+			// The smallest block holding it: a list item, not the list around it.
+			if (!best || best.contains(el)) best = el;
+		}
+		if (!best) return;
+		best.addClass("jet-answer");
+		// The answer's figures coloured, as in the row.
+		const doc = best.ownerDocument;
+		const walker = doc.createTreeWalker(best, NodeFilter.SHOW_TEXT);
+		const nodes: Text[] = [];
+		for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
+		for (const node of nodes) {
+			let rest: Text = node;
+			let done = 0;
+			for (const [a, b] of answerSpans(question, node.data)) {
+				const mid = rest.splitText(a - done);
+				rest = mid.splitText(b - a);
+				const span = createSpan({ cls: "jet-num" });
+				mid.replaceWith(span);
+				span.append(mid);
+				done = b;
+			}
+		}
+		const label = createSpan({ cls: "jet-alabel", text: "Closest to your question" });
+		// In a table, the label goes in the row's first cell (a row holds cells only).
+		const at = best.tagName === "TR" ? ((best.firstElementChild as HTMLElement | null) ?? best) : best;
+		at.prepend(label);
+		const first = this.marks.findIndex((m) => best?.contains(m));
+		if (first >= 0) {
+			this.marks[this.cur]?.removeClass("is-current");
+			this.cur = first - 1;
+			this.step(1);
+		} else best.scrollIntoView({ block: "center" });
 	}
 
 	clear(): void {

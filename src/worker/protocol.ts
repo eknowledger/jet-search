@@ -1,3 +1,4 @@
+import type { AnswerCandidate, AnswerResult } from "../answers/answers";
 import type { RawNote } from "../engine/fields";
 import type { Hit } from "../engine/jet-engine";
 
@@ -52,7 +53,14 @@ export type Request =
 	/** The notes whose vector is missing or older than the note. */
 	| { op: "meaning:missing" }
 	/** The notes nearest to a question, best first (`scope` / `allow` as for a query). */
-	| { op: "nearest"; seq: number; text: string; k: number; allow?: string[]; scope?: string | string[] };
+	| { op: "nearest"; seq: number; text: string; k: number; allow?: string[]; scope?: string | string[] }
+	/**
+	 * Answers (experiment): where a question's answer is looked for: the first `k` notes by its content
+	 * words (notes with some of them too) and the first `k` by meaning (none while meaning is off).
+	 */
+	| { op: "answers:pool"; text: string; k: number; allow?: string[]; scope?: string | string[] }
+	/** Answers (experiment): the notes sent, re-ranked by the line that best answers the question. */
+	| { op: "answers:rank"; seq: number; text: string; notes: AnswerCandidate[]; meaning: string[] };
 
 export type Stats = { notes: number; segments: number; pending: number; savedAt: number | null; bytes: number };
 
@@ -66,6 +74,9 @@ export type QueryReply = {
 	broken?: boolean;
 };
 export type NearReply = { seq: number; near: Array<{ path: string; score: number }>; ms: number; stale?: boolean };
+export type AnswerPoolReply = { words: string[]; meaning: string[] };
+/** The notes with their lines, best first, and the order to show them in. */
+export type AnswersReply = { seq: number; ranked: AnswerResult[]; order: string[]; ms: number; stale?: boolean };
 
 /** What each request answers. */
 export type Reply<R extends Request> = R extends { op: "open" }
@@ -74,19 +85,23 @@ export type Reply<R extends Request> = R extends { op: "open" }
 		? QueryReply
 		: R extends { op: "nearest" }
 			? NearReply
-			: R extends { op: "meaning:missing" }
-				? string[]
-				: R extends { op: "meaning:load" }
-					? { notes: number; missing: number; vectors: number }
-					: R extends { op: "mtimes" }
-						? Array<[string, number]>
-						: R extends { op: "suggest" }
-							? { text: string | null; notes: number }
-							: R extends { op: "stats" }
-								? Stats
-								: R extends { op: "mentions" }
-									? { notes: number; inside: number }
-									: { notes: number };
+			: R extends { op: "answers:pool" }
+				? AnswerPoolReply
+				: R extends { op: "answers:rank" }
+					? AnswersReply
+					: R extends { op: "meaning:missing" }
+						? string[]
+						: R extends { op: "meaning:load" }
+							? { notes: number; missing: number; vectors: number }
+							: R extends { op: "mtimes" }
+								? Array<[string, number]>
+								: R extends { op: "suggest" }
+									? { text: string | null; notes: number }
+									: R extends { op: "stats" }
+										? Stats
+										: R extends { op: "mentions" }
+											? { notes: number; inside: number }
+											: { notes: number };
 
 export type Envelope = { id: number; req: Request };
 export type Answer = { id: number; result?: unknown; error?: string };

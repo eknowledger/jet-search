@@ -54,6 +54,11 @@ export type JetSettings = {
 	bothLayout: BothLayout;
 	/** Long searches (6+ words, no quotes or filters) go by meaning too: an opt-in. */
 	meaningLong: boolean;
+	/**
+	 * Answers (experiment): a question searched by meaning, or both ways, re-ranks
+	 * its notes by the line that best answers it and shows that line.
+	 */
+	answers: boolean;
 	/** Reopen with the last scope and filters (off by default). */
 	persistFilters: boolean;
 	/** Offer the property key a misspelt one is close to; on by default. */
@@ -76,6 +81,7 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	questionShows: "both",
 	bothLayout: "groups",
 	meaningLong: false,
+	answers: true,
 	persistFilters: false,
 	fixKeys: true,
 };
@@ -156,6 +162,7 @@ export const normalizeData = (raw: unknown): JetData => {
 					: DEFAULT_SETTINGS.questionShows,
 		bothLayout: s.bothLayout === "first" || s.bothLayout === "ranked" ? s.bothLayout : "groups",
 		meaningLong: s.meaningLong === true,
+		answers: s.answers !== false,
 		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
 		fixKeys: s.fixKeys !== false,
 	};

@@ -100,6 +100,7 @@ export class JetSettingTab extends PluginSettingTab {
 		if (key === "questionShows") return s.questionShows;
 		if (key === "bothLayout") return s.bothLayout;
 		if (key === "meaningLong") return s.meaningLong;
+		if (key === "answers") return s.answers;
 		if (key.startsWith(STEM)) return s.stemming.includes(key.slice(STEM.length));
 		switch (key) {
 			case "tapKey":
@@ -169,6 +170,11 @@ export class JetSettingTab extends PluginSettingTab {
 		}
 		if (key === "meaningLong") {
 			s.meaningLong = value === true;
+			this.owner.save();
+			return;
+		}
+		if (key === "answers") {
+			s.answers = value === true;
 			this.owner.save();
 			return;
 		}
@@ -895,6 +901,15 @@ export class JetSettingTab extends PluginSettingTab {
 			],
 		);
 		this.toggle(settingRow(o, "Long searches go by meaning too", MEANING_LONG), "meaningLong");
+		// Answers (experiment).
+		this.toggle(
+			settingRow(
+				o,
+				"Find answers (experiment)",
+				"A question lists its notes by the line that answers it, shows that line under each, and outlines it in the preview.",
+			),
+			"answers",
+		);
 		const p = this.owner.feeder.meaningProgress;
 		const notes = this.app.vault.getMarkdownFiles().length;
 		const rb = this.button(
