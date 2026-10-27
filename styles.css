@@ -1912,8 +1912,8 @@ table.jet-set-keys {
 	color: var(--text-accent);
 	font-weight: 600;
 }
-/* The line that answers, outlined in the preview. */
-.jet-pin .jet-answer {
+/* The line that answers, outlined in the preview: a block (a list item, a paragraph)… */
+.jet-pin .jet-answer:not(tr) {
 	position: relative;
 	margin: 14px 0;
 	padding: 10px 12px 10px 14px;
@@ -1921,8 +1921,14 @@ table.jet-set-keys {
 	border-radius: 4px;
 	background: hsla(var(--interactive-accent-hsl), 0.09);
 }
+/* …or a table row, its cells tinted and the row outlined, the table's layout untouched. */
 .jet-pin tr.jet-answer {
-	outline: 2px solid hsla(var(--interactive-accent-hsl), 0.6);
+	outline: 2px solid hsla(var(--interactive-accent-hsl), 0.7);
+	outline-offset: -1px;
+}
+.jet-pin tr.jet-answer > td,
+.jet-pin tr.jet-answer > th {
+	background: hsla(var(--interactive-accent-hsl), 0.09);
 }
 .jet-pin .jet-alabel {
 	position: absolute;
@@ -1940,6 +1946,8 @@ table.jet-set-keys {
 .jet-pin tr.jet-answer .jet-alabel {
 	position: static;
 	display: block;
+	margin-bottom: 2px;
 	padding: 0;
 	background: none;
+	white-space: nowrap;
 }

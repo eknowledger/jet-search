@@ -137,6 +137,8 @@ export class Preview {
 			if (!best || best.contains(el)) best = el;
 		}
 		if (!best) return;
+		// A table's line is its row: a cell alone would break the table's layout.
+		if (best.matches("td, th")) best = best.closest("tr") ?? best;
 		best.addClass("jet-answer");
 		// The answer's figures coloured, as in the row.
 		const doc = best.ownerDocument;

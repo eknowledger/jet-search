@@ -44,4 +44,22 @@ describe("the preview outlines the answer line (experiment)", () => {
 		render.mockRestore();
 		p.destroy();
 	});
+
+	it("outlines a table's row, not one of its cells, the label in the first cell", async () => {
+		const app = new App();
+		const line = '| "Tool results must follow their tool use blocks" | docs.example.com/tool-use |';
+		(app.vault as unknown as { cachedRead: () => Promise<string> }).cachedRead = async () => `${line}\n`;
+		const render = vi.spyOn(MarkdownRenderer, "render").mockImplementation(async (_a, _md, el: HTMLElement) => {
+			el.innerHTML =
+				'<table><tbody><tr><td>Other row</td><td>x</td></tr><tr><td>"Tool results must follow their tool use blocks"</td><td>docs.example.com/tool-use</td></tr></tbody></table>';
+		});
+		const p = new Preview(app as never, document.body, () => {});
+		await p.show(new TFile("N.md"), ["tool"], 0, { line, question: "how are tool results ordered?" });
+		const rows = [...p.el.querySelectorAll("tr")];
+		expect(rows[1]?.classList.contains("jet-answer")).toBe(true);
+		expect(p.el.querySelector("td.jet-answer")).toBeNull();
+		expect(rows[1]?.firstElementChild?.querySelector(".jet-alabel")).not.toBeNull();
+		render.mockRestore();
+		p.destroy();
+	});
 });
