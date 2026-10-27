@@ -92,7 +92,7 @@ export const contentTerms = (q: string): string[] => [...new Set(tokenize(q).fil
 
 /**
  * Where a text has the question's words, the forms that count (as the line was scored: "orders" for
- * "order", not "keyboard" for "key"), joined words' parts too: what a row marks.
+ * "order", not "keyboard" for "key"): what a row marks.
  */
 export const questionWordSpans = (question: string, text: string): Array<[number, number]> => {
 	const stems = new Set(contentTerms(question).map((w) => TUNING.stem(w)));
@@ -102,27 +102,16 @@ export const questionWordSpans = (question: string, text: string): Array<[number
 		const a = m.index ?? 0;
 		if (stems.has(TUNING.stem(normalize(m[0])))) out.push([a, a + m[0].length]);
 	};
-	for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
-		const before = out.length;
-		add(m);
-		// No whole-word hit: its parts (NebulaSDK, AutoSave).
-		if (out.length === before && /\p{Ll}\p{Lu}/u.test(m[0]))
-			for (const p of m[0].matchAll(/\p{Lu}?\p{Ll}+|\p{Lu}+(?!\p{Ll})|\p{N}+/gu))
-				add(Object.assign([p[0]], { index: (m.index ?? 0) + (p.index ?? 0) }) as RegExpMatchArray);
-	}
+	for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) add(m);
 	return out;
 };
 
-/**
- * A line's text as read for words: a link's shown text, not its target; the parts of a joined word
- * apart, as the index reads them ("AutoSave" is auto and save); lower case, letters folded.
- */
+/** A line's text as read for words: a link's shown text, not its target; lower case, letters folded. */
 const readable = (s: string): string =>
 	normalize(
-		(s.includes("[")
+		s.includes("[")
 			? s.replace(/!?\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-			: s
-		).replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2"),
+			: s,
 	);
 const LETTER = /[\p{L}\p{N}]/u;
 /** Whether a character continues a word (ASCII letters and digits at once, the rest by Unicode class). */
