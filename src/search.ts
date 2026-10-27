@@ -448,6 +448,8 @@ export class Search {
 			);
 			if (!r || this.current?.text !== text || !r.order.length) return;
 			const by = new Map(r.ranked.map((x) => [x.path, x]));
+			// The meter: each line's score against the best one's.
+			const best = Math.max(...r.ranked.map((x) => x.score), 1e-9);
 			const excerpts = this.data().settings.excerpts;
 			const items: Item[] = [];
 			for (const path of r.order) {
@@ -461,7 +463,7 @@ export class Search {
 						meaning: a.from === "meaning",
 						excerpt: shown ? { text: shown.text, marks: shown.marks, more: 0 } : null,
 						hit: { terms: contentWords(text), offset: a.line?.offset },
-						answer: { cover: a.cover, nums: shown?.nums ?? [], line: a.line?.text ?? "" },
+						answer: { strength: a.score / best, nums: shown?.nums ?? [], line: a.line?.text ?? "" },
 					}),
 				);
 			}

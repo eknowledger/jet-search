@@ -90,15 +90,39 @@ const STOP = new Set(
 /** The question's content words, as the index reads them (no small words). */
 export const contentTerms = (q: string): string[] => [...new Set(tokenize(q).filter((w) => !STOP.has(w)))];
 
-/** The question's content words as stems: marked as word starts, they mark every form ("devic"). */
-export const questionStems = (q: string): string[] => [...new Set(contentTerms(q).map((w) => TUNING.stem(w)))];
+/**
+ * Where a text has the question's words, the forms that count (as the line was scored: "orders" for
+ * "order", not "keyboard" for "key"), joined words' parts too: what a row marks.
+ */
+export const questionWordSpans = (question: string, text: string): Array<[number, number]> => {
+	const stems = new Set(contentTerms(question).map((w) => TUNING.stem(w)));
+	const out: Array<[number, number]> = [];
+	if (!stems.size) return out;
+	const add = (m: RegExpMatchArray): void => {
+		const a = m.index ?? 0;
+		if (stems.has(TUNING.stem(normalize(m[0])))) out.push([a, a + m[0].length]);
+	};
+	for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+		const before = out.length;
+		add(m);
+		// No whole-word hit: its parts (NebulaSDK, AutoSave).
+		if (out.length === before && /\p{Ll}\p{Lu}/u.test(m[0]))
+			for (const p of m[0].matchAll(/\p{Lu}?\p{Ll}+|\p{Lu}+(?!\p{Ll})|\p{N}+/gu))
+				add(Object.assign([p[0]], { index: (m.index ?? 0) + (p.index ?? 0) }) as RegExpMatchArray);
+	}
+	return out;
+};
 
-/** A line's text as read for words: a link's shown text, not its target; lower case, letters folded. */
+/**
+ * A line's text as read for words: a link's shown text, not its target; the parts of a joined word
+ * apart, as the index reads them ("AutoSave" is auto and save); lower case, letters folded.
+ */
 const readable = (s: string): string =>
 	normalize(
-		s.includes("[")
+		(s.includes("[")
 			? s.replace(/!?\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-			: s,
+			: s
+		).replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2"),
 	);
 const LETTER = /[\p{L}\p{N}]/u;
 /** Whether a character continues a word (ASCII letters and digits at once, the rest by Unicode class). */

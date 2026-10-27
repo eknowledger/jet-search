@@ -56,10 +56,10 @@ export type Entry =
 			meaning?: boolean;
 			/**
 			 * Answers (experiment): the excerpt is the line that answers the question, `nums` its
-			 * figures (within the excerpt), `cover` how much of the question it holds, `line` the line as
-			 * written, for the preview to outline.
+			 * figures (within the excerpt), `strength` its score against the first row's (the meter),
+			 * `line` the line as written, for the preview to outline.
 			 */
-			answer?: { cover: number; nums: Ranges; line: string };
+			answer?: { strength: number; nums: Ranges; line: string };
 	  }
 	/** A recent search; `parts` shows its scope and filters as chips. */
 	| {
@@ -557,7 +557,10 @@ export class JetModal extends Modal {
 		});
 		this.listEl.addEventListener("mousemove", (e) => {
 			const row = (e.target as HTMLElement).closest<HTMLElement>(".jet-row");
-			if (row && Number(row.dataset.index) !== this.selected) this.select(Number(row.dataset.index), false);
+			if (row && Number(row.dataset.index) !== this.selected) {
+				this.moved = true;
+				this.select(Number(row.dataset.index), false);
+			}
 		});
 		this.keys();
 	}
@@ -655,6 +658,8 @@ export class JetModal extends Modal {
 	private lastEntries: Entry[] = [];
 	/** Answers (experiment): the list shown is the notes by the line that answers the question. */
 	private answersShown = false;
+	/** You moved the selection in this list (keys or the pointer): a later paint does not take it back. */
+	private moved = false;
 
 	paint(entries: Entry[], status = ""): void {
 		// An answer that arrives after Jet closed draws nothing (and loads no preview).
@@ -675,6 +680,8 @@ export class JetModal extends Modal {
 		// Answers (experiment): one list, in the order of the lines that answer the question.
 		const answers = entries.some((e) => e.type === "header" && e.answers);
 		if (answers !== this.answersShown) {
+			// The answers replace the lists: their first row is selected, unless you moved the selection.
+			if (answers && !this.moved) this.selectedKey = null;
 			this.answersShown = answers;
 			this.drawBanner();
 		}
@@ -821,6 +828,7 @@ export class JetModal extends Modal {
 		this.drawScope();
 		const scope = this.whereArg();
 		this.selectedKey = null;
+		this.moved = false;
 		const seq = ++this.listSeq;
 		// A new list starts at its top: the selected first row is in view.
 		this.listEl.scrollTop = 0;
@@ -1636,6 +1644,7 @@ export class JetModal extends Modal {
 			i = (i + step + n) % n;
 			const e = this.entries[i];
 			if (e && selectable(e)) {
+				this.moved = true;
 				this.select(i);
 				return;
 			}
@@ -2290,10 +2299,10 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 	}
 	if (e.answer) {
 		// Answers (experiment): how much of the question the row's line holds.
-		const c = closeness(e.answer.cover);
+		const c = closeness(e.answer.strength);
 		const m = l1.createSpan({
 			cls: `jet-close is-${c.word}`,
-			attr: { "aria-label": `Its line holds ${c.pct}% of your question's words, by how rare they are` },
+			attr: { "aria-label": `How close its line is to your question: ${c.pct}% of the first row's` },
 		});
 		m.createSpan({ cls: "jet-cbar" }).createSpan({ cls: "jet-cfill" }).style.width = `${c.pct}%`;
 		m.appendText(c.word);

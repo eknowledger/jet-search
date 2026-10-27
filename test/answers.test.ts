@@ -7,6 +7,7 @@ import {
 	contentTerms,
 	fuseOrders,
 	linesOf,
+	questionWordSpans,
 	rankAnswers,
 	SURE_COVER,
 } from "../src/answers/answers";
@@ -163,6 +164,25 @@ describe("re-ranking notes by their best line", () => {
 		expect(first[0]?.line?.text).toContain("10 per day");
 		const again = await rankAnswers(q, [note("N.md", "- the kiosk quota is 20 per day")], deps);
 		expect(again[0]?.line?.text).toContain("20 per day");
+	});
+});
+
+describe("a joined word's parts", () => {
+	it("meets the parts of a joined word as the index does, and marks only the forms that count", async () => {
+		const r = await rankAnswers(
+			"how much throughput for auto saving?",
+			[
+				note("A.md", "- Risk: kiosk capacity (120 TPS total for AutoSave)"),
+				note("B.md", "- Nothing about it here at all"),
+			],
+			rare({ auto: 9, saving: 9, throughput: 9 }),
+		);
+		expect(r?.[0]?.path).toBe("A.md");
+		const text = "Keyboard keys: the key orders for AutoSave";
+		const spans = questionWordSpans("which key orders need auto saving?", text).map(([a, b]) =>
+			text.slice(a, b),
+		);
+		expect(spans).toEqual(["keys", "key", "orders", "Auto", "Save"]);
 	});
 });
 

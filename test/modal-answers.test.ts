@@ -18,14 +18,14 @@ const ANSWERS: Entry[] = [
 		badge: "by meaning",
 		meaning: true,
 		excerpt: { text: "Screens are ~20-30% of the sales", marks: [[27, 32]], more: 0 },
-		answer: { cover: 0.9, nums: [[12, 19]], line: "- Screens are ~20-30% of the sales" },
+		answer: { strength: 1, nums: [[12, 19]], line: "- Screens are ~20-30% of the sales" },
 	}),
 	item("a.md", {
 		badge: "by words",
 		excerpt: { text: "A line", marks: [], more: 0 },
-		answer: { cover: 0.55, nums: [], line: "A line" },
+		answer: { strength: 0.9, nums: [], line: "A line" },
 	}),
-	item("b.md", { badge: "both", answer: { cover: 0.2, nums: [], line: "" } }),
+	item("b.md", { badge: "both", answer: { strength: 0.5, nums: [], line: "" } }),
 ];
 
 const host = (): ModalHost => ({
@@ -60,6 +60,40 @@ afterEach(() => {
 	open = null;
 });
 
+/** Lists both ways at once, the answers a moment later (after the pause, as Search sends them). */
+const later = (): ModalHost => ({
+	...host(),
+	list: (_text, paint) => {
+		paint([
+			{ type: "header", label: "Titles", count: 2 },
+			item("b.md"),
+			item("a.md"),
+			item("m1.md", { meaning: true }),
+		]);
+		setTimeout(() => paint(ANSWERS), 20);
+	},
+});
+const press = (m: JetModal, key: string) =>
+	(m.scope as unknown as { press(k: string, m: unknown[]): boolean }).press(key, []);
+const selected = () => $(".jet-row.is-selected .jet-rt")?.textContent ?? null;
+
+describe("the selection when the answers come (experiment)", () => {
+	it("goes to the first answer, unless you moved it meanwhile", async () => {
+		const m = new JetModal(new App() as never, later());
+		open = m;
+		m.open();
+		type(m, "what share of the sales has screens?");
+		expect(selected()).toBe("b");
+		await new Promise((r) => setTimeout(r, 40));
+		expect(selected()).toBe("m1");
+		type(m, "what share of the sales has screens now?");
+		press(m, "ArrowDown");
+		expect(selected()).toBe("a");
+		await new Promise((r) => setTimeout(r, 40));
+		expect(selected()).toBe("a");
+	});
+});
+
 describe("answers in the window (experiment)", () => {
 	it("keeps the answers' order in a search both ways, says why, and shows each line's closeness and figures", () => {
 		const m = new JetModal(new App() as never, host());
@@ -71,7 +105,7 @@ describe("answers in the window (experiment)", () => {
 		expect($(".jet-ban .jet-bt")?.textContent).toBe("A question: notes by the line that answers it");
 		const meters = $$(".jet-close");
 		expect(meters.map((e) => e.textContent)).toEqual(["close", "fair", "loose"]);
-		expect((meters[0]?.querySelector(".jet-cfill") as HTMLElement | null)?.style.width).toBe("90%");
+		expect((meters[0]?.querySelector(".jet-cfill") as HTMLElement | null)?.style.width).toBe("100%");
 		const l3 = $(".jet-row .jet-l3");
 		expect(l3?.querySelector(".jet-num")?.textContent).toBe("~20-30%");
 		expect(l3?.querySelector("mark.jet-mark")?.textContent).toBe("sales");

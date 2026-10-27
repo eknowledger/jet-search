@@ -3,14 +3,15 @@
  * text, the question's words marked and the answer's figures coloured; and how close it is, as a
  * meter. Pure.
  */
-import { findHits } from "../excerpt/excerpt";
-import { answerSpans, questionStems } from "./answers";
+import { answerSpans, questionWordSpans } from "./answers";
 
 export type Ranges = Array<[number, number]>;
 export type AnswerShown = { text: string; marks: Ranges; nums: Ranges };
 
 /** About two rows of excerpt. */
-const WIDTH = 200;
+const WIDTH = 180;
+/** Of it, the context kept before the answer's first figure. */
+const LEAD = 40;
 
 /** A line's Markdown as text: no list marker, emphasis, link target or table pipes. */
 export const plainLine = (s: string): string =>
@@ -28,11 +29,11 @@ export const plainLine = (s: string): string =>
 export const answerExcerpt = (line: string, question: string, width = WIDTH): AnswerShown => {
 	const full = plainLine(line);
 	const nums = answerSpans(question, full);
-	const marks = findHits(full, questionStems(question), { limit: 50 });
+	const marks = questionWordSpans(question, full);
 	if (full.length <= width) return { text: full, marks, nums };
 	// A long line: from a little before its first figure (or first word of the question).
 	const at = nums[0]?.[0] ?? marks[0]?.[0] ?? 0;
-	let from = Math.max(0, Math.min(at - 60, full.length - width));
+	let from = Math.max(0, Math.min(at - LEAD, full.length - width));
 	if (from > 0) {
 		const space = full.lastIndexOf(" ", from);
 		from = space > 0 && from - space < 20 ? space + 1 : from;
@@ -47,8 +48,11 @@ export const answerExcerpt = (line: string, question: string, width = WIDTH): An
 	return { text, marks: shift(marks), nums: shift(nums) };
 };
 
-/** How close a line is to the question, as the row's meter says it: how much of the question it holds. */
-export const closeness = (cover: number): { pct: number; word: "close" | "fair" | "loose" } => ({
-	pct: Math.round(100 * Math.max(0.1, Math.min(1, cover))),
-	word: cover >= 0.8 ? "close" : cover >= 0.5 ? "fair" : "loose",
+/**
+ * How close a row's line is to the question, as its meter says it: its score against the
+ * first row's, close within 5%, fair within 15%, loose beyond.
+ */
+export const closeness = (strength: number): { pct: number; word: "close" | "fair" | "loose" } => ({
+	pct: Math.round(100 * Math.max(0.1, Math.min(1, strength))),
+	word: strength >= 0.95 ? "close" : strength >= 0.85 ? "fair" : "loose",
 });

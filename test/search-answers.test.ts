@@ -96,7 +96,9 @@ describe("answers in the search (experiment)", () => {
 		expect(first?.excerpt?.text).toBe("Kiosk screens are ~20-30% of the sales");
 		const nums = first?.answer?.nums ?? [];
 		expect(nums.map(([a, b]) => first?.excerpt?.text.slice(a, b))).toEqual(["~20-30%"]);
-		expect(first?.answer?.cover).toBe(0.9);
+		// The meter: against the best line's score.
+		expect(first?.answer?.strength).toBe(1);
+		expect(items[1]?.answer?.strength).toBeCloseTo(1 / 3);
 		expect(first?.hit?.offset).toBe(TEXTS["Handoff.md"]?.indexOf("- **Kiosk"));
 		// The notes went to the worker with their text, where their body starts, and which list had them.
 		expect(sent.notes?.map((n) => [n.path, n.from])).toEqual([
