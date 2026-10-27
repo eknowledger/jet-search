@@ -167,6 +167,24 @@ describe("re-ranking notes by their best line", () => {
 	});
 });
 
+describe("money, and lines that only point elsewhere", () => {
+	it("wants an amount of money for a price, and puts a list of links below the line itself", async () => {
+		expect(answerShapes("how much was the walnut bookshelf?").some((r) => r.test("€1,180 installed"))).toBe(true);
+		expect(answerShapes("what does the hotel cost?").some((r) => r.test("88,000 yen"))).toBe(true);
+		expect(answerKind("how much was the bookshelf?")).toBe("number");
+		const r = await rankAnswers(
+			"how much was the walnut bookshelf?",
+			[
+				note("Kitchen.md", "## Parts\n- [[Bookshelf — walnut]]\n- [[Cabinets]]"),
+				note("Bookshelf — walnut.md", "**Choice:** walnut, Natural Oil, **€1,180 installed**."),
+			],
+			rare({ walnut: 3, bookshelf: 4 }),
+		);
+		expect(r?.[0]?.path).toBe("Bookshelf — walnut.md");
+		expect(r?.[0]?.line?.text).toContain("€1,180");
+	});
+});
+
 describe("a line as a row shows it", () => {
 	it("reads the Markdown as text: no list number, emphasis, link target or table pipes", async () => {
 		const { plainLine } = await import("../src/answers/show");

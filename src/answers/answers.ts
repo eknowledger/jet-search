@@ -139,8 +139,13 @@ export const answerKind = (q: string): AnswerKind => {
 
 const DATE =
 	/\b(20\d\d-\d\d-\d\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s?\d{1,2}|\b(end of|by) (january|february|march|april|may|june|july|august|september|october|november|december|q[1-4])|\b\d{1,2}[/-]\d{1,2}\b/i;
+/** An amount of money: €1,180, $6, 1,150 euros. */
+const MONEY = /[€$£¥₹]\s?\d|\d[\d.,]*\s?(€|£|¥|eur\b|euros?\b|usd\b|dollars?\b|yen\b)/i;
 const KIND: Record<Exclude<AnswerKind, null>, RegExp> = {
-	number: /\d[\d.,]*\s?(%|×|x\b|ms|s\b|mb|gb|kb|k\b|m\b|tps|staff|engineers|weeks?|days?|hours?)|\d+[-–]\d+|~\d|\d+\.\d/i,
+	number: new RegExp(
+		`\\d[\\d.,]*\\s?(%|×|x\\b|ms|s\\b|mb|gb|kb|k\\b|m\\b|tps|staff|engineers|weeks?|days?|hours?)|\\d+[-–]\\d+|~\\d|\\d+\\.\\d|${MONEY.source}`,
+		"i",
+	),
 	who: /\b(owner|owns|led by|lead)\b|\b[A-Z][a-z]+ [A-Z][a-z]+\b/,
 	when: DATE,
 	why: /\b(because|due to|since|so that|reason)\b/i,
@@ -163,6 +168,13 @@ export const answerShapes = (q: string): RegExp[] => {
 	if (/\bhow often\b/.test(t)) out.push(/\b(every|per|each|a day|a week|times)\b/i);
 	if (/\b(slower|faster|cheaper|bigger|smaller|more expensive)\b/.test(t)) out.push(/\d\s?(×|x\b|times)|\d\s?%/i);
 	if (/\bhow many\b/.test(t)) out.push(/\b\d[\d,.]*\b/);
+	// A price, a cost, what was paid: an amount of money.
+	if (
+		/\b(cost|costs|price|priced|paid|pay|spend|spent|budget|quote|quoted|expensive|cheap|cheaper)\b|\bhow much (was|were|is|are) (the|a|an|our|my)\b/.test(
+			t,
+		)
+	)
+		out.push(MONEY);
 	if (/\b(won|win|chose|choose|picked|decided|preferred|winner)\b/.test(t))
 		out.push(/\b(won|winner|chose|chosen|decided|decision|picked|preferred|recommend)/i);
 	if (/^who\b|\bwho (owns|is|leads|runs)\b/.test(t)) out.push(KIND.who);
@@ -205,6 +217,8 @@ export type AnswerTuning = {
 	closeness: number;
 	/** The title as a line, for this much. */
 	title: number;
+	/** A line that is only a link to another note (a list of links): its words are that note's, for this much. */
+	link: number;
 	/** How word forms meet: the stem of a word. */
 	stem: (w: string) => string;
 };
@@ -216,6 +230,7 @@ export const TUNING: AnswerTuning = {
 	kind: 1.15,
 	closeness: 0.6,
 	title: 0.8,
+	link: 0.5,
 	stem: englishStem,
 };
 
@@ -227,6 +242,10 @@ const keyOf = (w: string, s: string): string => {
 	while (i < w.length && i < s.length && w[i] === s[i]) i++;
 	return w.slice(0, Math.max(i, Math.min(3, w.length)));
 };
+
+/** A line that is only links (a list item `- [[Bookshelf — walnut]]`): it points at the answer, it is not one. */
+const LINK_ONLY =
+	/^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:\[\[[^\]]+\]\]|\[[^\]]*\]\([^)]*\))(?:\s*[,·—–-]?\s*(?:\[\[[^\]]+\]\]|\[[^\]]*\]\([^)]*\)))*\s*[.,;:]?\s*$/u;
 
 /** A line as scored: its text read for words (lower case, letters folded) kept once made. */
 type Line = AnswerLine & { low?: string };
@@ -304,6 +323,7 @@ const scorer = (terms: readonly Term[], kind: AnswerKind, shapes: readonly RegEx
 				}
 			if (!score) return 0;
 			score *= 0.5 + 0.5 * (found / terms.length);
+			if (LINK_ONLY.test(l.text)) score *= tune.link;
 			if (!useShape) return score;
 			if (shapes.some((r) => r.test(l.text))) score *= tune.shape;
 			else if (kind && KIND[kind].test(l.text)) score *= tune.kind;
