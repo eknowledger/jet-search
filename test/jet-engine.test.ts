@@ -327,3 +327,28 @@ describe("mentions of a name", () => {
 		expect(e.mentions(["cobalt"])).toEqual(["a.md"]);
 	});
 });
+
+describe("for the answers re-rank (experiment)", () => {
+	it("counts in how many live notes a word occurs, its forms once per note", () => {
+		const e = new JetEngine();
+		e.configure({ stemming: ["en"] });
+		e.build([
+			note("A.md", "Two devices and one device."),
+			note("B.md", "A device."),
+			note("C.md", "Nothing here."),
+		]);
+		expect(e.docFreq(["devices", "nothing", "absent"])).toEqual([2, 1, 0]);
+		e.delete("B.md");
+		expect(e.docFreq(["device"])).toEqual([1]);
+		e.upsert(note("D.md", "Devices again."));
+		expect(e.docFreq(["device"])).toEqual([2]);
+	});
+
+	it("lists notes with some of the words too when asked, even when one has them all", () => {
+		const e = engine();
+		expect(paths(e, "runtime frame")).toEqual(["Cobalt.md"]);
+		const any = e.query(parseQuery("runtime frame"), { now: 0, any: true }).hits.map((h) => h.path);
+		expect(any[0]).toBe("Cobalt.md");
+		expect(any).toContain("Pebble.md");
+	});
+});

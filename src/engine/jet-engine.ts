@@ -15,6 +15,11 @@ export type QueryOptions = {
 	allow?: (path: string) => boolean;
 	/** Rank fewer typo edits before score; by default the typo weights decide. */
 	editsFirst?: boolean;
+	/**
+	 * Notes with some of the words too, scaled by the share matched, even when some note has them all
+	 * (the answers re-rank's pool: a question's words are rarely all in the note that answers it).
+	 */
+	any?: boolean;
 };
 
 /** What the rest of Jet sees of an engine, so the engine can be swapped. */
@@ -474,7 +479,7 @@ export class JetEngine implements SearchEngine {
 			}
 		}
 		// AND first; if no note has every word, notes with some, scaled by the share matched.
-		const all = candidates.filter((c) => c.matched === n);
+		const all = opts.any ? [] : candidates.filter((c) => c.matched === n);
 		const pool = all.length ? all : candidates;
 		const typed = q.words.join(" ");
 		const top = new TopK(limit, opts.editsFirst ? byKey : byScore);
@@ -567,6 +572,35 @@ export class JetEngine implements SearchEngine {
 		const notes = this.query({ words, excluded: q.excluded, phrases: [], lastIsPrefix: false }, { limit: 1000 })
 			.hits.length;
 		return { text: notes ? text : null, notes };
+	}
+
+	/**
+	 * In how many live notes each word occurs, its word forms included (the root groups of the stemming
+	 * languages): how rare the word is in the vault, for re-ranking answers by their best line. A note
+	 * with three forms of a word counts once.
+	 */
+	docFreq(words: readonly string[]): number[] {
+		const parts = this.parts();
+		return words.map((w) => {
+			const seen = new Set<number>();
+			for (const [p, { seg, dead }] of parts.entries()) {
+				const add = (d: number): boolean => {
+					if (!dead?.[d]) seen.add(p * 0x1000000 + d);
+					return false;
+				};
+				const forms = new Set<number>();
+				const exact = exactTerm(seg, w);
+				if (exact >= 0) forms.add(exact);
+				for (const lang of this.config.stemming)
+					if (stemmable(lang, w)) for (const t of rootGroup(seg, lang, STEMMERS[lang](w))) forms.add(t);
+				for (const t of forms) {
+					for (let k = seg.metaOff[t] as number, end = seg.metaOff[t + 1] as number; k < end; k++)
+						add(seg.metaDocs[k] as number);
+					seg.someBody(t, add);
+				}
+			}
+			return seen.size;
+		});
 	}
 
 	/**
