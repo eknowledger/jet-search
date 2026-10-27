@@ -20,6 +20,7 @@ export const plainLine = (s: string): string =>
 		.replace(/!?\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2")
 		.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
 		.replace(/(\*\*|__|`)/g, "")
+		.replace(/(^|[^\p{L}\p{N}])[*_](?=\S)([^*_\n]*?\S)[*_](?![\p{L}\p{N}])/gu, "$1$2")
 		.replace(/^\|\s*|\s*\|\s*$/g, "")
 		.replace(/\s*\|\s*/g, " · ")
 		.replace(/\s+/g, " ")

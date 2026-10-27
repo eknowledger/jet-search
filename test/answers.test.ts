@@ -167,6 +167,16 @@ describe("re-ranking notes by their best line", () => {
 	});
 });
 
+describe("a line as a row shows it", () => {
+	it("reads the Markdown as text: no list number, emphasis, link target or table pipes", async () => {
+		const { plainLine } = await import("../src/answers/show");
+		expect(plainLine("5. **Stock checks** — *not found in code*. See [[Notes/Kiosk|the kiosk]] and `x_y`.")).toBe(
+			"Stock checks — not found in code. See the kiosk and x_y.",
+		);
+		expect(plainLine("| Screens | 20-30% |")).toBe("Screens · 20-30%");
+	});
+});
+
 describe("the words a row marks", () => {
 	it("marks only the forms of the question's words that counted", () => {
 		const text = "Keyboard keys: the key orders";
