@@ -27,4 +27,21 @@ describe("the preview outlines the answer line (experiment)", () => {
 		render.mockRestore();
 		p.destroy();
 	});
+
+	it("finds a numbered list item's line, its number not rendered as text", async () => {
+		const app = new App();
+		(app.vault as unknown as { cachedRead: () => Promise<string> }).cachedRead = async () =>
+			"5. **Stock checks** are handled by the kiosk.\n";
+		const render = vi.spyOn(MarkdownRenderer, "render").mockImplementation(async (_a, _md, el: HTMLElement) => {
+			el.innerHTML = '<ol start="5"><li><strong>Stock checks</strong> are handled by the kiosk.</li></ol>';
+		});
+		const p = new Preview(app as never, document.body, () => {});
+		await p.show(new TFile("N.md"), ["kiosk"], 0, {
+			line: "5. **Stock checks** are handled by the kiosk.",
+			question: "who handles stock checks?",
+		});
+		expect(p.el.querySelector("li")?.classList.contains("jet-answer")).toBe(true);
+		render.mockRestore();
+		p.destroy();
+	});
 });

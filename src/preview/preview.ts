@@ -125,7 +125,8 @@ export class Preview {
 				// Letters, digits and % only: a table row's cells run together as rendered.
 				.replace(/[^\p{L}\p{N}%]+/gu, "")
 				.toLowerCase();
-		const want = words(line).slice(0, 60);
+		// Without its list marker or quote: the rendered item has none (an ordered list's number included).
+		const want = words(line.replace(/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+|>\s*)+/u, "")).slice(0, 60);
 		if (want.length < 6) return;
 		let best: HTMLElement | null = null;
 		for (const el of Array.from(
