@@ -26,12 +26,12 @@ describe("row formatting", () => {
 			el,
 			"Pattern Spec",
 			[
-				[9, 13],
+				[8, 12],
 				[0, 1],
 				[0, 2],
 			],
 			"jet-th",
 		);
-		expect(el.innerHTML).toBe('<span class="jet-th">Pl</span>atform <span class="jet-th">Spec</span>');
+		expect(el.innerHTML).toBe('<span class="jet-th">Pa</span>ttern <span class="jet-th">Spec</span>');
 	});
 });

@@ -306,10 +306,10 @@ describe("QA: scopes typed in the search box", () => {
 	});
 
 	// the @ list matches prefixes with spaces kept; the parser matches them without.
-	it("`@ambst` lists Amber Studio, the scope the space after it applies", () => {
-		expect(parseScope("@ambst plugin", [sc("amb", "Amber Studio")]).applied?.id).toBe("amb");
+	it("`@amberst` lists Amber Studio, the scope the space after it applies", () => {
+		expect(parseScope("@amberst plugin", [sc("amb", "Amber Studio")]).applied?.id).toBe("amb");
 		const { m } = real([sc("amb", "Amber Studio"), sc("cobalt", "Cobalt")]);
-		type(m, "@ambst");
+		type(m, "@amberst");
 		const rows = [...document.querySelectorAll(".jet-ac .jet-acr")].map((r) => r.textContent ?? "");
 		expect(rows.join(" | ")).toContain("Amber Studio");
 	});

@@ -5,7 +5,7 @@ const notes = (s: string): string[] => tokenize(s, { parts: true });
 
 describe("tokenize", () => {
 	it("cuts runs of letters and digits and lower-cases them", () => {
-		expect(tokenize("garden-plan, v2 Orchid")).toEqual(["world", "state", "v2", "orchid"]);
+		expect(tokenize("garden-plan, v2 Orchid")).toEqual(["garden", "plan", "v2", "orchid"]);
 	});
 
 	it("drops one-letter words but keeps digits", () => {

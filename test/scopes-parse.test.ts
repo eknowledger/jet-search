@@ -110,13 +110,13 @@ describe("typing a scope", () => {
 	});
 
 	it("@ or in: with the start of one scope's name applies it once a space follows (@cob)", () => {
-		const p = parseScope("@cobl world", SCOPES);
+		const p = parseScope("@coba world", SCOPES);
 		expect(p.applied?.id).toBe("cobalt");
 		expect(p).toMatchObject({ text: "world", complete: true });
 		expect(parseScope("in:haz notes", SCOPES).applied?.id).toBe("auto");
 		expect(parseScope("@caf menu", SCOPES).applied?.id).toBe("cafe");
 		// Still being typed: not yet.
-		expect(parseScope("@cobl", SCOPES).complete).toBe(false);
+		expect(parseScope("@coba", SCOPES).complete).toBe(false);
 		// The start of several names (AMB, Amber Studio ×2): nothing applies.
 		expect(parseScope("@am plugin", SCOPES).applied).toBeUndefined();
 		// An exact name wins over longer names that start with it.

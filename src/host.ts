@@ -215,7 +215,7 @@ export class JetHost implements ModalHost {
 				if (!a) return null;
 				a.ensure();
 				const all = a.all();
-				// Typed with or without its spaces (`@amb st`, `@ambst`).
+				// Typed with or without its spaces (`@amber st`, `@amberst`).
 				const tight = (v: string): string => fold(v).replace(/\s+/g, "");
 				const items = all
 					.filter((s) =>

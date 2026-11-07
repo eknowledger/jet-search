@@ -35,15 +35,15 @@ describe("prefix range", () => {
 
 describe("typo walk", () => {
 	it("finds one-edit and swapped-letter matches with the first letter fixed", () => {
-		const terms = ["mustard", "nebulasdk", "mustord", "mutard", "nustard", "speech"].sort();
-		const found = typoMatches(terms, "msutard", 1).map((m) => [terms[m.index], m.edits]);
+		const terms = ["garden", "nebulasdk", "gazden", "gadne", "narden", "speech"].sort();
+		const found = typoMatches(terms, "gardne", 1).map((m) => [terms[m.index], m.edits]);
 		expect(found).toEqual(
 			expect.arrayContaining([
-				["mustard", 1],
-				["mutard", 1],
+				["garden", 1],
+				["gadne", 1],
 			]),
 		);
-		expect(found.map(([t]) => t)).not.toContain("nustard");
+		expect(found.map(([t]) => t)).not.toContain("narden");
 	});
 
 	it("matches a brute-force edit distance on 10,000 random pairs", () => {

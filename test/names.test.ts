@@ -45,8 +45,8 @@ describe("fuzzy names", () => {
 		expect(hit.text).toBe("Kiln — Pattern Spec");
 		expect(hit.ranges).toEqual([
 			[7, 8],
-			[10, 11],
-			[16, 20],
+			[9, 10],
+			[15, 19],
 		]);
 		expect(marked(hit)).toEqual(["P", "t", "Spec"]);
 		expect(hit.exact).toBe(false);

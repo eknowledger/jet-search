@@ -44,7 +44,7 @@ describe("filters in the text", () => {
 	});
 
 	it("the text without the filters' pieces", () => {
-		const t = "status:draft world #cobalt state";
+		const t = "status:draft garden #cobalt plan";
 		expect(withoutPieces(t, findFilters(t, known))).toBe("garden plan");
 	});
 

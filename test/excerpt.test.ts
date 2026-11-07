@@ -31,9 +31,9 @@ describe("the best hit", () => {
 	});
 
 	it("counts a word as typed above a word form or a typo of it", () => {
-		const text = "It would take words.\nThe garden plan.";
+		const text = "It would take words.\nThe world.";
 		const x = cutExcerpt(text, ["would", "words", "world"], { exact: ["world"] });
-		expect(x?.text).toBe("The garden plan.");
+		expect(x?.text).toBe("The world.");
 		const y = cutExcerpt("Her studies.\nOne study, done.", ["studies", "study"], { exact: ["study"] });
 		expect(y?.line).toBe(1);
 	});
