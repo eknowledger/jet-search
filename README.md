@@ -23,4 +23,4 @@ The index and the note vectors live in IndexedDB on your device (one per vault, 
 
 ## Licence
 
-Jet Search: chosen before publishing. The meaning model, potion-base-8M by Minish Lab, is MIT-licensed.
+Jet Search is released under the [MIT licence](LICENSE). The meaning model, potion-base-8M by Minish Lab, is MIT-licensed.
