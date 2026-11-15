@@ -18,7 +18,7 @@ const PROPS = ["type", "status", "project", "area", "created", "date", "tags"];
 export class Preview {
 	readonly el: HTMLElement;
 	private readonly headEl: HTMLElement;
-	private readonly bodyEl: HTMLElement;
+	private bodyEl: HTMLElement;
 	private readonly ticksEl: HTMLElement;
 	private readonly countEl: HTMLElement;
 	private comp: Component | null = null;
@@ -100,14 +100,19 @@ export class Preview {
 		this.bodyEl.empty();
 		this.comp = new Component();
 		this.comp.load();
+		// Rendered off the page, then swapped in: Obsidian reads styles as it renders, and each read on the
+		// page would lay it out again (a dropped frame or more per note).
+		const fresh = createDiv({ cls: "jet-pin markdown-rendered" });
 		try {
-			await MarkdownRenderer.render(this.app, text.slice(from, to), this.bodyEl, file.path, this.comp);
+			await MarkdownRenderer.render(this.app, text.slice(from, to), fresh, file.path, this.comp);
 		} catch (e) {
 			console.warn("Jet Search: preview could not render; showing the text", e);
-			this.bodyEl.empty();
-			this.bodyEl.createEl("pre", { cls: "jet-plain", text: text.slice(from, to) });
+			fresh.empty();
+			fresh.createEl("pre", { cls: "jet-plain", text: text.slice(from, to) });
 		}
 		if (token !== this.token) return;
+		this.bodyEl.replaceWith(fresh);
+		this.bodyEl = fresh;
 		this.mark(terms);
 		if (answer) this.outline(answer.line, answer.question);
 	}
@@ -255,9 +260,12 @@ export class Preview {
 		}
 		if (!this.marks.length) return;
 		const total = this.bodyEl.scrollHeight || 1;
-		for (const m of this.marks) {
+		// Every position is read before any tick is drawn: a read after a write makes the page lay out
+		// again, once per hit (up to 300) on every note shown.
+		const tops = this.marks.map((m) => m.offsetTop);
+		for (const top of tops) {
 			const tick = this.ticksEl.createDiv({ cls: "jet-tick" });
-			tick.style.top = `${(100 * m.offsetTop) / total}%`;
+			tick.style.top = `${(100 * top) / total}%`;
 		}
 		this.cur = -1;
 		this.step(1);

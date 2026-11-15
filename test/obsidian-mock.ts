@@ -78,6 +78,9 @@ proto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclar
 (globalThis as unknown as Record<string, unknown>).createSpan = (o: DomInfo | string = {}): HTMLElement =>
 	(globalThis as unknown as { createEl: (t: string, o: DomInfo | string) => HTMLElement }).createEl("span", o);
 
+(globalThis as unknown as Record<string, unknown>).createDiv = (o: DomInfo | string = {}): HTMLElement =>
+	(globalThis as unknown as { createEl: (t: string, o: DomInfo | string) => HTMLElement }).createEl("div", o);
+
 export const setIcon = (el: HTMLElement, icon: string): void => {
 	el.setAttribute("data-icon", icon);
 };
