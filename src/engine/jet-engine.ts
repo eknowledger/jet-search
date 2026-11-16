@@ -817,10 +817,16 @@ const expand = (seg: Segment, word: string, isLast: boolean, config: EngineConfi
 	if (budget > 0) {
 		const fuzzy = isLast && len >= 4;
 		let fuzzyCount = 0;
+		let corrected = false;
+		const longer: Array<{ index: number; edits: number }> = [];
 		for (const m of typoMatches(terms, word, budget, { fuzzyPrefix: fuzzy, prefixBudget: 1, limit: 500 })) {
-			if (!m.prefix) put(m.index, m.edits === 1 ? TYPO1 : TYPO2, m.edits);
-			else if (m.edits > 0 && fuzzyCount++ < FUZZY_LIMIT) put(m.index, FUZZY_PREFIX, m.edits);
+			if (!m.prefix) {
+				put(m.index, m.edits === 1 ? TYPO1 : TYPO2, m.edits);
+				if (m.edits > 0) corrected = true;
+			} else if (m.edits > 0 && fuzzyCount++ < FUZZY_LIMIT) longer.push(m);
 		}
+		// A whole word one edit away is a better guess than longer words that start like one.
+		if (!corrected) for (const m of longer) put(m.index, FUZZY_PREFIX, m.edits);
 	}
 	// Word forms: the root group of the word in each stemming language.
 	for (const lang of config.stemming) {

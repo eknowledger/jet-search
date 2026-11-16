@@ -179,6 +179,34 @@ describe("Jet engine: a word the vault has in only a few notes", () => {
 	});
 });
 
+describe("Jet engine: a word typed with a typo, still being typed", () => {
+	const filler = (n: number): NoteInput[] =>
+		Array.from({ length: n }, (_, i) =>
+			note(`Daily/Day ${i}.md`, `# Day ${i}\nGroceries, laundry and a long walk.`),
+		);
+	const vault = (): JetEngine =>
+		engine([
+			...filler(40),
+			note("Server notes.md", "# Server notes\n## Commands\nA list of commands to restart it."),
+			note("Backup notes.md", "# Backup notes\n## Commands\nThe commands for each job."),
+			note("Outage.md", "# Outage\nRun the command again after a restart."),
+		]);
+
+	it("puts a whole word one edit away above longer words that start like it", () => {
+		expect(paths(vault(), "comand")[0]).toBe("Outage.md");
+	});
+
+	it("still finds longer words by a typo in the part typed so far", () => {
+		expect(paths(vault(), "comnan")).toEqual(expect.arrayContaining(["Server notes.md", "Backup notes.md"]));
+	});
+
+	it("still finds longer words by the start of the word", () => {
+		expect(paths(vault(), "comman")).toEqual(
+			expect.arrayContaining(["Server notes.md", "Backup notes.md", "Outage.md"]),
+		);
+	});
+});
+
 describe("Jet engine updates (base, delta, tombstones)", () => {
 	it("follows replaced, deleted and renamed notes", () => {
 		const e = engine();
