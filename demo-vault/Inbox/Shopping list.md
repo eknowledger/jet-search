@@ -1,0 +1,10 @@
+- [ ] Vitamin D, 2,000 IU (the big tub)
+- [ ] Heavy-duty bin bags
+- [ ] Eggs, spring onions, chicken thighs
+- [ ] Mirin
+- [ ] Cat food (the fish one she actually eats)
+- [ ] Garden string for the broad beans
+- [ ] Rye flour for Fermento
+- [ ] Lemons
+- [ ] Batteries for the kitchen scale
+- [ ] Dust sheets
