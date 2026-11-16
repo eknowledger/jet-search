@@ -3,6 +3,8 @@ node_modules/
 main.js
 *.js.map
 coverage/
+bench/.out/
+bench/compare/.work/
 *.log
 
 # Editor and OS

@@ -8,6 +8,8 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"typecheck": "node node_modules/typescript-7/bin/tsc -noEmit -skipLibCheck && node node_modules/typescript-7/bin/tsc -p bench -noEmit -skipLibCheck",
+		"bench:engine": "node scripts/bench.mjs run",
+		"bench:mem": "node scripts/bench.mjs mem",
 		"format": "oxfmt src test bench vitest.config.mts",
 		"format:check": "oxfmt --check src test bench vitest.config.mts",
 		"lint": "oxlint src test bench vitest.config.mts && eslint src package.json",
