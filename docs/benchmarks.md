@@ -97,24 +97,23 @@ Titles are at least 8 characters, words are whole words in the Latin script. Fil
 
 | Found in the top 3 | Exact name | Name with a typo | Start of a name | One word | Word with a typo | Two words | A phrase | All 175 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Jet** | 25 | 25 | 25 | 24 | 23 | 25 | 25 | **172 (98.3%)** |
-| Omnisearch | 25 | 17 | 25 | 25 | 25 | 25 | 25 | 167 (95.4%) |
-| Smart Connections | 25 | 20 | 21 | 10 | 5 | 7 | 12 | 100 (57.1%) |
-| Obsidian Search | 11 | 0 | 6 | 25 | 0 | 25 | 25 | 92 (52.6%) |
+| **Jet** | 25 | 25 | 25 | 25 | 22 | 25 | 25 | **172 (98.3%)** |
+| Omnisearch | 25 | 14 | 25 | 25 | 23 | 25 | 25 | 162 (92.6%) |
+| Smart Connections | 24 | 20 | 25 | 10 | 7 | 14 | 9 | 109 (62.3%) |
+| Obsidian Search | 9 | 0 | 10 | 24 | 0 | 25 | 25 | 93 (53.1%) |
 | Obsidian Quick Switcher | 25 | 25 | 25 | n/a | n/a | n/a | n/a | 75 of 75 names |
 | Quick Switcher++ | 25 | 25 | 25 | n/a | n/a | n/a | n/a | 75 of 75 names |
 | Another Quick Switcher | 25 | 23 | 25 | n/a | n/a | n/a | n/a | 73 of 75 names |
 
-- **Jet missed three searches**, all a single word held in the text of one note:
-  - `trips`: the notes named "Trip" and the notes in a folder called "Japan Trip 2027" fill the titles block ahead of the text hit (the right note is first among the text hits, 9th on screen).
-  - `candie` (5th) and `comand` (4th): the right note holds `candid` and `command`, but other notes legitimately hold `Candide` and `commands`, which are as close to what was typed. The test counts only the exact word as right.
-  - A fourth miss, `waist`, was found by the first run of this test (6th, behind notes with `wait` and `waste` in headings). It led to a ranking fix, after which it is first. Jet's figures here were measured with that fix, which is newer than 0.6.0. The first run scored 171 of 175.
-- **Omnisearch missed eight misspelled titles** (for example `Movng to Lisbon` and `Mvers quotes`). It is exact on every text group.
+**Two sets, and why the table shows the second.** The generator takes a seed. The first set (seed 7) was used while Jet's ranking was being fixed: it exposed four misses, which led to three ranking fixes (listed in the changelog), and Jet then scored 175 of 175 on it. Because the fixes were made by looking at that set, it proves little. The table above is a second set (seed 11), run after the fixes, 159 of whose 175 searches are different from the first. Every tool was run on it, none of them tuned to it. On the first set, before the fixes, Jet scored 171 and Omnisearch 167.
+
+- **Jet missed three searches**, all a word with a typo: `seeting`, `gramar` and `planly`. For `seeting` (meant `setting`) and `gramar` (meant `grammar`) other notes hold words just as close (`meeting`, and names about languages), and Omnisearch misses both as well. `planly` (meant `plainly`) is a real miss: Jet reads the "-ly" as an ending of `plan` and lists the plan notes, while Omnisearch goes straight to the one note that has the word. A fix that handled it broke two other searches, so it is not in.
+- **Omnisearch missed eleven misspelled titles** (for example `Biler service` and `Doker Compose stack`), and two words with a typo. It is level with Jet on words in the text (98 of 100 against 97).
 - **Smart Connections** ranks pieces of notes by meaning, so it is weak on exact words, typos and phrases. It was read through its own lookup function, because it has no typed-search window in this version.
 - **Obsidian Search** matches the exact text you type, so a typo finds nothing, by design.
 - **The set favours typo handling** (50 of 175 searches have a typo), it is generated rather than picked, and it runs on a small, invented vault. It is a demonstration of how each tool behaves, not a ranking for your vault.
 
-Run it yourself with `--modes quality-auto` (see below).
+Run it yourself with `--modes quality-auto`, and `--seed 11` for the second set (see below).
 
 ### 16 hand-written searches
 
@@ -210,7 +209,7 @@ The in-Obsidian comparison is in [`bench/compare/`](../bench/compare/README.md) 
 node bench/compare/fetch.mjs
 
 # speed and accuracy on the demo vault, one fresh Obsidian per tool
-node bench/compare/run.mjs --tools jet,omnisearch --vaults n239 --modes speed,quality-auto
+node bench/compare/run.mjs --tools jet,omnisearch --vaults n239 --modes speed,quality-auto --seed 11
 
 # speed on a vault of 10,000 notes made from the demo vault
 node bench/compare/run.mjs --tools jet,omnisearch --vaults n10000 --modes speed

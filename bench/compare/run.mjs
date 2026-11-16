@@ -14,7 +14,7 @@ const arg = (k, d) => (process.argv.includes(k) ? process.argv[process.argv.inde
 const tools = arg("--tools", "core,core-switcher,qs-plus,aqs,omnisearch,jet").split(",");
 const vaults = arg("--vaults", "n239").split(",");
 const modes = arg("--modes", "speed").split(",");
-const extra = ["--count", "--gap", "--quiet"].flatMap((k) => (process.argv.includes(k) ? [k, arg(k)] : []));
+const extra = ["--count", "--gap", "--quiet", "--seed"].flatMap((k) => (process.argv.includes(k) ? [k, arg(k)] : []));
 const node = (script, args) =>
 	spawnSync(process.execPath, [join(HERE, script), ...args], {
 		cwd: HERE,

@@ -18,6 +18,7 @@ const opt = (k, d) => (rest.includes(k) ? Number(rest[rest.indexOf(k) + 1]) : d)
 const COUNT = opt("--count", 30);
 const GAP = opt("--gap", 110);
 const QUIET = opt("--quiet", 700);
+const SEED = opt("--seed", 7);
 const A = ADAPTERS[name];
 if (!A || !["speed", "quality", "quality-auto", "mem"].includes(mode))
 	throw new Error("usage: measure.mjs <adapter> <vault> speed|quality|quality-auto|mem");
@@ -187,7 +188,9 @@ if (mode === "speed") {
 			.map((p) => p.slice(join(WORK, "vaults", vault).length + 1));
 	const auto = mode === "quality-auto";
 	const cases = auto
-		? autoQuality(join(WORK, "vaults", vault)).filter((c) => A.kind !== "names" || c.group.startsWith("title"))
+		? autoQuality(join(WORK, "vaults", vault), 25, SEED).filter(
+				(c) => A.kind !== "names" || c.group.startsWith("title"),
+			)
 		: QUALITY;
 	for (const c of cases) {
 		const r = A.api ? { top: await ev(A.api(c.q)), count: 10 } : await typeQuery(c.q);
@@ -217,7 +220,11 @@ if (mode === "speed") {
 	result.quality = out;
 }
 mkdirSync(join(WORK, "out"), { recursive: true });
-const file = join(WORK, "out", `${name}-${vault}-${mode}.json`);
+const file = join(
+	WORK,
+	"out",
+	`${name}-${vault}-${mode}${mode === "quality-auto" && SEED !== 7 ? `-s${SEED}` : ""}.json`,
+);
 writeFileSync(file, JSON.stringify(result, null, 1));
 console.log(file);
 console.log(JSON.stringify(result.summary ?? result.quality?.map((x) => `${x.id}:${x.rank ?? "-"}`)));

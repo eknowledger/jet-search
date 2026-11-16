@@ -41,7 +41,7 @@ Search is the thing you do a hundred times a day, so a hundred small waits add u
 | Measured | What it means |
 |---|---|
 | **15 ms** | median time until the results settle in a 10,000-note vault, with the first results on screen in **4 ms**. Omnisearch: 212 ms. Obsidian's own search: 96 ms, and up to 2.2 s. |
-| **98%** | of 175 test searches had the right note in the top 3: exact and misspelled names, name starts, single words, words with a typo, two words and phrases. Omnisearch: 95%. Smart Connections: 57%. Obsidian's search: 53%. |
+| **98%** | of 175 test searches had the right note in the top 3: exact and misspelled names, name starts, single words, words with a typo, two words and phrases. Omnisearch: 93%. Smart Connections: 62%. Obsidian's search: 53%. |
 | **3×** | quicker to index than Omnisearch: about 6 s for 10,000 notes against about 19 s. A saved 50,000-note index loads in **10 ms**. |
 | **0.16 ms** | the engine's typical keystroke at 10,000 notes, **0.8 ms** at 50,000. The slowest of 1,122 keystrokes at 50,000 notes took 13 ms. |
 | **0 bytes** | sent anywhere. No telemetry, no accounts, works offline. The plugin itself is 318 KB. |
@@ -162,15 +162,15 @@ Speed means little if the right note is not there, so the same tools were also g
 
 | Found in the top 3 | Exact name | Name with a typo | Start of a name | One word | Word with a typo | Two words | A phrase | All 175 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Jet** | 25 | **25** | 25 | 24 | 23 | 25 | 25 | **172 (98%)** |
-| Omnisearch | 25 | 17 | 25 | 25 | 25 | 25 | 25 | 167 (95%) |
-| Smart Connections | 25 | 20 | 21 | 10 | 5 | 7 | 12 | 100 (57%) |
-| Obsidian Search | 11 | 0 | 6 | 25 | 0 | 25 | 25 | 92 (53%) |
+| **Jet** | 25 | **25** | 25 | 25 | 22 | 25 | 25 | **172 (98%)** |
+| Omnisearch | 25 | 14 | 25 | 25 | 23 | 25 | 25 | 162 (93%) |
+| Smart Connections | 24 | 20 | 25 | 10 | 7 | 14 | 9 | 109 (62%) |
+| Obsidian Search | 9 | 0 | 10 | 24 | 0 | 25 | 25 | 93 (53%) |
 | Obsidian Quick Switcher | 25 | 25 | 25 | n/a | n/a | n/a | n/a | names only |
 | Quick Switcher++ | 25 | 25 | 25 | n/a | n/a | n/a | n/a | names only |
 | Another Quick Switcher | 25 | 23 | 25 | n/a | n/a | n/a | n/a | names only |
 
-Jet is the only tool that is at 97% or better on both names and the words inside notes. The switchers are perfect on names, but they cannot see inside a note. Omnisearch is exact on text and loses on misspelled names. Jet missed 3 searches, all on a single word in the text where notes with a matching name or a close spelling came first. Questions asked in other words are what the optional search by meaning is for: on a separate set of 3 questions, Jet with the model on found 3, Smart Connections 3, Jet without it 2, Omnisearch 1 and Obsidian's search 0.
+Jet is the only tool at 97% or better on both names and the words inside notes. The switchers are perfect on names, but they cannot see inside a note. Omnisearch is level with Jet on the words inside notes and loses on misspelled names (14 of 25, against 25). Jet missed 3 searches, all a word with a typo. Questions asked in other words are what the optional search by meaning is for: on a separate set of 3 questions, Jet with the model on found 3, Smart Connections 3, Jet without it 2, Omnisearch 1 and Obsidian's search 0.
 
 The searches are generated, not hand-picked, but they run on a small, invented vault and they favour tools that forgive typos, so read this as a demonstration, not a ranking of every vault. Every search and every result is listed in [docs/benchmarks.md](docs/benchmarks.md). Omnisearch also reads PDFs and images, which Jet does not.
 

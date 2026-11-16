@@ -24,6 +24,7 @@ node bench/compare/run.mjs --tools jet,omnisearch --vaults n239 --modes speed,qu
 | `--vaults`         | `n239` is the demo vault as it is. `nN`, for example `n10000`, is a vault of N notes made from it                                   |
 | `--modes`          | `speed`, `quality`, `quality-auto`, `mem`                                                                                           |
 | `--count`          | Searches per query in `speed` mode                                                                                                  |
+| `--seed`           | Seed of the generated searches in `quality-auto` (default 7; 11 is the second set)                                                  |
 | `--gap`, `--quiet` | Milliseconds between keys, and the quiet window that ends a search                                                                  |
 
 Results are written to `.work/out`. `speed-table.mjs` and `report.mjs` turn them into tables.
