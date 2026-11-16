@@ -1,0 +1,14 @@
+{
+	"omnisearch": { "repo": "scambier/obsidian-omnisearch", "id": "omnisearch", "version": "1.32.0" },
+	"qs-plus": { "repo": "darlal/obsidian-switcher-plus", "id": "darlal-switcher-plus", "version": "6.3.0" },
+	"aqs": {
+		"repo": "tadashi-aikawa/obsidian-another-quick-switcher",
+		"id": "obsidian-another-quick-switcher",
+		"version": "14.9.0"
+	},
+	"smart-connections": {
+		"repo": "brianpetro/obsidian-smart-connections",
+		"id": "smart-connections",
+		"version": "4.7.2"
+	}
+}
