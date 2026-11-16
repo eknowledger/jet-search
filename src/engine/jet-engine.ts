@@ -48,6 +48,14 @@ const FUZZY_PREFIX = 0.4;
  */
 const TYPOS_BELOW = 3;
 const FUZZY_LIMIT = 200;
+/**
+ * A word spelled exactly in at least one note but in fewer than TYPOS_BELOW (it is rare here) puts those
+ * notes first: wherever it sits, it counts at least as much as in a heading (RARE_FLOOR), and the word's
+ * other forms, prefixes and one-letter-off matches count for a quarter (RARE_OTHERS). "trips", held
+ * once in a body, is not buried by every note named "Trip".
+ */
+const RARE_FLOOR = 6;
+const RARE_OTHERS = 0.25;
 /** Pending notes past which the delta is frozen into a segment, and segments past which they are merged at once. */
 const FREEZE = 256;
 const MAX_SEGMENTS = 24;
@@ -352,6 +360,14 @@ export class JetEngine implements SearchEngine {
 		const isLast = (i: number): boolean => q.lastIsPrefix && i === n - 1;
 		const own = parts.map((part) => q.words.map((w, i) => expand(part.seg, w, isLast(i), this.config, false)));
 		const typos = q.words.map((_, i) => this.liveNotes(parts, own, i) < TYPOS_BELOW);
+		const rare = q.words.map((w) => {
+			let notes = 0;
+			for (const { seg } of parts) {
+				const t = exactTerm(seg, w);
+				if (t >= 0) notes += seg.df[t] as number;
+			}
+			return notes > 0 && notes < TYPOS_BELOW;
+		});
 		for (const [p, part] of parts.entries()) {
 			const { seg, dead, scratch: s } = part;
 			s.q++;
@@ -366,6 +382,8 @@ export class JetEngine implements SearchEngine {
 					const term = seg.terms[x.t] as string;
 					const df = (seg.df[x.t] as number) + this.otherDf(seg, term);
 					const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
+					// The exact spelling (or the bare Arabic form) counts in full; anything else less for a rare word.
+					const weight = rare[i] && x.w < 0.9 && x.e === 0 ? x.w * RARE_OTHERS : x.w;
 					s.e++;
 					const touchedE: number[] = [];
 					for (let k = seg.metaOff[x.t] as number, end = seg.metaOff[x.t + 1] as number; k < end; k++) {
@@ -411,7 +429,12 @@ export class JetEngine implements SearchEngine {
 					if (touchedE.length) terms.add(term);
 					// Max over a word's expansions: forty "exp…" words do not add up.
 					for (const doc of touchedE) {
-						const c = x.w * idf * (s.exp[doc] as number);
+						const c =
+							weight *
+							idf *
+							(rare[i] && x.w >= 0.9
+								? Math.max(s.exp[doc] as number, RARE_FLOOR)
+								: (s.exp[doc] as number));
 						if (s.wStamp[doc] !== s.w) {
 							s.wStamp[doc] = s.w;
 							s.best[doc] = c;

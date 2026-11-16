@@ -143,6 +143,42 @@ describe("Jet engine ranking", () => {
 	});
 });
 
+describe("Jet engine: a word the vault has in only a few notes", () => {
+	const filler = (n: number): NoteInput[] =>
+		Array.from({ length: n }, (_, i) =>
+			note(`Daily/Day ${i}.md`, `# Day ${i}\nGroceries, laundry and a long walk.`),
+		);
+
+	it("puts the notes that hold the exact word above notes with a word form in their name", () => {
+		const e = engine([
+			...filler(40),
+			note("Trip to the coast.md", "# Trip to the coast\nPacking list."),
+			note("Trip budget.md", "# Trip budget\nFuel and food."),
+			note("Day trip ideas.md", "# Day trip ideas\nBeaches and hills."),
+			note("Trip notes.md", "# Trip notes\nWhat to see."),
+			note("Lens guide.md", "# Lens guide\nA small prime is easy to carry on trips."),
+		]);
+		expect(paths(e, "trips").slice(0, 3)).toContain("Lens guide.md");
+	});
+
+	it("puts the exact word above words one letter off in headings and text", () => {
+		const e = engine([
+			...filler(40),
+			note("Plan.md", "# Plan\n## Wait list\nWho is next. Wait for the call."),
+			note("Bins.md", "# Bins\n## Waste sorting\nBags and bins."),
+			note("Clinic.md", "# Clinic\n## Waiting room\nA chair and a table. Waits are short."),
+			note("Supply ship.md", "# Supply ship\nThe rope reached his waist."),
+		]);
+		expect(paths(e, "waist")[0]).toBe("Supply ship.md");
+	});
+
+	it("keeps a note named after the word form first when the exact word is common", () => {
+		const body = (i: number): NoteInput => note(`Log ${i}.md`, `# Log ${i}\nTwo trips this month.`);
+		const e = engine([...filler(40), note("Trip.md", "# Trip\nWhere to go."), body(1), body(2), body(3), body(4)]);
+		expect(paths(e, "trips")[0]).toBe("Trip.md");
+	});
+});
+
 describe("Jet engine updates (base, delta, tombstones)", () => {
 	it("follows replaced, deleted and renamed notes", () => {
 		const e = engine();
