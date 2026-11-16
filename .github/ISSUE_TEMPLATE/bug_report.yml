@@ -1,0 +1,30 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw. A screenshot or a short recording helps.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Jet Search, Obsidian and your operating system (Settings, About).
+      placeholder: "Jet 0.6.0, Obsidian 1.15.1, macOS 26"
+    validations:
+      required: true
+  - type: input
+    id: size
+    attributes:
+      label: Vault size
+      description: About how many notes, and the main languages.
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors
+      description: Open the developer console (Ctrl/Cmd + Shift + I) and paste any red lines.
+      render: text
