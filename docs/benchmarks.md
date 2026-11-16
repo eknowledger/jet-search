@@ -97,7 +97,7 @@ Titles are at least 8 characters, words are whole words in the Latin script. Fil
 
 | Found in the top 3 | Exact name | Name with a typo | Start of a name | One word | Word with a typo | Two words | A phrase | All 175 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Jet** | 25 | 25 | 25 | 23 | 23 | 25 | 25 | **171 (97.7%)** |
+| **Jet** | 25 | 25 | 25 | 24 | 23 | 25 | 25 | **172 (98.3%)** |
 | Omnisearch | 25 | 17 | 25 | 25 | 25 | 25 | 25 | 167 (95.4%) |
 | Smart Connections | 25 | 20 | 21 | 10 | 5 | 7 | 12 | 100 (57.1%) |
 | Obsidian Search | 11 | 0 | 6 | 25 | 0 | 25 | 25 | 92 (52.6%) |
@@ -105,7 +105,10 @@ Titles are at least 8 characters, words are whole words in the Latin script. Fil
 | Quick Switcher++ | 25 | 25 | 25 | n/a | n/a | n/a | n/a | 75 of 75 names |
 | Another Quick Switcher | 25 | 23 | 25 | n/a | n/a | n/a | n/a | 73 of 75 names |
 
-- **Jet missed four searches**, all a single word held in the text of a note: `trips` (the right note was not in the first ten, behind notes whose name matches), `waist` (6th), `candie` (5th) and `comand` (4th). Omnisearch put the right note first on all four. When an exact rare word is in a note's body, Jet can rank a note with a matching name or a similar word above it.
+- **Jet missed three searches**, all a single word held in the text of one note:
+  - `trips`: the notes named "Trip" and the notes in a folder called "Japan Trip 2027" fill the titles block ahead of the text hit (the right note is first among the text hits, 9th on screen).
+  - `candie` (5th) and `comand` (4th): the right note holds `candid` and `command`, but other notes legitimately hold `Candide` and `commands`, which are as close to what was typed. The test counts only the exact word as right.
+  - A fourth miss, `waist`, was found by the first run of this test (6th, behind notes with `wait` and `waste` in headings). It led to a ranking fix, after which it is first. Jet's figures here were measured with that fix, which is newer than 0.6.0. The first run scored 171 of 175.
 - **Omnisearch missed eight misspelled titles** (for example `Movng to Lisbon` and `Mvers quotes`). It is exact on every text group.
 - **Smart Connections** ranks pieces of notes by meaning, so it is weak on exact words, typos and phrases. It was read through its own lookup function, because it has no typed-search window in this version.
 - **Obsidian Search** matches the exact text you type, so a typo finds nothing, by design.

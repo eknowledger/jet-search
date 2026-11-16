@@ -2,6 +2,11 @@
 
 All notable changes to Jet Search. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+- **A rare exact word ranks first.** A word that is spelled exactly in only one or two notes now puts those notes above notes that only hold its word forms or near spellings. Searching `waist` no longer buries the one note that has it under notes about `wait` and `waste`.
+
 ## 0.6.0 - 2026-11-15
 
 ### Added

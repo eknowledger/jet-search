@@ -162,7 +162,7 @@ Speed means little if the right note is not there, so the same tools were also g
 
 | Found in the top 3 | Exact name | Name with a typo | Start of a name | One word | Word with a typo | Two words | A phrase | All 175 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Jet** | 25 | **25** | 25 | 23 | 23 | 25 | 25 | **171 (98%)** |
+| **Jet** | 25 | **25** | 25 | 24 | 23 | 25 | 25 | **172 (98%)** |
 | Omnisearch | 25 | 17 | 25 | 25 | 25 | 25 | 25 | 167 (95%) |
 | Smart Connections | 25 | 20 | 21 | 10 | 5 | 7 | 12 | 100 (57%) |
 | Obsidian Search | 11 | 0 | 6 | 25 | 0 | 25 | 25 | 92 (53%) |
@@ -170,7 +170,7 @@ Speed means little if the right note is not there, so the same tools were also g
 | Quick Switcher++ | 25 | 25 | 25 | n/a | n/a | n/a | n/a | names only |
 | Another Quick Switcher | 25 | 23 | 25 | n/a | n/a | n/a | n/a | names only |
 
-Jet is the only tool that is at 96% or better on both names and the words inside notes. The switchers are perfect on names, but they cannot see inside a note. Omnisearch is exact on text and loses on misspelled names. Jet missed 4 searches, all on a single rare word in the text where a note with a matching name or a similar word ranked first, and that is a known weak spot. Questions asked in other words are what the optional search by meaning is for: on a separate set of 3 questions, Jet with the model on found 3, Smart Connections 3, Jet without it 2, Omnisearch 1 and Obsidian's search 0.
+Jet is the only tool that is at 97% or better on both names and the words inside notes. The switchers are perfect on names, but they cannot see inside a note. Omnisearch is exact on text and loses on misspelled names. Jet missed 3 searches, all on a single word in the text where notes with a matching name or a close spelling came first. Questions asked in other words are what the optional search by meaning is for: on a separate set of 3 questions, Jet with the model on found 3, Smart Connections 3, Jet without it 2, Omnisearch 1 and Obsidian's search 0.
 
 The searches are generated, not hand-picked, but they run on a small, invented vault and they favour tools that forgive typos, so read this as a demonstration, not a ranking of every vault. Every search and every result is listed in [docs/benchmarks.md](docs/benchmarks.md). Omnisearch also reads PDFs and images, which Jet does not.
 
