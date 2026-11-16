@@ -309,3 +309,44 @@ describe("titles and a rare exact word in the text", () => {
 		expect(rows.at(-1)).toBe("Gear/Lens guide.md");
 	});
 });
+
+describe("titles that only hold another form of a rare word", () => {
+	const run = async (rare: boolean): Promise<string[]> => {
+		const app = new App();
+		const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
+		for (const p of ["Trip to Lyon.md", "Trip budget.md", "Day trip ideas.md", "Gear/Lens guide.md"])
+			files.set(p, new TFile(p));
+		const hit = (path: string, score: number) => ({ path, score, matched: 1, edits: 0 });
+		const client = {
+			query: () =>
+				Promise.resolve({
+					seq: 1,
+					terms: ["trips", "trip"],
+					hits: [
+						hit("Gear/Lens guide.md", 9),
+						hit("Trip to Lyon.md", 5),
+						hit("Trip budget.md", 4),
+						hit("Day trip ideas.md", 3),
+					],
+					rare,
+				}),
+		};
+		const feeder = { progress: null, ensure: () => Promise.resolve() } as unknown as Feeder;
+		const data = normalizeData(null);
+		data.indexedAt = 1;
+		data.settings.excerpts = false;
+		const s = new Search(app, client as unknown as JetClient, feeder, () => data);
+		let last: Entry[] = [];
+		s.list("trips", (e) => (last = e));
+		for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+		return last.filter((e): e is Item => e.type === "item").map((e) => e.path);
+	};
+
+	it("shows the note that holds the exact word before names that hold only its other form", async () => {
+		expect((await run(true))[0]).toBe("Gear/Lens guide.md");
+	});
+
+	it("keeps names first when the word is not rare", async () => {
+		expect((await run(false))[0]).not.toBe("Gear/Lens guide.md");
+	});
+});

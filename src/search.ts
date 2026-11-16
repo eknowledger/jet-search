@@ -560,11 +560,12 @@ export class Search {
 	): Entry[] {
 		const titles: Item[] = [];
 		const shown = new Set<string>();
-		// A word that is rare here puts the notes that hold it before notes that match only by their folder.
-		const byFolder: NameHit[] = [];
+		// A word that is rare here puts the notes that hold it before names and folders that only come close
+		// (another form of the word, a near spelling, a folder called that); a name equal to it stays first.
+		const later: NameHit[] = [];
 		for (const h of tier0) {
-			if (reply?.rare && h.field === "path") {
-				byFolder.push(h);
+			if (reply?.rare && !h.exact) {
+				later.push(h);
 				continue;
 			}
 			const path = this.pathOf.get(h.id);
@@ -599,12 +600,18 @@ export class Search {
 			);
 			shown.add(h.path);
 		}
-		for (const h of byFolder) {
+		for (const h of later) {
 			const path = this.pathOf.get(h.id);
 			const file = path ? this.app.vault.getFileByPath(path) : null;
 			if (!file || shown.has(file.path)) continue;
 			shown.add(file.path);
-			text.push(this.item(file, now, { badge: "path", hit: { terms: reply?.terms ?? [] } }));
+			text.push(
+				this.item(file, now, {
+					titleRanges: h.field === "name" ? h.ranges : [],
+					badge: h.field === "alias" ? h.text : h.field === "path" ? "path" : undefined,
+					hit: { terms: reply?.terms ?? [] },
+				}),
+			);
 		}
 		// While the index builds: notes it has not reached yet, found by a heading, tag or property.
 		for (const m of meta) {
