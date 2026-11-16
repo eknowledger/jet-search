@@ -68,6 +68,8 @@ export type QueryReply = {
 	seq: number;
 	hits: Hit[];
 	terms: string[];
+	/** Every word of the query is rare in the vault: the notes that hold it exactly come first. */
+	rare?: boolean;
 	ms: number;
 	stale?: boolean;
 	/** The index could not be read: it was dropped, and the plugin builds it again. */

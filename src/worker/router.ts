@@ -228,7 +228,7 @@ export class Router {
 			now: req.now,
 			allow: allow ? (p) => allow.has(p) : undefined,
 		});
-		return { seq: req.seq, hits: r.hits, terms: r.terms, ms: performance.now() - t0 };
+		return { seq: req.seq, hits: r.hits, terms: r.terms, rare: r.rare, ms: performance.now() - t0 };
 	}
 
 	/**

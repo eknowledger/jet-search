@@ -271,3 +271,41 @@ describe("handing structural queries to Obsidian Search", () => {
 		expect(rows[0]).toMatchObject({ type: "core", query: "line:(garden)" });
 	});
 });
+
+describe("titles and a rare exact word in the text", () => {
+	const run = async (rare: boolean): Promise<string[]> => {
+		const app = new App();
+		const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
+		for (const p of ["Trips/Lyon.md", "Trips/Rome.md", "Trips/Oslo.md", "Gear/Lens guide.md"])
+			files.set(p, new TFile(p));
+		const client = {
+			query: () =>
+				Promise.resolve({
+					seq: 1,
+					terms: ["trips"],
+					hits: [{ path: "Gear/Lens guide.md", score: 1, matched: 1, edits: 0 }],
+					rare,
+				}),
+		};
+		const feeder = { progress: null, ensure: () => Promise.resolve() } as unknown as Feeder;
+		const data = normalizeData(null);
+		data.indexedAt = 1;
+		data.settings.excerpts = false;
+		const s = new Search(app, client as unknown as JetClient, feeder, () => data);
+		let last: Entry[] = [];
+		s.list("trips", (e) => (last = e));
+		for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+		return last.filter((e): e is Item => e.type === "item").map((e) => e.path);
+	};
+
+	it("lists notes that match only by their folder after the note that holds the exact word", async () => {
+		const rows = await run(true);
+		expect(rows[0]).toBe("Gear/Lens guide.md");
+		expect(rows.slice(1).sort()).toEqual(["Trips/Lyon.md", "Trips/Oslo.md", "Trips/Rome.md"]);
+	});
+
+	it("keeps folder matches first when the word is not rare", async () => {
+		const rows = await run(false);
+		expect(rows.at(-1)).toBe("Gear/Lens guide.md");
+	});
+});

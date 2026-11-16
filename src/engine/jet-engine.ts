@@ -8,7 +8,12 @@ import { lowerBound, prefixRange, typoBudget, typoMatches } from "./typos";
 
 /** One result: the note, its score, how many query words it matched, and its typo edits in total. */
 export type Hit = { path: string; score: number; matched: number; edits: number };
-export type QueryResult = { hits: Hit[]; terms: string[] };
+export type QueryResult = {
+	hits: Hit[];
+	terms: string[];
+	/** Every word of the query is spelled exactly in only one or two notes (those notes come first). */
+	rare?: boolean;
+};
 export type QueryOptions = {
 	limit?: number;
 	now?: number;
@@ -525,6 +530,7 @@ export class JetEngine implements SearchEngine {
 				.sorted()
 				.map((c) => ({ path: c.part.path(c.d), score: c.score, matched: c.matched, edits: c.edits })),
 			terms: [...terms],
+			rare: rare.every(Boolean),
 		};
 	}
 
