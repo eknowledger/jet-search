@@ -45,6 +45,18 @@ Jet's "first results" are the names it finds in the same keystroke. Its "settled
 
 ## Speed
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/compare-speed-dark.png">
+  <img alt="Bar chart of the median time until the results settle at 10,000 notes. Jet 15 ms, Another Quick Switcher 21 ms, Obsidian Quick Switcher 27 ms, Quick Switcher++ 28 ms, Obsidian Search 96 ms, Omnisearch 212 ms." src="assets/compare-speed-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-scale-dark.png">
+  <img alt="Bar chart of the median time until the results settle at 1,000 and 10,000 notes. Jet stays at 13 and 15 ms; Omnisearch is 203 and 212 ms; Obsidian Search grows from 34 to 96 ms." src="assets/bench-scale-light.png">
+</picture>
+
+The tables below have every figure behind these charts.
+
 ### 10,000 notes (average of two runs)
 
 | Tool | First results | Settled, median | Settled, 95th percentile | Settled, slowest | Index build | First search after launch |
@@ -75,6 +87,11 @@ Jet's "first results" are the names it finds in the same keystroke. Its "settled
 - Omnisearch's first results appear about 200 ms after the last key, and the list does not change after that. Its index took about 19 s to build for 10,000 notes, against about 6 s for Jet (5.2 to 6.8 s in four runs).
 - Jet's index build is end to end inside Obsidian, including reading every note. Run alone in Node (below) it takes 3.6 s.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-index-dark.png">
+  <img alt="Bar chart of the index build time inside Obsidian. Jet 0.8 s at 1,000 notes and 6.4 s at 10,000; Omnisearch 2.1 s and 19.9 s." src="assets/bench-index-light.png">
+</picture>
+
 ## Quality: is the right note on top?
 
 Speed is only useful if the right note is there. Two sets of searches were run on the demo vault (239 notes). A search is **found** when the right note is in the top 3.
@@ -104,6 +121,16 @@ Titles are at least 8 characters, words are whole words in the Latin script. Fil
 | Obsidian Quick Switcher | 25 | 25 | 25 | n/a | n/a | n/a | n/a | 75 of 75 names |
 | Quick Switcher++ | 25 | 25 | 25 | n/a | n/a | n/a | n/a | 75 of 75 names |
 | Another Quick Switcher | 25 | 23 | 25 | n/a | n/a | n/a | n/a | 73 of 75 names |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-accuracy-dark.png">
+  <img alt="Bar chart of searches that found the right note in the top 3, out of 175. Jet 172, Omnisearch 162, Smart Connections 109, Obsidian Search 93." src="assets/bench-accuracy-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-groups-dark.png">
+  <img alt="Grid of how many of 25 searches each tool found in the top 3, for each of seven groups. Jet finds 25 in six groups and 22 for a word with a typo. Omnisearch finds 14 misspelled names." src="assets/bench-groups-light.png">
+</picture>
 
 **Two sets, and why the table shows the second.** The generator takes a seed. The first set (seed 7) was used while Jet's ranking was being fixed: it exposed four misses, which led to three ranking fixes (listed in the changelog), and Jet then scored 175 of 175 on it. Because the fixes were made by looking at that set, it proves little. The table above is a second set (seed 11), run after the fixes, 159 of whose 175 searches are different from the first. Every tool was run on it, none of them tuned to it. On the first set, before the fixes, Jet scored 171 and Omnisearch 167.
 
@@ -172,6 +199,11 @@ Jet's index lives in a worker, whose heap could not be read from outside, so Jet
 ## The engine on its own
 
 Jet's engine in Node (v26.7.0, same machine), on notes recombined from the demo vault with a fixed seed. Per keystroke means every prefix of 150 typed queries (1,122 keystrokes at 50,000 notes).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-engine-dark.png">
+  <img alt="Bar chart of the typical time per keystroke in the engine alone. Jet 0.056 ms at 1,000 notes and 0.16 ms at 10,000; SQLite FTS5 0.26 ms and 2.0 ms." src="assets/bench-engine-light.png">
+</picture>
 
 | Notes | Typical | 95th percentile | Slowest | SQLite FTS5, typical | SQLite FTS5, 95th percentile |
 |---:|---:|---:|---:|---:|---:|
