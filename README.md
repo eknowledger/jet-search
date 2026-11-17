@@ -228,7 +228,8 @@ Names match on a separate, smaller index: 0.03 ms at 1,000 notes, 0.26 ms at 10,
 | [Guide](docs/guide.md) | Every feature in motion, recorded in the demo vault |
 | [Reference](docs/reference.md) | Every part of the window and every setting, numbered and explained |
 | [Benchmarks](docs/benchmarks.md) | The method behind the numbers, and how to run it |
-| [Architecture](docs/architecture.md) | How Jet is built, why, and how to change it |
+| [Architecture](docs/architecture.md) | How Jet is built, in a 30 minute read |
+| [Architecture reference](docs/architecture-reference.md) | The long version: every part, message, number and failure path |
 | [Contributing](CONTRIBUTING.md) | Set up, test, and send a change |
 | [Security](SECURITY.md) | Reporting a vulnerability |
 | [Changelog](CHANGELOG.md) | What changed in each version |
