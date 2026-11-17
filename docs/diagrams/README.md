@@ -15,7 +15,7 @@ To draw only some diagrams, pass their names: `npm run diagrams -- smoke`.
 
 Each diagram produces two files in `docs/assets/`: `arch-<name>-dark.png` (light strokes and text, for dark pages) and `arch-<name>-light.png` (dark strokes and text, for light pages). The images are drawn at twice the pixel size for sharp text. The output is stable: running the command twice gives the same files.
 
-The command prints a warning and exits with an error when text is wider than its box or a shape is drawn outside the canvas. Fix the sizes or positions and run it again.
+The command prints a warning and exits with an error when text is wider than its box, a shape is drawn outside the canvas, an arrow runs through a box, or a label touches one. An elbow arrow bends halfway between its ends; set `bendX` (left to right arrows) or `bendY` (top to bottom arrows) to move the bend into a free gap. Fix the sizes or positions and run it again.
 
 ## Add a diagram
 

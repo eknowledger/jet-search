@@ -46,6 +46,7 @@ export function group(id, opts) {
  *   fromSide, toSide  "l" | "r" | "t" | "b" (default: picked from the layout)
  *   fromAt, toAt      0..1 position along the side (default 0.5)
  *   elbow             route with right-angle bends instead of a straight line
+ *   bendX, bendY      where the middle segment of an elbow sits (x for a left/right pair, y for a top/bottom pair)
  *   dashed            dashed line
  *   label             small text next to the longest segment
  *   labelDx, labelDy  nudge the label in px
@@ -128,7 +129,7 @@ function pickSides(a, b) {
 }
 
 /** Points of the arrow path, from the first anchor to the second. */
-function routeArrow(a, b, elbow) {
+function routeArrow(a, b, elbow, bendX, bendY) {
 	const p = { x: a.x, y: a.y };
 	const q = { x: b.x, y: b.y };
 	if (!elbow) return [p, q];
@@ -138,12 +139,12 @@ function routeArrow(a, b, elbow) {
 	if (aHoriz && bHoriz) {
 		// Same side on both ends (r to r, l to l): loop around outside.
 		const mx =
-			a.dx === b.dx ? (a.dx > 0 ? Math.max(p.x, q.x) + OUT : Math.min(p.x, q.x) - OUT) : (p.x + q.x) / 2;
+			a.dx === b.dx ? (a.dx > 0 ? Math.max(p.x, q.x) + OUT : Math.min(p.x, q.x) - OUT) : (bendX ?? (p.x + q.x) / 2);
 		return [p, { x: mx, y: p.y }, { x: mx, y: q.y }, q];
 	}
 	if (!aHoriz && !bHoriz) {
 		const my =
-			a.dy === b.dy ? (a.dy > 0 ? Math.max(p.y, q.y) + OUT : Math.min(p.y, q.y) - OUT) : (p.y + q.y) / 2;
+			a.dy === b.dy ? (a.dy > 0 ? Math.max(p.y, q.y) + OUT : Math.min(p.y, q.y) - OUT) : (bendY ?? (p.y + q.y) / 2);
 		return [p, { x: p.x, y: my }, { x: q.x, y: my }, q];
 	}
 	if (aHoriz) return [p, { x: q.x, y: p.y }, q];
@@ -310,6 +311,35 @@ export function renderDiagram(rough, svg, dia, themeName, doc = document) {
 		}
 	}
 
+	// Arrows and labels must not run through or over a shape.
+	const solids = dia.items.filter((it) => it.kind === "box" || it.kind === "cylinder");
+	const hitsRect = (x1, y1, x2, y2, r) => {
+		const pad = 3;
+		const L = r.x + pad, R = r.x + r.w - pad, T = r.y + pad, B = r.y + r.h - pad;
+		let t0 = 0, t1 = 1;
+		const dx = x2 - x1, dy = y2 - y1;
+		for (const [pp, qq] of [[-dx, x1 - L], [dx, R - x1], [-dy, y1 - T], [dy, B - y1]]) {
+			if (pp === 0) { if (qq < 0) return false; continue; }
+			const t = qq / pp;
+			if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+			else { if (t < t0) return false; if (t < t1) t1 = t; }
+		}
+		return t0 < t1;
+	};
+	const checkArrow = (ar, pts) => {
+		for (let i = 0; i < pts.length - 1; i++)
+			for (const r of solids)
+				if (hitsRect(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, r))
+					warnings.push(`arrow ${ar.id} runs through ${r.id}`);
+	};
+	const checkLabel = (ar, x, y, anchorAt) => {
+		const w = ar.label.length * 8.6, h = 16;
+		const x0 = anchorAt === "start" ? x : x - w / 2;
+		for (const r of solids)
+			if (x0 < r.x + r.w + 3 && x0 + w > r.x - 3 && y - h / 2 < r.y + r.h + 3 && y + h / 2 > r.y - 3)
+				warnings.push(`label "${ar.label}" of ${ar.id} overlaps ${r.id}`);
+	};
+
 	// 3. Arrows.
 	for (const ar of kinds("arrow")) {
 		const a = byId.get(ar.from);
@@ -318,7 +348,8 @@ export function renderDiagram(rough, svg, dia, themeName, doc = document) {
 		const [fs, ts] = pickSides(a, b);
 		const p = anchor(a, ar.fromSide ?? fs, ar.fromAt);
 		const q = anchor(b, ar.toSide ?? ts, ar.toAt);
-		const pts = dedupe(routeArrow(p, q, ar.elbow));
+		const pts = dedupe(routeArrow(p, q, ar.elbow, ar.bendX, ar.bendY));
+		checkArrow(ar, pts);
 		const dash = ar.dashed ? { strokeLineDash: [9, 8] } : {};
 		const stroke = ar.accent ? accent : theme.stroke;
 		add(rc.linearPath(pts.map((pt) => [pt.x, pt.y]), opts(ar.id, { ...dash, stroke, roughness: 1.1 })));
@@ -354,6 +385,8 @@ export function renderDiagram(rough, svg, dia, themeName, doc = document) {
 			const horiz = Math.abs(s1.x - s0.x) >= Math.abs(s1.y - s0.y);
 			const dx = ar.labelDx ?? 0;
 			const dy = ar.labelDy ?? 0;
+			if (horiz) checkLabel(ar, mx + dx, my - 14 + dy + 8, "middle");
+			else checkLabel(ar, mx + 12 + dx, my + dy, "start");
 			if (horiz) {
 				text(ar.label, mx + dx, my - 14 + dy, { size: LABEL_SIZE, fill: theme.muted });
 			} else {

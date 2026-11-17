@@ -3,9 +3,9 @@
 import { diagram, box, cylinder, group, arrow, note } from "./lib.mjs";
 
 // The whole plugin: what Obsidian gives it, the two threads, and what is kept on disk.
-const X = [40, 290, 540, 860, 1130];
+const X = [40, 310, 580, 900, 1170];
 const Y = [110, 260, 410, 560];
-const system = diagram("system", { width: 1360, height: 780, seed: 11 }, [
+const system = diagram("system", { width: 1400, height: 780, seed: 11 }, [
 	group("g-obs", { label: "Obsidian", around: ["workspace", "vault"], pad: 26 }),
 	group("g-main", { label: "Main thread: decides and draws", around: ["modal", "search", "names", "scopes", "feeder", "meaning"], pad: 26 }),
 	group("g-work", { label: "Worker: holds the index", around: ["engine", "router", "vectors"], pad: 26 }),
@@ -28,20 +28,20 @@ const system = diagram("system", { width: 1360, height: 780, seed: 11 }, [
 	cylinder("idb", { x: X[4], y: Y[1] - 12, w: 170, h: 130, title: "IndexedDB", sub: ["index, vectors"] }),
 	cylinder("folder", { x: X[0] + 10, y: Y[3] - 14, w: 170, h: 130, title: "Plugin folder", sub: ["data.json, model"] }),
 
-	arrow("workspace", "modal", { label: "open" }),
+	arrow("workspace", "modal"),
 	arrow("modal", "search", { label: "text" }),
 	arrow("search", "names", { elbow: true, fromSide: "b", toSide: "t", fromAt: 0.2, toAt: 0.8, label: "sync" }),
 	arrow("search", "router", { elbow: true, fromSide: "r", toSide: "l", fromAt: 0.5, toAt: 0.3, label: "query" }),
 	arrow("scopes", "router", { toAt: 0.6, label: "allow" }),
-	arrow("vault", "feeder", { label: "notes" }),
-	arrow("feeder", "router", { elbow: true, fromSide: "r", toSide: "l", fromAt: 0.5, toAt: 0.85, label: "batches" }),
+	arrow("vault", "feeder"),
+	arrow("feeder", "router", { elbow: true, fromSide: "r", toSide: "l", fromAt: 0.5, toAt: 0.85, bendX: 835, label: "batches" }),
 	arrow("router", "engine"),
 	arrow("router", "vectors"),
 	arrow("meaning", "vectors", { elbow: true, fromSide: "r", toSide: "l", fromAt: 0.5, toAt: 0.7, dashed: true, label: "nearest" }),
 	arrow("router", "idb", { dashed: true, label: "save" }),
 	arrow("meaning", "folder", { dashed: true, label: "model" }),
 
-	note("legend", { x: 540, y: 710, text: "solid: the user waits for it, dashed: in the background" }),
+	note("legend", { x: 580, y: 710, text: "solid: the user waits for it, dashed: in the background" }),
 ]);
 
 // One keystroke: names paint in the same frame, the worker answers a few milliseconds later.
@@ -108,7 +108,7 @@ const indexing = diagram("indexing", { width: 1100, height: 660, seed: 3 }, [
 
 	box("events", { x: 40, y: 110, w: 200, h: 84, title: "Obsidian events", sub: ["modify, create, rename"], rounded: true }),
 	box("feeder", { x: 300, y: 110, w: 200, h: 84, title: "Feeder", sub: ["dirty map, 100 ms"], accent: true }),
-	box("gather", { x: 560, y: 110, w: 200, h: 84, title: "gather", sub: ["cache data only"] }),
+	box("gather", { x: 560, y: 110, w: 200, h: 84, title: "gather", sub: ["builds a RawNote"] }),
 	box("client", { x: 820, y: 110, w: 200, h: 84, title: "JetClient", sub: ["ids, postMessage"] }),
 
 	box("router", { x: 820, y: 320, w: 200, h: 84, title: "Router", sub: ["open, batch, upsert"], accent: true }),
@@ -118,7 +118,7 @@ const indexing = diagram("indexing", { width: 1100, height: 660, seed: 3 }, [
 
 	arrow("events", "feeder"),
 	arrow("feeder", "gather", { label: "read" }),
-	arrow("gather", "client", { label: "RawNote" }),
+	arrow("gather", "client"),
 	arrow("client", "router", { label: "message" }),
 	arrow("router", "fields"),
 	arrow("fields", "engine"),
@@ -132,8 +132,8 @@ const meaning = diagram("meaning", { width: 1340, height: 660, seed: 14 }, [
 	group("g-work", { label: "Worker", around: ["router", "vectors", "rank"], pad: 28 }),
 
 	box("confirm", { x: 40, y: 110, w: 200, h: 84, title: "Confirm", sub: ["nothing fetched yet"], rounded: true }),
-	box("install", { x: 300, y: 110, w: 200, h: 84, title: "install", sub: ["SHA-256, int8 pack"], accent: true }),
-	cylinder("model", { x: 590, y: 88, w: 180, h: 130, title: "Model file", sub: ["plugin folder"] }),
+	box("install", { x: 320, y: 110, w: 200, h: 84, title: "install", sub: ["SHA-256, int8 pack"], accent: true }),
+	cylinder("model", { x: 640, y: 88, w: 180, h: 130, title: "Model file", sub: ["plugin folder"] }),
 	box("feeder", { x: 300, y: 300, w: 200, h: 84, title: "Feeder", sub: ["load, embed missing"] }),
 	box("search", { x: 300, y: 470, w: 200, h: 84, title: "Search", sub: ["byMeaning, answers"] }),
 
@@ -146,7 +146,7 @@ const meaning = diagram("meaning", { width: 1340, height: 660, seed: 14 }, [
 	arrow("install", "model", { label: "write" }),
 	arrow("model", "feeder", { elbow: true, fromSide: "b", toSide: "t", fromAt: 0.5, toAt: 0.7, dashed: true, label: "first question" }),
 	arrow("feeder", "router", { label: "model, notes" }),
-	arrow("search", "router", { elbow: true, fromSide: "r", toSide: "l", fromAt: 0.5, toAt: 0.8, label: "nearest, answers" }),
+	arrow("search", "router", { elbow: true, fromSide: "r", toSide: "l", fromAt: 0.5, toAt: 0.8, label: "requests" }),
 	arrow("router", "vectors"),
 	arrow("router", "rank"),
 	arrow("vectors", "idb", { dashed: true, label: "save" }),
@@ -172,7 +172,7 @@ const scopes = diagram("scopes", { width: 1440, height: 660, seed: 21 }, [
 	arrow("review", "data", { label: "Add" }),
 	arrow("watcher", "generate", { dashed: true, label: "vault changed" }),
 	arrow("data", "keeper", { elbow: true, fromSide: "b", toSide: "t", label: "rules" }),
-	arrow("keeper", "worker", { label: "scope:set, delta" }),
+	arrow("keeper", "worker", { label: "set, delta" }),
 	arrow("parse", "keeper", { dashed: true, label: "which scope" }),
 ]);
 
