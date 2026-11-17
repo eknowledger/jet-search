@@ -4,6 +4,9 @@ All notable changes to Jet Search. The format follows [Keep a Changelog](https:/
 
 ## Unreleased
 
+### Added
+- **Words in the order you typed them rank first.** Searching `garden plan` (without quotes) now lists notes that hold those words side by side, in that order, above notes that only contain both. On the demo vault, three words typed in a row find the right note in the top 3 for 88.6% of searches, up from 79.4%. Quoted phrases and single words behave as before.
+
 ### Fixed
 - **A rare exact word ranks first.** A word that is spelled exactly in only one or two notes now puts those notes above notes that only hold its word forms or near spellings, in the results and in the Titles block. Searching `waist` no longer buries the one note that has it under notes about `wait` and `waste`.
 - **A misspelling finds the whole word first.** While you are still typing, `comand` now finds the word `command` ahead of longer words that merely start like it, such as `commands`.

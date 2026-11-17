@@ -1,7 +1,7 @@
 import { type App, type CachedMetadata, getAllTags, parseFrontMatterAliases, type TFile } from "obsidian";
 import { type JetData, frecency } from "./data";
 import { cutExcerpt } from "./excerpt/excerpt";
-import { filterPhrases, PHRASE_CHECK_LIMIT, quotedPhrases } from "./rank";
+import { boostSequences, filterPhrases, PHRASE_CHECK_LIMIT, quotedPhrases } from "./rank";
 import { iconOf } from "./host";
 import { Cancelled, type Feeder } from "./index/feeder";
 import { age, crumb, titleOf } from "./modal/format";
@@ -266,6 +266,11 @@ export class Search {
 			if (reply.broken) void this.feeder.recover();
 			if (phrases.length) {
 				const hits = await filterPhrases(reply.hits, phrases, (p) => this.read(p));
+				if (this.current?.text !== text) return;
+				reply = { ...reply, hits };
+			} else {
+				// Several words typed without quotes: notes that have them in that order go first.
+				const hits = await boostSequences(reply.hits, text, (p) => this.read(p));
 				if (this.current?.text !== text) return;
 				reply = { ...reply, hits };
 			}
