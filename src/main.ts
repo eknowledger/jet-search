@@ -76,7 +76,7 @@ export default class JetSearchPlugin extends Plugin {
 		// Turned off while its data was read: nothing is made.
 		if (this.unloaded) return;
 		this.data = normalizeData(raw);
-		// Key hints as this platform writes them (⌘L on macOS, Ctrl+L elsewhere).
+		// Key hints as this platform writes them (⌘C on macOS, Ctrl+C elsewhere).
 		setMac(Platform.isMacOS);
 		// The first run: Jade's search settings, once. A file read only then.
 		if (this.data.indexedAt === null && !this.data.imported.includes("jade-search")) {

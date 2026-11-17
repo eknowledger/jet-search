@@ -51,7 +51,7 @@ Every number comes from public data, a fixed seed and a runner you can run yours
 And it finds what you meant, not only what you typed:
 
 - **Forgiving.** Typos, word forms (`planted` finds *planting*), initials (`jtrip` finds *Japan Trip 2027*), aliases, accents and case.
-- **Any language.** French, Spanish, German, Portuguese and Italian with their word forms. Chinese and Japanese without spaces. Arabic and Hebrew right to left.
+- **Any language.** Word forms in English, French, Spanish, German, Portuguese, Italian, Dutch, Swedish and Arabic. Chinese and Japanese without spaces. Arabic and Hebrew right to left.
 - **Focused.** Scopes limit a search to a project, an area, a folder, a tag or a property. Filters become chips you can see and remove.
 - **Understands questions.** An optional model that runs on your device finds notes that say the same thing in other words, and points at the line that answers "how much was...?" or "when is...?".
 - **Tested.** 731 automated tests, run on every change.
@@ -228,7 +228,7 @@ Names match on a separate, smaller index: 0.03 ms at 1,000 notes, 0.26 ms at 10,
 | [Guide](docs/guide.md) | Every feature in motion, recorded in the demo vault |
 | [Reference](docs/reference.md) | Every part of the window and every setting, numbered and explained |
 | [Benchmarks](docs/benchmarks.md) | The method behind the numbers, and how to run it |
-| [Architecture](ARCHITECTURE.md) | How Jet is built and why |
+| [Architecture](docs/architecture.md) | How Jet is built, why, and how to change it |
 | [Contributing](CONTRIBUTING.md) | Set up, test, and send a change |
 | [Security](SECURITY.md) | Reporting a vulnerability |
 | [Changelog](CHANGELOG.md) | What changed in each version |

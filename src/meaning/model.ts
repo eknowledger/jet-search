@@ -1,7 +1,7 @@
 /**
  * The meaning model as Jet keeps it: potion-base-8M (Model2Vec, MIT), a table of one 256-number
  * vector per word piece. Downloaded as Hugging Face's files (safetensors, tokenizer.json), checked, then
- * packed into one file of Jet's: the vocabulary, one scale per row and the table in int8 (7.7 MB instead
+ * packed into one file of Jet's: the vocabulary, one scale per row and the table in int8 (7.9 MB instead
  * of 30 MB). A text's vector is the mean of its pieces' rows, normalized; no network, no WASM.
  */
 import { tokenize } from "./tokenizer";

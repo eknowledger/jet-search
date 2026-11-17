@@ -56,7 +56,8 @@ const FUZZY_LIMIT = 200;
 /**
  * A word spelled exactly in at least one note but in fewer than TYPOS_BELOW (it is rare here) puts those
  * notes first: wherever it sits, it counts at least as much as in a heading (RARE_FLOOR), and the word's
- * other forms, prefixes and one-letter-off matches count for a quarter (RARE_OTHERS). "trips", held
+ * other forms, prefixes and compounds count for a quarter (RARE_OTHERS); a spelling a letter off keeps
+ * its own weight. "trips", held
  * once in a body, is not buried by every note named "Trip".
  */
 const RARE_FLOOR = 6;

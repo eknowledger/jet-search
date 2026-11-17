@@ -245,7 +245,7 @@ export type ModalHost = {
 	/** The preview pane's setting (⌘. toggles it). */
 	previewOn(): boolean;
 	setPreviewOn(on: boolean): void;
-	/** Copy a link to the note (⌘L, the preview's link button). Absent: ⌘L does nothing. */
+	/** Copy a link to the note (⌘C, the preview's link button). Absent: ⌘C does nothing. */
 	copyLink?(path: string): void;
 	/** ⌥↵: put a link to the note where the cursor is in the note being edited. Absent: ⌥↵ is left alone. */
 	insertLink?(path: string): void;

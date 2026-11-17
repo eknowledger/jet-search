@@ -164,5 +164,5 @@ export class InNoteHost implements ModalHost {
 		return false;
 	}
 	setPreviewOn(): void {}
-	// No copyLink, insertLink or create: ⌘L, ⌥↵ and ⇧↵ are left alone here, and Jet stays open.
+	// No copyLink, insertLink or create: ⌘C, ⌥↵ and ⇧↵ are left alone here, and Jet stays open.
 }
