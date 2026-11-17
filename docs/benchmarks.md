@@ -142,6 +142,23 @@ Titles are at least 8 characters, words are whole words in the Latin script. Fil
 
 Run it yourself with `--modes quality-auto`, and `--seed 11` for the second set (see below).
 
+### Words typed in order
+
+The tables above type the phrase group in quotes, so they cannot show whether Jet puts the right note first when you type several words **without** quotes. Jet lifts notes where the typed words sit side by side, in that order (a score multiplier of 1.5 on the first 20 hits, never above a note that matched more of the words). This measurement is Jet's engine alone, in Node, on the demo vault; the other tools were not run on it. It uses the same generator as above over 20 seeds (25 searches per group, so 500 per group), with the phrase group typed without quotes.
+
+| Group (500 searches each) | Right note in the top 3, without the boost | With the boost |
+|---|---:|---:|
+| Exact name, name with a typo, start of a name | 92.8%, 91.4%, 93.6% | unchanged |
+| One word, word with a typo | 86.0%, 81.6% | unchanged |
+| Two words from one note | 95.0% | unchanged |
+| **Three words in a row, typed without quotes** | **79.4%** (first place 55.2%) | **88.6%** (first place 68.8%) |
+
+The first result changed for 73 of 3,500 searches, and every group that does not hold words in order is identical. A second set picks two or three words that sit side by side in a note where at least four notes hold all the words and some hold them in order: the right note is in the top 3 for 61.1% of 373 pairs without the boost and 80.4% with it, and for 77.8% of 63 triples without it and 90.5% with it. Typing the same pairs the other way round changed the first result for 3 of 373.
+
+The boost reads the text of 20 notes, so it costs time: 0.3 ms per search with the texts in memory. In Obsidian, paired runs of two builds (with and without it, alternated, 30 searches per query, 239 and 10,000 notes) moved the median time for the result list to settle for two-word searches from 10.9 to 11.4 ms and from 12.6 to 12.7 ms, one-word searches did not move, and no task over 50 ms appeared. A first version of this idea was tried earlier on 42 hand-picked searches of one real vault and scored 39 against 40 without it, so it was left out; that set holds too few searches that depend on order to tell.
+
+Run it with `npm run bench:order -- demo-vault`.
+
 ### 16 hand-written searches
 
 
