@@ -13,8 +13,7 @@ export const forgetThemeMark = (): void => {
 /** The highlight's background and text colour, as the CSS properties Jet's marks read. */
 export const themeMark = (doc: Document): Record<string, string> => {
 	if (known) return known;
-	const host = doc.body.createDiv({ cls: "markdown-rendered" });
-	host.setCssStyles({ position: "absolute", visibility: "hidden", pointerEvents: "none" });
+	const host = doc.body.createDiv({ cls: "markdown-rendered jet-mark-probe" });
 	const style = (doc.defaultView ?? window).getComputedStyle(host.createEl("mark", { text: "Sample" }));
 	const bg = style.backgroundColor;
 	const fg = style.color;

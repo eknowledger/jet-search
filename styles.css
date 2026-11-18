@@ -1951,3 +1951,10 @@ table.jet-set-keys {
 	background: none;
 	white-space: nowrap;
 }
+
+/* The hidden sample Jet measures the theme's highlight on. */
+.jet-mark-probe {
+	position: absolute;
+	visibility: hidden;
+	pointer-events: none;
+}
