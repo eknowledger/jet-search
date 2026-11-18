@@ -8,5 +8,5 @@ export default defineConfig({
 			{ find: /^worker:.*$/, replacement: fileURLToPath(new URL("./test/worker-stub.ts", import.meta.url)) },
 		],
 	},
-	test: { environment: "happy-dom" },
+	test: { environment: "happy-dom", setupFiles: ["./test/setup-globals.ts"] },
 });

@@ -403,7 +403,7 @@ export default class JetSearchPlugin extends Plugin {
 		// and a closed one is let go of at once. One layout-change listener does it all,
 		// and checks Omnisearch's ids again, within the start budget of 9 listeners.
 		const windows = (): void => {
-			const docs = new Set<Document>([document]);
+			const docs = new Set<Document>([activeDocument]);
 			this.app.workspace.iterateAllLeaves?.((leaf) => {
 				const doc = (leaf as { getContainer?: () => { doc?: Document } }).getContainer?.().doc;
 				if (doc) docs.add(doc);

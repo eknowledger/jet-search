@@ -5,17 +5,18 @@ import { excluder, gather, inboundCounts } from "./gather";
 import { sliced } from "./slice";
 
 /** Now if the app is in front, else when it comes back (a phone backgrounded, a window minimized). */
-const whenVisible = (): Promise<void> =>
-	typeof document === "undefined" || !document.hidden
-		? Promise.resolve()
-		: new Promise((resolve) => {
-				const seen = (): void => {
-					if (document.hidden) return;
-					document.removeEventListener("visibilitychange", seen);
-					resolve();
-				};
-				document.addEventListener("visibilitychange", seen);
-			});
+const whenVisible = (): Promise<void> => {
+	if (typeof activeDocument === "undefined" || !activeDocument.hidden) return Promise.resolve();
+	const doc = activeDocument;
+	return new Promise((resolve) => {
+		const seen = (): void => {
+			if (doc.hidden) return;
+			doc.removeEventListener("visibilitychange", seen);
+			resolve();
+		};
+		doc.addEventListener("visibilitychange", seen);
+	});
+};
 
 /** A build or catch-up stopped because the index was cleared or rebuilt meanwhile (not a failure). */
 export class Cancelled extends Error {
