@@ -2,7 +2,7 @@
  * The settings for search by meaning (general examples, not a real vault's). Off by default; turning it on asks first
  * (the model's source, size and checksum), then downloads it or takes the two files you have.
  */
-import { type App, Modal, Notice, setIcon } from "obsidian";
+import { type App, Modal, Notice, Platform, setIcon } from "obsidian";
 import { fileUrl } from "../meaning/install";
 import { MODEL } from "../meaning/model";
 import type { Meaning } from "../meaning/control";
@@ -57,7 +57,11 @@ export class MeaningConfirm extends Modal {
 			else d.setText(v);
 		};
 		row("Model", `${MODEL.id} (Model2Vec, static, ${MODEL.licence})`);
-		row("Download", `~${MODEL.downloadMB} MB, once · kept as about 8 MB`);
+		row(
+			"Download",
+			`~${MODEL.downloadMB} MB, once · kept as about 8 MB` +
+				(Platform.isMobile ? ". Use Wi-Fi: it counts against mobile data." : ""),
+		);
 		row("From", `huggingface.co/${MODEL.repo}`, true);
 		row("Checked against", "its SHA-256, pinned in Jet's code");
 		row("Then", `${this.notes.toLocaleString()} notes given their meaning in a few seconds`);
