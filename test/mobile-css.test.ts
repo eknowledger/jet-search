@@ -60,4 +60,15 @@ describe("phone styles", () => {
 		expect(rule("body.is-mobile .jet-schip::before")).toMatch(/inset:\s*-10px/);
 		expect(rule("body.is-mobile .jet-scrow.is-slide .jet-schips")).toMatch(/padding:\s*10px/);
 	});
+
+	// Obsidian's phone style turns every settings row into a dark pill with a 30 px radius; Jet's option rows
+	// sit inside a card and read as plain lines, as on a computer.
+	it("option rows inside a settings card are flat lines with a small indent", () => {
+		expect(rule("body.is-mobile .jet-set-opts")).toMatch(/padding:\s*4px 14px 8px 14px/);
+		const row = rule("body.is-mobile .jet-set-opts .setting-item") ?? "";
+		expect(row).toMatch(/background:\s*none/);
+		expect(row).toMatch(/border-radius:\s*0/);
+		expect(row).toMatch(/margin:\s*0/);
+		expect(rule("body.is-mobile .jet-set-opts .setting-item:first-child")).toMatch(/border-top:\s*0/);
+	});
 });

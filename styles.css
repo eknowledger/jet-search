@@ -2020,3 +2020,19 @@ body.is-mobile .jet-scrow.is-slide .jet-schips {
 body.is-mobile .jet-scarrow {
 	top: 36px;
 }
+
+/* Settings: Obsidian's phone style makes each option row a dark pill; Jet's sit in a card as plain lines. */
+body.is-mobile .jet-set-opts {
+	padding: 4px 14px 8px 14px;
+}
+
+body.is-mobile .jet-set-opts .setting-item {
+	background: none;
+	border-radius: 0;
+	margin: 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+body.is-mobile .jet-set-opts .setting-item:first-child {
+	border-top: 0;
+}
