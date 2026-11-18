@@ -205,7 +205,7 @@ Names match on a separate, smaller index: 0.03 ms at 1,000 notes, 0.26 ms at 10,
 ## Platforms
 
 - **Desktop:** developed and tested on macOS. Windows and Linux run the same code; reports are welcome.
-- **Mobile:** not supported yet. Jet is built to work there, and mobile testing is under way.
+- **Mobile:** not officially supported yet. Jet has a phone layout and the plugin is listed for desktop while mobile testing continues. [Details](docs/guide.md#mobile).
 
 ## FAQ
 

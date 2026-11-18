@@ -37,7 +37,7 @@ Jet Search does four things:
 3. **Narrows a search** to a scope (a named set of notes defined by rules) or by filters (a tag, a property, a date).
 4. **Optionally understands a question.** A small on-device model finds notes that say the same thing in other words, and an answer step shows the line that answers.
 
-Everything else is out of scope on purpose. Jet does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download), or run on a phone yet. Section 15 lists what that costs.
+Everything else is out of scope on purpose. Jet does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download), or run on a phone yet (it has a phone layout, but mobile is not officially supported yet). Section 15 lists what that costs.
 
 ## 2. Terminology
 
@@ -2254,13 +2254,14 @@ What Jet does not do, and what is not yet verified. Where a number is known, it 
 - **Search in this note** has no phrase check, no fuzzy matching and shows 100 lines.
 - **Accessibility is partial.** The roles and `aria-activedescendant` are in place, but there is no live region to announce results, `aria-expanded` is always `true`, and the code has no reduced-motion handling for the sliding scopes row. Not tested with a screen reader.
 - **The modal is one 2,300-line class** with its state in separate booleans. A change to scopes, filters or meaning touches several handlers. There is no state machine and no test of the combinations beyond the named scenarios.
-- **Fixed size.** The window is 800 by 572 px (CSS), with a narrow mode below 760 px that hides the preview. It is not designed for a phone, and mobile is untested.
+- **Fixed size.** The window is 800 by 572 px (CSS), with a narrow mode below 760 px that hides the preview. On phones and tablets a separate block at the end of `styles.css` (every selector under `body.is-mobile` or `body.is-phone`, enforced by `test/mobile-css.test.ts`) hides the footer of key hints on a phone and gives the small controls a 44 px touch area. The layout has been checked on an emulated phone.
 - **Marks follow the theme only after a `css-change`.** A snippet that changes the highlight without that event is measured at the next theme change.
 - **Some source comments name an older default.** The comment on `ModalHost.copyLink` and one in `main.ts` say Command-L; the default is Command-C (`KEY_ACTIONS`).
 
 ### 15.3 Features, platforms and the build
 
-- **Desktop only.** `manifest.json` has `isDesktopOnly: true`. The code is written to run on mobile (the 8 ms slices, the pause while hidden) but that is untested, and the README says mobile is not supported yet.
+- **Desktop only.** `manifest.json` has `isDesktopOnly: true`. The code is written to run on mobile (the 8 ms slices, the pause while hidden) and was checked on an emulated phone with a slowed processor and in WebKit. The README says mobile is not officially supported yet.
+- **A floor for old engines.** `src/compat.ts` checks for regular expression lookbehind, `Array.prototype.at` and `structuredClone` when the plugin loads (iOS 16.4 or Android WebView 98). A device without one gets a notice and Jet stays off. The bundle has no lookbehind in a regular expression literal, because that is a syntax error on older iOS that would stop the whole file from loading.
 - **macOS only measured.** Windows and Linux run the same code and are untested. Key labels follow `Platform.isMacOS`; the benchmarks are one Apple machine.
 - **The question rule and the answers are English.** `isQuestion` uses English question words (a question in another language needs a `?`), `answerKind` and `answerShapes` read English words, and the answers' stemmer is English only (`englishStem`). Search by meaning itself works on the model's word pieces; how well potion-base-8M embeds non-English text was not checked for this document.
 - **Meaning is a bag of words.** The model averages word pieces, so it has no word order, no negation ("recipes without dairy" is near "recipes with dairy" in principle), and no reading beyond 512 pieces. Each note is represented by its title, aliases, summary, headings and the first 2,000 characters of its body, so a fact deep in a long note is not found by meaning (words still find it).

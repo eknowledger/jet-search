@@ -6,6 +6,11 @@ All notable changes to Jet Search. The format follows [Keep a Changelog](https:/
 
 ### Added
 - **Words in the order you typed them rank first.** Searching `garden plan` (without quotes) now lists notes that hold those words side by side, in that order, above notes that only contain both. On the demo vault, three words typed in a row find the right note in the top 3 for 88.6% of searches, up from 79.4%. Quoted phrases and single words behave as before.
+- **A phone layout, ready for when mobile is supported.** On a phone the window drops the line of key hints, the clear, filter, sort and scope controls have a 44 px touch area, the options in the settings are plain rows, and the confirmation for Search by meaning asks you to use Wi-Fi. Mobile is not officially supported yet.
+- **Jet stops cleanly on an engine that is too old.** On a device without iOS 16.4 or Android WebView 98 (or newer) it shows a notice and stays off, instead of failing when a feature is missing.
+
+### Changed
+- Jet no longer uses a regular expression that older iOS versions cannot read, and it follows the window you are in when you open Obsidian in a separate window.
 
 ### Fixed
 - **A rare exact word ranks first.** A word that is spelled exactly in only one or two notes now puts those notes above notes that only hold its word forms or near spellings, in the results and in the Titles block. Searching `waist` no longer buries the one note that has it under notes about `wait` and `waste`.

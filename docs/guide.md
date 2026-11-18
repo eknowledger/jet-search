@@ -366,5 +366,12 @@ Jet's window follows your theme, dark or light.
 
 ## Mobile
 
-Jet is built to work on Obsidian mobile, with the same search, but it is not supported yet: the mobile app is
-still being tested. Until then the plugin is marked desktop only.
+Mobile is not officially supported yet. The plugin is listed for desktop while testing on real phones continues, so the mobile app does not offer it.
+
+What is ready:
+
+- **A phone layout.** On a phone the window drops the line of key hints, the small buttons (clear, filter, sort, scope chips) have a touch area of 44 px, and the options in the settings are drawn as plain rows.
+- **A warning before the download.** On a phone or tablet, the confirmation for Search by meaning adds "Use Wi-Fi: it counts against mobile data".
+- **A floor.** Jet needs iOS 16.4 or Android WebView 98. On anything older it shows a notice and stays off instead of failing halfway.
+- **No work in the background.** The first build reads notes in slices of at most 8 ms, and Jet pauses while the app is hidden.
+- **Checked so far:** an emulated phone with a slowed processor, and the search engine in WebKit (the engine iOS uses), where 435 searches in several languages gave the same results as on desktop.
