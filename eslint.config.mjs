@@ -23,6 +23,12 @@ export default [
 		},
 	},
 	{
+		// Jet draws its own settings page (tabs, per-page layout) rather than the declarative list, which
+		// fixes the look of every row. The cost is that the settings are not found by Obsidian's settings search.
+		files: ["src/settings-tab.ts"],
+		rules: { "obsidianmd/settings-tab/prefer-setting-definitions": "off" },
+	},
+	{
 		files: ["package.json"],
 		rules: obsidianRulesOff,
 	},
