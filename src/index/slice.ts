@@ -5,11 +5,9 @@
  * stay smooth while the index builds.
  */
 
-/** Let the app run (input, paint) and come back: scheduler.yield where there is one, else a posted task (never a timer, which a hidden window slows to a second). */
-export const yieldNow = (): Promise<void> => {
-	const s = (window as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
-	if (typeof s?.yield === "function") return s.yield();
-	return new Promise((resolve) => {
+/** Let the app run (input, paint) and come back as a task of its own, queued behind what is already waiting (a worker's reply, say). Not a timer, which a hidden window slows to a second. */
+export const yieldTask = (): Promise<void> =>
+	new Promise((resolve) => {
 		const ch = new MessageChannel();
 		ch.port1.onmessage = () => {
 			ch.port1.close();
@@ -17,6 +15,12 @@ export const yieldNow = (): Promise<void> => {
 		};
 		ch.port2.postMessage(0);
 	});
+
+/** Let the app run and come back: scheduler.yield where there is one (it resumes ahead of other waiting tasks), else `yieldTask`. */
+export const yieldNow = (): Promise<void> => {
+	const s = (window as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+	if (typeof s?.yield === "function") return s.yield();
+	return yieldTask();
 };
 
 /** `fn` over `items` in order, yielding whenever a slice has run `budget` ms. */

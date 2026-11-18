@@ -438,8 +438,21 @@ export class NameIndex {
 
 	/** Builds the index from the notes (a later item with the same id replaces an earlier one). */
 	constructor(items: readonly NameItem[] = []) {
+		this.fill(items);
+		this.settle();
+	}
+
+	/**
+	 * Adds many items without keeping the typo word list in step, so a large vault can be added in
+	 * several calls (with the app drawing in between). Not to be matched against until `settle`.
+	 */
+	fill(items: readonly NameItem[]): void {
 		this.bulk = true;
 		for (const item of items) this.upsert(item);
+	}
+
+	/** Ends a run of `fill` calls: the typo word list is made once, and the index can be matched. */
+	settle(): void {
 		this.bulk = false;
 		this.sorted = this.termText.filter((_, i) => (this.termRefs[i] as number) > 0).sort();
 	}

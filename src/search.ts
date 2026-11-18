@@ -1,9 +1,10 @@
-import { type App, type CachedMetadata, getAllTags, parseFrontMatterAliases, type TFile } from "obsidian";
+import { type App, type CachedMetadata, getAllTags, parseFrontMatterAliases, Platform, type TFile } from "obsidian";
 import { type JetData, frecency } from "./data";
 import { cutExcerpt } from "./excerpt/excerpt";
 import { boostSequences, filterPhrases, PHRASE_CHECK_LIMIT, quotedPhrases } from "./rank";
 import { iconOf } from "./host";
 import { Cancelled, type Feeder } from "./index/feeder";
+import { yieldTask } from "./index/slice";
 import { age, crumb, titleOf } from "./modal/format";
 import { type Filter, filterLabel } from "./filters/filter";
 import type { Entry, Sort } from "./modal/jet-modal";
@@ -87,6 +88,9 @@ const firstLine = (body: string): string | null => {
 };
 
 /** Titles shown above the text hits for a name-like query. */
+/** Tier 0 on a phone is built in slices of at most this many ms, in chunks of this many notes. */
+const NAMES_SLICE_MS = 4;
+const NAMES_CHUNK = 50;
 const MAX_TITLES = 8;
 /** Answers (experiment): notes taken from each list, by words and by meaning, for the re-rank. */
 const ANSWER_POOL = 50;
@@ -106,6 +110,10 @@ const SKIP_PROPERTIES = new Set(["aliases", "alias", "tags", "tag", "cssclasses"
  */
 export class Search {
 	private names: NameIndex | null = null;
+	/** Tier 0 is being built in slices (a phone): changes meanwhile are applied when it is done. */
+	private namesBuilding = false;
+	private readonly namesTouched = new Map<string, TFile>();
+	private readonly namesGone = new Set<string>();
 	/** Headings, tags and properties, only while the content index is not ready. */
 	private meta: MetaIndex | null = null;
 	private readonly idOf = new Map<string, number>();
@@ -191,10 +199,13 @@ export class Search {
 				.split(/[^\p{L}\p{N}]+/u)
 				.some((w) => w && nq.excluded.has(foldWord(w)));
 		};
-		const tier0 = names.match(nq.text, {
-			limit: 40,
-			allow: allowed || nq.excluded.size ? named : undefined,
-		});
+		// Still being built in slices (a large vault on a phone): the worker's list comes alone, and the
+		// names join it when they are ready.
+		const tier0 =
+			names?.match(nq.text, {
+				limit: 40,
+				allow: allowed || nq.excluded.size ? named : undefined,
+			}) ?? [];
 		// Title only means names alone: headings and properties are left out too.
 		const meta = titleOnly ? [] : this.metaHits(nq.text, allowed);
 		const now = Date.now();
@@ -299,6 +310,9 @@ export class Search {
 	 * matches. Building in the keystroke cost the first letter of a session ~30 ms during a first build.
 	 */
 	warm(): void {
+		// The saved index opens in the worker meanwhile, so it is ready by the time the names are. A failure
+		// is left to the first search, which tries again and says so.
+		this.feeder.ensure().catch(() => {});
 		window.setTimeout(() => {
 			this.nameIndex();
 			if (this.indexNotReady()) this.metaIndex();
@@ -797,11 +811,60 @@ export class Search {
 
 	// ── Tier 0 names: built on first open, kept by events ────────────────
 
-	private nameIndex(): NameIndex {
+	private nameIndex(): NameIndex | null {
 		if (this.names) return this.names;
-		const items = this.app.vault.getMarkdownFiles().map((f) => this.nameItem(f));
-		this.names = new NameIndex(items);
-		return this.names;
+		if (this.namesBuilding) return null;
+		const files = this.app.vault.getMarkdownFiles();
+		if (!Platform.isMobile) {
+			this.names = new NameIndex(files.map((f) => this.nameItem(f)));
+			return this.names;
+		}
+		// A phone is several times slower and the names are built on its main thread: in slices of at most
+		// 4 ms, with the app drawing and answering between them. A small vault is done in the first slice.
+		const index = new NameIndex();
+		let at = 0;
+		const slice = (): boolean => {
+			const t0 = performance.now();
+			while (at < files.length) {
+				index.fill(files.slice(at, at + NAMES_CHUNK).map((f) => this.nameItem(f)));
+				at += NAMES_CHUNK;
+				if (performance.now() - t0 >= NAMES_SLICE_MS) break;
+			}
+			return at >= files.length;
+		};
+		const finish = (): void => {
+			index.settle();
+			// Notes that came, moved or went while the slices ran.
+			for (const path of this.namesGone) {
+				const id = this.idOf.get(path);
+				if (id === undefined) continue;
+				index.remove(id);
+				this.idOf.delete(path);
+				this.pathOf.delete(id);
+			}
+			for (const f of this.namesTouched.values()) index.upsert(this.nameItem(f));
+			this.namesGone.clear();
+			this.namesTouched.clear();
+			this.names = index;
+			this.namesBuilding = false;
+		};
+		this.namesBuilding = true;
+		if (slice()) {
+			finish();
+			return index;
+		}
+		void (async () => {
+			do await yieldTask();
+			while (!slice());
+			finish();
+			this.refresh();
+		})().catch((e: unknown) => {
+			this.namesBuilding = false;
+			this.namesGone.clear();
+			this.namesTouched.clear();
+			console.warn("Jet Search: the names could not be listed", e);
+		});
+		return null;
 	}
 
 	private nameItem(file: TFile): { id: number; name: string; aliases: string[]; path: string } {
@@ -817,7 +880,11 @@ export class Search {
 
 	/** A note appeared or its aliases changed: its name is findable in the same frame. */
 	nameChanged(file: TFile): void {
-		if (!this.names || file.extension !== "md") return;
+		if (file.extension !== "md") return;
+		if (!this.names) {
+			if (this.namesBuilding) this.namesTouched.set(file.path, file);
+			return;
+		}
 		this.names.upsert(this.nameItem(file));
 	}
 
@@ -832,6 +899,12 @@ export class Search {
 	}
 
 	nameDeleted(path: string): void {
+		// While the names are built in slices the note may be in the list or not yet: settled at the end.
+		if (this.namesBuilding) {
+			this.namesGone.add(path);
+			this.namesTouched.delete(path);
+			return;
+		}
 		const id = this.idOf.get(path);
 		if (id === undefined) return;
 		this.idOf.delete(path);

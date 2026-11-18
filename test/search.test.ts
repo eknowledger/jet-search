@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { App, TFile } from "obsidian";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { App, Platform, TFile } from "obsidian";
 import { normalizeData } from "../src/data";
 import type { Feeder } from "../src/index/feeder";
 import type { Entry } from "../src/modal/jet-modal";
@@ -78,6 +78,96 @@ describe("warming up when the modal opens", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("opening the index when the modal opens", () => {
+	it("starts opening the saved index at once, while Tier 0 is built after the first paint", () => {
+		vi.useFakeTimers();
+		try {
+			const app = new App();
+			(app.vault as unknown as { files: Map<string, TFile> }).files.set("Garden.md", new TFile("Garden.md"));
+			let ensured = 0;
+			const feeder = {
+				progress: null,
+				ensure: () => {
+					ensured++;
+					return Promise.resolve();
+				},
+			} as unknown as Feeder;
+			const data = normalizeData(null);
+			data.indexedAt = 1;
+			const s = new Search(app, {} as JetClient, feeder, () => data);
+			s.warm();
+			expect(ensured).toBe(1);
+			expect(vaultOf(s).calls).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("leaves a failed open to the first search, which reports it", async () => {
+		const app = new App();
+		const feeder = { progress: null, ensure: () => Promise.reject(new Error("no worker")) } as unknown as Feeder;
+		const data = normalizeData(null);
+		const s = new Search(app, {} as JetClient, feeder, () => data);
+		expect(() => s.warm()).not.toThrow();
+		await Promise.resolve();
+	});
+});
+
+describe("Tier 0 on a phone with a large vault", () => {
+	afterEach(() => {
+		Platform.isMobile = false;
+		vi.restoreAllMocks();
+	});
+
+	/** 400 notes and a clock that moves 10 ms per reading, so one slice of 8 ms holds a single chunk. */
+	const large = () => {
+		Platform.isMobile = true;
+		let t = 0;
+		vi.spyOn(performance, "now").mockImplementation(() => (t += 10));
+		const app = new App();
+		const files = (app.vault as unknown as { files: Map<string, TFile> }).files;
+		for (let i = 0; i < 400; i++) files.set(`Notes/Note ${i}.md`, new TFile(`Notes/Note ${i}.md`));
+		files.set("Notes/Garden plan.md", new TFile("Notes/Garden plan.md"));
+		const feeder = {
+			progress: { done: 1, total: 2 },
+			ensure: () => new Promise<void>(() => {}),
+		} as unknown as Feeder;
+		const data = normalizeData(null);
+		const s = new Search(app, {} as JetClient, feeder, () => data);
+		const paints: Item[][] = [];
+		const paint = (entries: Entry[]): void => {
+			paints.push(entries.filter((e): e is Item => e.type === "item"));
+		};
+		return { files, s, paints, paint };
+	};
+
+	it("does not hold up the first search, and shows the names once they are ready", async () => {
+		const { s, paints, paint } = large();
+		s.list("garden", paint);
+		expect(paints.at(-1)).toEqual([]);
+		await vi.waitFor(() => expect(paints.at(-1)?.map((e) => e.path)).toEqual(["Notes/Garden plan.md"]));
+	});
+
+	it("keeps a note created, renamed or deleted while the names are being built", async () => {
+		const { files, s, paints, paint } = large();
+		s.list("garden", paint);
+		const created = new TFile("Notes/Garden shed.md");
+		files.set(created.path, created);
+		s.nameChanged(created);
+		const doomed = files.get("Notes/Garden plan.md") as TFile;
+		files.delete(doomed.path);
+		s.nameDeleted(doomed.path);
+		await vi.waitFor(() => expect(paints.at(-1)?.length).toBeGreaterThan(0));
+		expect(paints.at(-1)?.map((e) => e.path)).toEqual(["Notes/Garden shed.md"]);
+	});
+
+	it("builds at once, in the first slice, when the vault is small", () => {
+		Platform.isMobile = true;
+		const s = setup(true);
+		expect(first(s, "garden").map((e) => e.path)).toEqual(["Projects/Garden.md"]);
 	});
 });
 

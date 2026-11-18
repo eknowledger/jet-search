@@ -299,6 +299,21 @@ describe("index upkeep", () => {
 		expect(index.match("— · ")).toEqual([]);
 	});
 
+	it("answers the same after being filled in several calls and settled", () => {
+		const all = items("Lantern", "Harbor log", "Garden plan", "Garden beds", "Beacon", "Signal light notes");
+		const whole = new NameIndex(all);
+		const parts = new NameIndex();
+		parts.fill(all.slice(0, 2));
+		parts.fill(all.slice(2, 5));
+		parts.fill(all.slice(5));
+		parts.settle();
+		expect(parts.size).toBe(whole.size);
+		for (const q of ["garden", "lamtern", "harbour", "beacon", "signal", "g p", "zzz"])
+			expect(parts.match(q)).toEqual(whole.match(q));
+		parts.upsert({ id: 99, name: "Lantern oil", aliases: [], path: "Notes/Lantern oil.md" });
+		expect(top(parts, "lamtern oil").id).toBe(99);
+	});
+
 	it("follows upsert and remove, typos included", () => {
 		const index = new NameIndex(items("Lantern", "Harbor log"));
 		expect(index.size).toBe(2);
