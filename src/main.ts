@@ -1,4 +1,5 @@
-import { type Command, debounce, MarkdownView, Platform, Plugin, TFile } from "obsidian";
+import { type Command, debounce, MarkdownView, Notice, Platform, Plugin, TFile } from "obsidian";
+import { MINIMUM, missingFeature } from "./compat";
 import { BUILD_ID } from "./build-id";
 import { type JetData, movePath, normalizeData, recordOpen } from "./data";
 import { JetHost } from "./host";
@@ -72,6 +73,11 @@ export default class JetSearchPlugin extends Plugin {
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
 
 	async onload(): Promise<void> {
+		const missing = missingFeature();
+		if (missing) {
+			new Notice(`Jet Search needs ${MINIMUM} or newer. This device lacks ${missing}, so Jet stays off.`);
+			return;
+		}
 		const raw: unknown = await this.loadData();
 		// Turned off while its data was read: nothing is made.
 		if (this.unloaded) return;

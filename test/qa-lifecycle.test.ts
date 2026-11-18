@@ -2,7 +2,7 @@
  * QA: the plugin's lifecycle and the partnership with Jade. Each test names the behaviour it expects.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { App, Plugin } from "obsidian";
+import { App, Notice, Plugin } from "obsidian";
 import type { JadeApi, JadePartner } from "../src/jade-api";
 import { JadeLink } from "../src/jade-link";
 import JetSearchPlugin from "../src/main";
@@ -242,6 +242,28 @@ describe("QA lifecycle: nothing of Jet runs after it is turned off", () => {
 		plugin.unload();
 		await vi.advanceTimersByTimeAsync(0);
 		expect((saved() as { searches?: string[] } | null)?.searches).toEqual(["fresh query"]);
+	});
+});
+
+describe("QA lifecycle: an engine that is too old", () => {
+	it("says what is missing and makes nothing; turning it off does not throw", async () => {
+		Notice.shown.length = 0;
+		const real = Array.prototype.at;
+		// @ts-expect-error simulating an engine from before 2022
+		delete Array.prototype.at;
+		try {
+			const { plugin, commands, ready } = make();
+			await plugin.onload();
+			ready();
+			expect(Notice.shown[Notice.shown.length - 1]).toMatch(
+				/Jet Search needs iOS 16\.4.*lacks Array\.prototype\.at/,
+			);
+			expect(Object.keys(commands)).toEqual([]);
+			expect(FakeWorker.made).toHaveLength(0);
+			expect(() => plugin.unload()).not.toThrow();
+		} finally {
+			Array.prototype.at = real;
+		}
 	});
 });
 

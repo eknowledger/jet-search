@@ -78,10 +78,10 @@ const explicitForm = (input: string, scopes: readonly Scope[]): Parsed | null =>
 		else {
 			// Unquoted: the longest run of the following words that names a scope exactly.
 			const run: Array<{ text: string; end: number }> = [{ text: m[3] ?? "", end: firstEnd }];
-			for (const w of input.slice(firstEnd).matchAll(/^\s+(\S+)|(?<=\S)\s+(\S+)/gu)) {
+			for (const w of input.slice(firstEnd).matchAll(/\s+(\S+)/gu)) {
 				if (run.length >= MAX_NAME_WORDS) break;
 				const last = run[run.length - 1] as { end: number };
-				const word = w[1] ?? w[2] ?? "";
+				const word = w[1] ?? "";
 				const wordAt = firstEnd + (w.index ?? 0) + w[0].length - word.length;
 				if (input.slice(last.end, wordAt).trim()) break;
 				run.push({ text: word, end: wordAt + word.length });
