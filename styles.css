@@ -1966,3 +1966,57 @@ table.jet-set-keys {
 body.is-phone .modal.jet-modal .jet-ft {
 	display: none;
 }
+
+/* A finger needs 44 px. Controls keep their look; a transparent area around each reaches 44. */
+body.is-mobile .jet-clear {
+	position: relative;
+	margin-right: 19px;
+}
+
+body.is-mobile .jet-clear::before {
+	content: "";
+	position: absolute;
+	inset: -11px;
+}
+
+body.is-mobile .jet-fbtn {
+	position: relative;
+}
+
+body.is-mobile .jet-fbtn::before {
+	content: "";
+	position: absolute;
+	inset: -8px;
+}
+
+/* The header that holds the sort control grows to 44 px, and the control fills it. */
+body.is-mobile .jet-h:has(.jet-sort) {
+	height: 44px;
+}
+
+body.is-mobile .jet-sort {
+	align-self: stretch;
+	padding: 0 10px;
+}
+
+body.is-mobile .jet-schip {
+	position: relative;
+}
+
+body.is-mobile .jet-schip::before {
+	content: "";
+	position: absolute;
+	inset: -10px -4px;
+}
+
+body.is-mobile .jet-schips {
+	row-gap: 20px;
+}
+
+body.is-mobile .jet-scrow.is-slide .jet-schips {
+	padding: 10px 2px;
+}
+
+body.is-mobile .jet-scarrow {
+	top: 36px;
+}
