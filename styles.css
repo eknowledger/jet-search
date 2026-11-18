@@ -1958,3 +1958,11 @@ table.jet-set-keys {
 	visibility: hidden;
 	pointer-events: none;
 }
+
+/* Phones and tablets */
+/* Everything below applies on a phone or tablet only: every selector starts with a body class Obsidian sets there. */
+
+/* The footer's key hints (Enter, Cmd-Enter, Esc) need a keyboard and do not fit a phone's width. */
+body.is-phone .modal.jet-modal .jet-ft {
+	display: none;
+}
