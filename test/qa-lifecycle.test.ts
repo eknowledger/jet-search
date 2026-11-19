@@ -256,7 +256,7 @@ describe("QA lifecycle: an engine that is too old", () => {
 			await plugin.onload();
 			ready();
 			expect(Notice.shown[Notice.shown.length - 1]).toMatch(
-				/Jet Search needs iOS 16\.4.*lacks Array\.prototype\.at/,
+				/Jet Search needs iOS 15\.4.*lacks Array\.prototype\.at/,
 			);
 			expect(Object.keys(commands)).toEqual([]);
 			expect(FakeWorker.made).toHaveLength(0);

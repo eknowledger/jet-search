@@ -9,11 +9,10 @@ const sources = (dir: string): string[] =>
 	);
 
 describe("older phones", () => {
-	// A lookbehind written as a regex literal is a syntax error before iOS 16.4: the whole bundle would
-	// fail to load, with no message. The ones built at run time (new RegExp) fail only when used, and
-	// `missingFeature` stops Jet before that.
-	it("no source file writes a regex lookbehind as a literal", () => {
-		const bad = sources("src").filter((f) => /\/(?:[^/\n*]|\\\/)*\(\?<[=!]/.test(readFileSync(f, "utf8")));
+	// A lookbehind before iOS 16.4 is a syntax error: as a literal, the whole bundle fails to load with no
+	// message; built at run time, the search that uses it fails. None is used, so the floor is lower.
+	it("no source file uses a regex lookbehind", () => {
+		const bad = sources("src").filter((f) => /\(\?<[=!]/.test(readFileSync(f, "utf8")));
 		expect(bad).toEqual([]);
 	});
 

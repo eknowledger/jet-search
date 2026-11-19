@@ -31,13 +31,6 @@ export const MAY_FOLD = new RegExp(
 		"\\ufb1d-\\ufdff\\ufe70-\\ufeff\\uff61-\\uffef]",
 );
 
-/**
- * Before a term, a superset of word starts without `\p{…}`: anything but a lower-case Latin letter
- * followed by another, so the common mid-word case is rejected inside the scan. `startsWord` decides.
- */
-export const LOOSE_START =
-	"(?:^|[^a-z0-9\\u00df-\\u00f6\\u00f8-\\u00ff]|(?=[^a-z\\u00df-\\u00f6\\u00f8-\\u00ff])|(?<=[0-9]))";
-
 type Range = readonly [number, number];
 /** Raw code points that may fold to a letter, by the letter's script; each group is scanned on first use. */
 const GROUPS: ReadonlyArray<readonly Range[]> = [
@@ -246,15 +239,15 @@ const trieSource = (terms: readonly string[], seen: Present | null): string => {
 };
 
 /**
- * The pattern for a set of prepared terms, each matched as a word prefix: terms from spaceless scripts
- * anywhere, the others behind `LOOSE_START` (checked once for all through a backreference). `seen` adds
- * the variant characters and marks the text holds (null: case only).
+ * The pattern for a set of prepared terms: terms from spaceless scripts match anywhere, the others are
+ * group 1, and the caller keeps a match only where a word starts (`startsWord`). `seen` adds the variant
+ * characters and marks the text holds (null: case only).
  */
 export const termsSource = (terms: readonly string[], seen: Present | null): string => {
 	const free = terms.filter(isFree);
 	const bounded = terms.filter((t) => !isFree(t));
 	const alts: string[] = [];
-	if (bounded.length > 0) alts.push(`(${trieSource(bounded, seen)})(?<=${LOOSE_START}\\1)`);
+	if (bounded.length > 0) alts.push(`(${trieSource(bounded, seen)})`);
 	if (free.length > 0) alts.push(trieSource(free, seen));
 	return alts.join("|");
 };

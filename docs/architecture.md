@@ -34,7 +34,7 @@ Jet Search does four things:
 3. **Narrows a search** to a scope (a named set of notes defined by rules) or by filters (a tag, a property, a date).
 4. **Optionally understands a question.** A small on-device model finds notes that say the same thing in other words, and an answer step shows the line that answers.
 
-It does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download), or run on a phone yet (it has a phone layout, but mobile is not officially supported yet).
+It does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download). It runs on mobile, but mobile is not officially supported yet.
 
 Four words you will see everywhere:
 
@@ -379,7 +379,7 @@ The honest short list. The reference has [the full one](architecture-reference.m
 * **Evidence is thin in places.** The accuracy sets are generated from a 239-note invented vault. Only macOS was measured. IndexedDB is exercised only in the browser. The model download path (checksum rejection, HTTP failure) has no unit test.
 * **Text only.** Notes are Markdown; there is no text from PDFs or images, and other frontmatter properties are not indexed as words (they are reachable through filters).
 * **Meaning is English-biased.** The question rule and the answers read English words; the model itself works on word pieces and how well it embeds other languages was not checked.
-* **Desktop only.** `isDesktopOnly` is set. The code is written for mobile (8 ms slices, pause while hidden, a phone layout under `body.is-mobile` and `body.is-phone`, a start-up check in `src/compat.ts` for iOS 16.4 or Android WebView 98) and was checked on an emulated phone and in WebKit, but mobile is not officially supported yet.
+* **Mobile is not officially supported yet.** `isDesktopOnly` is off. The code is written for mobile (8 ms slices, pause while hidden, a phone layout under `body.is-mobile` and `body.is-phone`, a start-up check in `src/compat.ts` for iOS 15.4 or Android WebView 98) and was checked on an emulated phone and in WebKit, not on a real phone.
 * **The modal is one large class** with state in separate booleans. A change to scopes, filters or meaning touches several handlers.
 * **Accessibility is partial.** Roles and `aria-activedescendant` are in place, but there is no live region to announce results, and it was not tried with a screen reader.
 * **Release job** builds but runs no lint or tests.

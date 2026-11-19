@@ -37,7 +37,7 @@ Jet Search does four things:
 3. **Narrows a search** to a scope (a named set of notes defined by rules) or by filters (a tag, a property, a date).
 4. **Optionally understands a question.** A small on-device model finds notes that say the same thing in other words, and an answer step shows the line that answers.
 
-Everything else is out of scope on purpose. Jet does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download), or run on a phone yet (it has a phone layout, but mobile is not officially supported yet). Section 15 lists what that costs.
+Everything else is out of scope on purpose. Jet does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download). It runs on mobile, but mobile is not officially supported yet. Section 15 lists what that costs.
 
 ## 2. Terminology
 
@@ -2260,8 +2260,8 @@ What Jet does not do, and what is not yet verified. Where a number is known, it 
 
 ### 15.3 Features, platforms and the build
 
-- **Desktop only.** `manifest.json` has `isDesktopOnly: true`. The code is written to run on mobile (the 8 ms slices, the pause while hidden) and was checked on an emulated phone with a slowed processor and in WebKit. The README says mobile is not officially supported yet.
-- **A floor for old engines.** `src/compat.ts` checks for regular expression lookbehind, `Array.prototype.at` and `structuredClone` when the plugin loads (iOS 16.4 or Android WebView 98). A device without one gets a notice and Jet stays off. The bundle has no lookbehind in a regular expression literal, because that is a syntax error on older iOS that would stop the whole file from loading.
+- **Mobile is not officially supported yet.** `manifest.json` has `isDesktopOnly: false`. The code is written to run on mobile (the 8 ms slices, the pause while hidden) and was checked on an emulated phone with a slowed processor and in WebKit, not on a real phone. The README says so.
+- **A floor for old engines.** `src/compat.ts` checks for `Array.prototype.at` and `structuredClone` when the plugin loads (iOS 15.4 or Android WebView 98). A device without one gets a notice and Jet stays off. The source uses no regular expression lookbehind, which before iOS 16.4 is a syntax error that stops the whole file from loading; `test/compat.test.ts` fails if one is added.
 - **macOS only measured.** Windows and Linux run the same code and are untested. Key labels follow `Platform.isMacOS`; the benchmarks are one Apple machine.
 - **The question rule and the answers are English.** `isQuestion` uses English question words (a question in another language needs a `?`), `answerKind` and `answerShapes` read English words, and the answers' stemmer is English only (`englishStem`). Search by meaning itself works on the model's word pieces; how well potion-base-8M embeds non-English text was not checked for this document.
 - **Meaning is a bag of words.** The model averages word pieces, so it has no word order, no negation ("recipes without dairy" is near "recipes with dairy" in principle), and no reading beyond 512 pieces. Each note is represented by its title, aliases, summary, headings and the first 2,000 characters of its body, so a fact deep in a long note is not found by meaning (words still find it).
