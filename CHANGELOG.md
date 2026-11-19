@@ -2,12 +2,13 @@
 
 All notable changes to Jet Search. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.7.0 - 2026-11-19
 
 ### Added
 - **Words in the order you typed them rank first.** Searching `garden plan` (without quotes) now lists notes that hold those words side by side, in that order, above notes that only contain both. On the demo vault, three words typed in a row find the right note in the top 3 for 88.6% of searches, up from 79.4%. Quoted phrases and single words behave as before.
-- **A phone layout, ready for when mobile is supported.** On a phone the window drops the line of key hints, the clear, filter, sort and scope controls have a 44 px touch area, the options in the settings are plain rows, and the confirmation for Search by meaning asks you to use Wi-Fi. Mobile is not officially supported yet.
-- **Jet stops cleanly on an engine that is too old.** On a device without iOS 16.4 or Android WebView 98 (or newer) it shows a notice and stays off, instead of failing when a feature is missing.
+- **Jet on mobile.** The plugin can now be installed on Obsidian mobile. On a phone the window drops the line of key hints, the clear, filter, sort and scope controls have a 44 px touch area, the options in the settings are plain rows, and the confirmation for Search by meaning asks you to use Wi-Fi. Mobile is not officially supported yet: it was tested on an emulated phone and in WebKit, not on real devices.
+- **Large vaults open smoothly on a phone.** The list of note names is built in small slices instead of one block, and the saved index starts opening as soon as the window does.
+- **Jet stops cleanly on an engine that is too old.** On a device without iOS 15.4 or Android WebView 98 (or newer) it shows a notice and stays off, instead of failing when a feature is missing.
 
 ### Changed
 - Jet no longer uses a regular expression that older iOS versions cannot read, and it follows the window you are in when you open Obsidian in a separate window.
