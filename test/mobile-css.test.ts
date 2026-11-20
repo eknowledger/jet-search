@@ -52,8 +52,25 @@ describe("phone styles", () => {
 	});
 
 	it("a section header holding the sort control is 44 px high, so the sort control is", () => {
-		expect(rule("body.is-mobile .jet-h:has(.jet-sort)")).toMatch(/height:\s*44px/);
+		expect(rule("body.is-mobile .jet-h.has-sort")).toMatch(/height:\s*44px/);
 		expect(rule("body.is-mobile .jet-sort")).toMatch(/align-self:\s*stretch/);
+	});
+
+	// Obsidian's directory scan warns about both: they are only partly supported by the older apps it targets.
+	it("the stylesheet needs neither :has() nor display: contents", () => {
+		const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
+		expect(code).not.toMatch(/:has\(/);
+		expect(code).not.toMatch(/display:\s*contents/);
+	});
+
+	it("the chip boxes in the search field lay out their chips in a row, and take no room when empty", () => {
+		for (const box of [".jet-kept", ".jet-fchips"]) {
+			const body = new RegExp(`${box.replace(".", "\\.")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+			expect(body, box).toMatch(/display:\s*flex/);
+			expect(body, box).toMatch(/align-items:\s*center/);
+			expect(body, box).toMatch(/gap:\s*4px/);
+			expect(css, box).toMatch(new RegExp(`${box.replace(".", "\\.")}:empty\\s*\\{[^}]*display:\\s*none`));
+		}
 	});
 
 	it("scope chips keep their 26 px look and reach 44 px, with room above and below in the sliding row", () => {

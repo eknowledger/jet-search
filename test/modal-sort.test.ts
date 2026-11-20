@@ -56,6 +56,8 @@ describe("sort", () => {
 		m.inputEl.dispatchEvent(new Event("input"));
 		const sort = document.querySelector<HTMLElement>(".jet-sort");
 		expect(sort?.textContent).toBe("Best match");
+		// The phone style sizes this header by a class on it, not by looking for the control inside.
+		expect(sort?.parentElement?.classList.contains("has-sort")).toBe(true);
 		sort?.click();
 		const menu = (Menu as unknown as { last: { items: Array<{ title: string; click: () => void }> } }).last;
 		expect(menu.items.map((i) => i.title)).toContain("Title: A → Z");
