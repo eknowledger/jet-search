@@ -32,8 +32,9 @@ jobs:
 
   # Pull requests are squash merged and the title becomes the commit, so the title has to be a
   # conventional message: type(scope): Subject, starting with a capital letter or a version number.
+  # Dependabot writes its own titles ("chore(deps-dev): bump ..."), which are conventional but lower case.
   title:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check the pull request title

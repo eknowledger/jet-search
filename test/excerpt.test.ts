@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cutExcerpt, excerptCacheStats, findHits, frontmatterEnd, hasPhrase } from "../src/excerpt/excerpt";
 import type { Excerpt } from "../src/excerpt/excerpt";
+import { budget } from "./budget";
 
 /** A seeded random generator (mulberry32), so failures repeat. */
 const rng = (seed: number) => () => {
@@ -395,7 +396,7 @@ describe("performance (20 rows ≤ 2 ms in Obsidian)", () => {
 			for (const text of rows) cutExcerpt(text, terms);
 			if (round >= 10) times.push(performance.now() - t0);
 		}
-		expect(p50(times), `p25 ${p50(times).toFixed(3)} ms`).toBeLessThanOrEqual(1);
+		expect(p50(times), `p25 ${p50(times).toFixed(3)} ms`).toBeLessThanOrEqual(budget(1));
 		for (const text of rows) expect(cutExcerpt(text, ["speech"])).not.toBeNull();
 	});
 
@@ -406,7 +407,7 @@ describe("performance (20 rows ≤ 2 ms in Obsidian)", () => {
 			for (const text of rows) hasPhrase(text, "text to image");
 			if (round >= 10) times.push(performance.now() - t0);
 		}
-		expect(p50(times), `p25 ${p50(times).toFixed(3)} ms`).toBeLessThanOrEqual(1);
+		expect(p50(times), `p25 ${p50(times).toFixed(3)} ms`).toBeLessThanOrEqual(budget(1));
 		expect(rows.every((text) => hasPhrase(text, "text to image"))).toBe(true);
 	});
 
@@ -425,7 +426,7 @@ describe("performance (20 rows ≤ 2 ms in Obsidian)", () => {
 			expect(cutExcerpt(big, ["lantern", "beacon"])).toBeNull();
 			times.push(performance.now() - t0);
 		}
-		expect(p50(times), `p25 ${p50(times).toFixed(3)} ms`).toBeLessThanOrEqual(2);
+		expect(p50(times), `p25 ${p50(times).toFixed(3)} ms`).toBeLessThanOrEqual(budget(2));
 		expect(cutExcerpt(big, ["lantern"], { scanLimit: big.length })?.offset).toBe(big.length - 7);
 	});
 });

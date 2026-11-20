@@ -27,6 +27,11 @@ updates:
     open-pull-requests-limit: 3
     allow:
       - dependency-type: "development"
+    ignore:
+      # The type checker is the separate typescript-7 package. The linter's parser does not run on
+      # TypeScript 7 yet, so typescript itself stays on 6 until typescript-eslint supports 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore"
       include: "scope"
