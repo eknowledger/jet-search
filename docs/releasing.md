@@ -29,7 +29,7 @@ The project is on 0.x, so the middle number is the one that means "something to 
 
 1. **Branch** from an up to date `main`: `release/0.8.0`.
 2. **Set the version** in `manifest.json`, `package.json`, `package-lock.json` and `versions.json`.
-3. **Write the changelog.** Add a section `## 0.8.0 - 2026-12-01` with Added, Changed and Fixed. Lead each line with a short bold sentence that says what a user can now do or what stopped being broken. Every number in it must be measured, and the reasoning stays in the pull request.
+3. **Write the changelog.** Add a section `## 0.8.0 - 2026-12-01` with Added, Changed and Fixed. Every entry is `- **Name**: one sentence.`, with the sentence under 120 characters and ending in a full stop. It says what a user can now do, or what stopped being broken. Detail goes on indented lines below the entry. Every number must be measured. A test fails on an entry in any other shape, and on a version with no section.
 4. **Run the checks:** `npm run check` and `npm run build`.
 5. **Open a pull request** titled `chore(release): 0.8.0`. Once the check passes, squash merge it.
 6. **Tag the merge commit** and push the tag:
@@ -41,8 +41,27 @@ The project is on 0.x, so the middle number is the one that means "something to 
    git push origin 0.8.0
    ```
 
-7. **The workflow does the rest.** It checks the tag against the manifest, runs `npm run check`, builds, attests the build and publishes the release with the three files and generated notes.
+7. **The workflow does the rest.** It checks the tag against the manifest, runs `npm run check`, builds, attests the build and publishes the release with the three files and the release notes.
 8. **Check the result.** The release page lists exactly `main.js`, `manifest.json` and `styles.css`. Install those files in a fresh vault and open the search window once.
+
+## The release notes
+
+The notes on a GitHub release are the first line of every changelog entry, grouped as New, Changed and Fixed with a count, and a link to the full changelog:
+
+```
+### New (2)
+
+- **Words in order**: words typed in order, like `garden plan`, rank above notes that only hold both words.
+- **Jet on mobile**: the plugin can now be installed on Obsidian mobile, which is not officially supported yet.
+
+### Fixed (1)
+
+- **A misspelling finds the whole word first**: while you type, `comand` now finds `command` ahead of `commands`.
+
+Full changelog: CHANGELOG.md
+```
+
+The workflow builds them with `scripts/release-notes.mjs`, so the release and the changelog cannot say different things. You can print a version's notes before a release with `node scripts/release-notes.mjs 0.8.0`. To write the notes of a release that already exists, or to create the page for an old tag, run `node scripts/release-notes.mjs 0.8.0 --apply` (it needs `gh` signed in).
 
 ## If something is wrong
 
