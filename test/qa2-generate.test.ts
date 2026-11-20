@@ -16,6 +16,7 @@ import { applyReview, review } from "../src/scopes/review";
 import { emptyConfig, type Snapshot } from "../src/scopes/snapshot";
 import { ScopeWatcher } from "../src/scopes/watcher";
 import { mockApi } from "./obsidian-mock";
+import { budget } from "./budget";
 
 // ── Vault builders ─────────────────────────────────────────────────────────────
 
@@ -277,7 +278,7 @@ describe("QA generate: what Generate proposes on unusual vaults", () => {
 		const t = performance.now();
 		generate(s);
 		const ms = performance.now() - t;
-		expect(ms).toBeLessThan(1000);
+		expect(ms).toBeLessThan(budget(1000));
 	}, 60_000);
 });
 
