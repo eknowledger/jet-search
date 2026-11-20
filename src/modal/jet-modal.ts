@@ -2145,6 +2145,7 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 				});
 		}
 		if (e.sort) {
+			el.addClass("has-sort");
 			const s = el.createSpan({ cls: "jet-sort", attr: { role: "button", "aria-label": `Sort (${keys.sort})` } });
 			s.appendText(e.sort);
 			setIcon(s.createSpan({ cls: "jet-sorti" }), "chevron-down");

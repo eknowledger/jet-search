@@ -649,7 +649,14 @@
 
 /* The scopes added before the last one: chips in the same row. */
 .jet-kept {
-	display: contents;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: none;
+}
+
+.jet-kept:empty {
+	display: none;
 }
 
 .jet-chip:hover {
@@ -867,7 +874,14 @@
 
 /* Filters: chips in the box, the bar under it */
 .jet-fchips {
-	display: contents;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: none;
+}
+
+.jet-fchips:empty {
+	display: none;
 }
 
 .jet-fchip {
@@ -1990,7 +2004,7 @@ body.is-mobile .jet-fbtn::before {
 }
 
 /* The header that holds the sort control grows to 44 px, and the control fills it. */
-body.is-mobile .jet-h:has(.jet-sort) {
+body.is-mobile .jet-h.has-sort {
 	height: 44px;
 }
 
