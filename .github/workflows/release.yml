@@ -51,6 +51,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The notes are the short lines of this version's CHANGELOG.md section, not the commit list.
+          node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/notes.md"
           gh release create "${GITHUB_REF_NAME}" main.js manifest.json styles.css \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+            --notes-file "${RUNNER_TEMP}/notes.md"
