@@ -1,21 +1,25 @@
 name: CI
 
 # Every push to main and every pull request: formatting, lint, type checks, tests and a production build.
+# Actions are pinned by commit, with the version beside each one, and Dependabot keeps them current.
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
   contents: read
 
 jobs:
   check:
+    # Editing a title changes no code, so only the title job runs then.
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -25,3 +29,21 @@ jobs:
       - run: npm run check
 
       - run: npm run build
+
+  # Pull requests are squash merged and the title becomes the commit, so the title has to be a
+  # conventional message: type(scope): Subject, starting with a capital letter or a version number.
+  title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the pull request title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|test|docs|chore|ci)(\([a-z0-9-]+\))?: [A-Z0-9].*[^.]$'
+          if ! printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "Title: $TITLE" >&2
+            echo "Use type(scope): Subject, for example fix(modal): Keep the selection after Esc." >&2
+            echo "Types: feat, fix, perf, refactor, test, docs, chore, ci. The subject starts with a capital or a digit and has no final full stop." >&2
+            exit 1
+          fi
