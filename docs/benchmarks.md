@@ -251,7 +251,7 @@ If a number is wrong, or a tool is mis-set, please open an issue with the correc
 
 ## Run it yourself
 
-The in-Obsidian comparison is in [`bench/compare/`](../bench/compare/README.md) and needs Node 22 or newer and Obsidian. It starts its own Obsidian on a profile of its own, with a debugging port, and never touches yours. The engine measurement is `bench/run.ts` (and `bench/mem.ts` for memory).
+The in-Obsidian comparison is in [`bench/compare/`](../bench/compare/README.md) and needs Node 22 or newer and Obsidian. It starts its own Obsidian on a profile of its own, with a debugging port, and never touches yours. The engine measurement is `bench/run.spec.ts` (and `bench/mem.spec.ts` for memory).
 
 ```
 # download the other plugins at the versions tested

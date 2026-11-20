@@ -1,4 +1,4 @@
-// Bundles one of the engine benchmarks (bench/run.ts, bench/mem.ts or bench/order.ts) and runs it with the arguments that follow.
+// Bundles one of the engine benchmarks (bench/run.spec.ts, bench/mem.spec.ts or bench/order.spec.ts) and runs it with the arguments that follow.
 //   node scripts/bench.mjs run|mem|order [arguments]
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -14,5 +14,5 @@ if (which !== "run" && which !== "mem" && which !== "order") {
 }
 const outfile = join(root, "bench/.out", `${which}.mjs`);
 mkdirSync(dirname(outfile), { recursive: true });
-await build({ entryPoints: [join(root, "bench", `${which}.ts`)], bundle: true, platform: "node", format: "esm", packages: "external", outfile, logLevel: "warning" });
+await build({ entryPoints: [join(root, "bench", `${which}.spec.ts`)], bundle: true, platform: "node", format: "esm", packages: "external", outfile, logLevel: "warning" });
 process.exit(spawnSync(process.execPath, ["--expose-gc", outfile, ...args], { stdio: "inherit" }).status ?? 1);

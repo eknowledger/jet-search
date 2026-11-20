@@ -6,7 +6,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { jetEngine } from "./jet-engine";
-import { readNotes } from "./notes";
+import { readNotes } from "./notes.spec";
 import type { BenchNote } from "./engine";
 
 const gc = (): void => (globalThis as { gc?: () => void }).gc?.();
