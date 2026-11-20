@@ -1,0 +1,37 @@
+# Weekly updates for the GitHub Actions the workflows pin by commit, and for dev dependencies.
+#
+# The release workflow can write to the repository and attest builds, so every action it runs is
+# inside that trust boundary. Dependabot keeps each pinned commit and its version comment in step.
+#
+# Patch and minor updates share one pull request per ecosystem and majors stay separate so they get
+# read. The open pull request count is capped so the queue stays readable.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions-patch-and-minor:
+        update-types:
+          - "patch"
+          - "minor"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    allow:
+      - dependency-type: "development"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      npm-patch-and-minor:
+        update-types:
+          - "patch"
+          - "minor"
