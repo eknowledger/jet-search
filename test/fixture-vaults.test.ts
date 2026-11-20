@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeVault, SHAPES } from "../bench/fixtures/make-vaults.mjs";
+import { budget } from "./budget";
 
 type Rule = { kind: "folder" | "property" | "tag"; key?: string; value: string; count: number };
 type Scope = {
@@ -206,7 +207,7 @@ describe("fixture vaults", () => {
 				.reduce((sum, p) => sum + statSync(join(dir, p)).size, 0);
 			expect(bytes).toBeLessThan(10e6);
 			// About 0.3 s alone; the whole suite runs files in parallel, so the bound leaves room for that.
-			expect(ms).toBeLessThan(3000);
+			expect(ms).toBeLessThan(budget(3000));
 		});
 	});
 

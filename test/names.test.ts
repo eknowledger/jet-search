@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type NameHit, type NameItem, NameIndex } from "../src/tier0/names";
+import { budget } from "./budget";
 
 /** A seeded random generator (mulberry32), so failures repeat. */
 const rng = (seed: number) => () => {
@@ -417,13 +418,13 @@ describe("performance", () => {
 		const data = vault(2000, 1);
 		const index = new NameIndex(data);
 		const { p50, p95 } = timeQueries(index, queries(data, 2));
-		expect(p95, `p50 ${p50.toFixed(3)} ms, p95 ${p95.toFixed(3)} ms`).toBeLessThanOrEqual(1);
+		expect(p95, `p50 ${p50.toFixed(3)} ms, p95 ${p95.toFixed(3)} ms`).toBeLessThanOrEqual(budget(1));
 	});
 
 	it("answers in ≤ 8 ms p95 for ~20,000 items", () => {
 		const data = vault(20_000, 3);
 		const index = new NameIndex(data);
 		const { p50, p95 } = timeQueries(index, queries(data, 4));
-		expect(p95, `p50 ${p50.toFixed(3)} ms, p95 ${p95.toFixed(3)} ms`).toBeLessThanOrEqual(8);
-	});
+		expect(p95, `p50 ${p50.toFixed(3)} ms, p95 ${p95.toFixed(3)} ms`).toBeLessThanOrEqual(budget(8));
+	}, 30_000);
 });

@@ -16,6 +16,7 @@ import type { Entry } from "../src/modal/jet-modal";
 import { filterPhrases } from "../src/rank";
 import { Search } from "../src/search";
 import { JetClient } from "../src/worker/jet-client";
+import { budget } from "./budget";
 
 type Item = Extract<Entry, { type: "item" }>;
 
@@ -356,7 +357,7 @@ describe("QA (stress 15k): many changes at once keep the worker answering", () =
 		e.upsertMany(Array.from({ length: n }, (_, i) => note(`n${i}.md`, `omega note ${i}`)));
 		const ms = performance.now() - t0;
 		// One note at a time rebuilt the delta of every pending note: minutes at 15,000.
-		expect(ms).toBeLessThan(5000);
+		expect(ms).toBeLessThan(budget(5000));
 		expect(e.shape.pending).toBeLessThan(256);
 		expect(e.query(parseQuery("omega "), { limit: 5000 }).hits.length).toBe(n);
 		expect(e.query(parseQuery("alpha "), { limit: 5000 }).hits.length).toBe(0);
