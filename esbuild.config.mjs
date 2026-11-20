@@ -6,9 +6,12 @@ import path from "node:path";
 const prod = process.argv[2] === "production";
 // For the CPU profiler: built like production but not minified, so profiles name functions.
 const profile = process.argv[2] === "profile";
-// A unique id per build (src/build-id.ts), so a running build can be told from an older one.
+// The id of this build (src/build-id.ts), so a running build can be told from an older one.
 // "jetbuild-" rather than "jet-": the bundle also contains the plugin id "jet-search".
-const buildId = `jetbuild-${Date.now().toString(36)}`;
+// A production build is the same bytes every time (a release has to be rebuildable from its source
+// and compared), so its id is fixed. A watch or profile build gets a unique one, and so does any build
+// that sets JET_BUILD_ID (the A/B labs, which swap builds in and check which one is running).
+const buildId = process.env.JET_BUILD_ID ?? (prod ? "jetbuild-release" : `jetbuild-${Date.now().toString(36)}`);
 
 // `import code from "worker:./x"`: x bundled on its own (no externals: a worker has no
 // Obsidian) and inlined as text, so the plugin stays one main.js.
