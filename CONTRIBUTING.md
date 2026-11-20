@@ -22,11 +22,23 @@ To try it in Obsidian, copy `main.js`, `manifest.json` and `styles.css` into `<y
 
 ## Making a change
 
-1. **Write the test first.** A bug fix starts with a test that fails for the right reason. A feature starts with a test that describes it.
-2. **Make it pass**, and keep the change to one idea.
-3. **Run `npm run check`.** It runs formatting, lint, type checks and every test, and it must pass. `npm run format` fixes formatting.
-4. **Commit with a conventional message:** `type(scope): Subject`, for example `fix(modal): Keep the selection after Esc`. The types we use are `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `chore` and `ci`.
-5. **Open a pull request** and say what changed and why. If it touches speed, include numbers (see below).
+Every change reaches `main` through a pull request, the maintainer's own included. Nobody pushes to `main` directly.
+
+1. **Open or find an issue** for anything bigger than a small fix, and say you are taking it.
+2. **Fork the repository** (maintainers: make a branch). Name the branch for the change, for example `fix-selection-after-esc`.
+3. **Write the test first.** A bug fix starts with a test that fails for the right reason. A feature starts with a test that describes it.
+4. **Make it pass**, and keep the change to one idea. One pull request does one thing.
+5. **Run `npm run check`.** It runs formatting, lint, type checks and every test, and it must pass. `npm run format` fixes formatting.
+6. **Commit with a conventional message:** `type(scope): Subject`, for example `fix(modal): Keep the selection after Esc`. The types we use are `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `chore` and `ci`. Say why in the body when the reason is not obvious.
+7. **Open a pull request** and fill in the template: what changed and why, and how you tested it. If it touches speed, include numbers (see below). Put `Closes #123` in the description when it finishes an issue.
+
+## How a change lands
+
+- **The title is the commit.** Pull requests are squash merged, so the pull request title becomes the commit message on `main`. It has to read `type(scope): Subject`, with a capital letter and no final full stop. A check fails the pull request until it does, and you can fix it by editing the title.
+- **What must pass before a merge:** the `check` job (formatting, lint, types, every test and a production build), a branch that is up to date with `main`, and every review conversation resolved. The history of `main` stays linear.
+- **Review:** the maintainer reads every pull request. Expect questions about the rules in the architecture document, and about numbers when speed is involved. A change that works but breaks one of those rules is sent back.
+- **Workflows from a first contribution wait for the maintainer to approve them** before they run. Nothing in them has access to secrets.
+- **Release notes:** the maintainer writes `CHANGELOG.md` when a release is cut, from the merged pull requests, so you do not edit it. A clear title and description is what makes that easy. See [docs/releasing.md](docs/releasing.md).
 
 ## Performance
 
