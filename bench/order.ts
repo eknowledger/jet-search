@@ -84,7 +84,7 @@ let state = 12345;
 const rand = (): number => (state = (state * 1664525 + 1013904223) >>> 0) / 4294967296;
 const wordsOf = (q: string): string[] => q.split(" ");
 const holdsAll = (text: string, ws: string[]): boolean =>
-	ws.every((w) => new RegExp(`(?<![\\p{L}])${w}`, "u").test(text.toLowerCase()));
+	ws.every((w) => new RegExp(`(?:^|[^\\p{L}])${w}`, "u").test(text.toLowerCase()));
 const seen = new Set<string>();
 const pairs: Case[] = [];
 for (const n of notes) {
