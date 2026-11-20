@@ -109,7 +109,7 @@ export const readSnapshot = (dir: string): Snapshot => {
 		const tags = [
 			...(Array.isArray(fmTags) ? fmTags : fmTags ? [fmTags] : []).map((t) => `#${String(t).replace(/^#/, "")}`),
 			...[
-				...body.replace(/```[\s\S]*?```/g, "").matchAll(/(?<=^|\s)#([\p{L}\p{N}_/-]*\p{L}[\p{L}\p{N}_/-]*)/gmu),
+				...body.replace(/```[\s\S]*?```/g, "").matchAll(/(?:^|\s)#([\p{L}\p{N}_/-]*\p{L}[\p{L}\p{N}_/-]*)/gmu),
 			].map((m) => `#${m[1]}`),
 		];
 		return { path, props, links, tags: [...new Set(tags)] };
