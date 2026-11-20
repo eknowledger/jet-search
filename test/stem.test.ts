@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalize } from "../src/engine/analyzer";
 import { STEM_LANGUAGES, STEMMERS, stemmable, type StemLanguage } from "../src/engine/stem";
+import { budget } from "./budget";
 
 /** A seeded random generator (mulberry32), so failures repeat. */
 const rng = (seed: number) => () => {
@@ -441,7 +442,7 @@ describe("performance and totality", () => {
 			const start = performance.now();
 			for (let i = 0; i < words.length; i++) out[i] = stemmer(words[i] as string);
 			const ms = performance.now() - start;
-			expect(ms).toBeLessThan(500);
+			expect(ms).toBeLessThan(budget(500));
 			expect(out.every((s) => s.length > 0)).toBe(true);
 		});
 });
