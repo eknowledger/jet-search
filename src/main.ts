@@ -405,8 +405,15 @@ export default class JetSearchPlugin extends Plugin {
 		const watch = (doc: Document): void => {
 			if (watched.has(doc)) return;
 			const win: EventTarget = doc.defaultView ?? window;
-			const down = (e: KeyboardEvent): void => tap.keydown(e.key, e.repeat, e.timeStamp);
+			const down = (e: KeyboardEvent): void => {
+				// A hotkey chord: Omnisearch's ids are checked before Obsidian looks for the command, so a hotkey bound to
+				// one opens Jet at the first press after Omnisearch was turned off (no event says so, and a plain key does no work).
+				if (e.ctrlKey || e.metaKey || e.altKey) this.standIn();
+				tap.keydown(e.key, e.repeat, e.timeStamp);
+			};
 			const up = (e: KeyboardEvent): void => {
+				// The first tap of a double tap bound to one of those ids, for the same reason.
+				if (e.key === this.data.settings.tapKey) this.standIn();
 				if (!tap.keyup(e.key, e.timeStamp)) return;
 				// One owner: Jade says whether it owns a double Shift; else its settings are read.
 				const k = this.data.settings.tapKey;
