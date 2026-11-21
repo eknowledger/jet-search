@@ -4,6 +4,14 @@ All notable changes to Jet Search. The format follows [Keep a Changelog](https:/
 
 Each entry is a bold name, a colon and one short sentence. Detail, if any, goes on the lines below it. The notes on each GitHub release are built from the first line of every entry.
 
+## 0.7.1 - 2026-11-20
+
+### Changed
+- **Same build every time**: the release file is now built the same way every time, so it can be rebuilt from the source and compared.
+
+### Fixed
+- **Layout on older devices**: the chips and the sort header no longer rely on CSS that some older web views cannot draw.
+
 ## 0.7.0 - 2026-11-19
 
 ### Added
