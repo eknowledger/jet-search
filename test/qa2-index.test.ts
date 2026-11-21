@@ -394,7 +394,7 @@ describe("a first build interrupted (Obsidian closed or killed in the background
 			loaded: boolean;
 			notes: number;
 		};
-		expect(opened).toEqual({ loaded: true, notes: 200 });
+		expect(opened).toMatchObject({ loaded: true, notes: 200 });
 	});
 });
 

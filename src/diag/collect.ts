@@ -106,6 +106,7 @@ export const collect = (plugin: JetSearchPlugin, now = Date.now(), opts: ReportO
 			segments: stats?.segments ?? null,
 			pending: stats?.pending ?? null,
 			savedAt: stats?.savedAt ?? null,
+			opened: diag.opened,
 		},
 		worker: {
 			running: plugin.client.running,

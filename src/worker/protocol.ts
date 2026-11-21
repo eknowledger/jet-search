@@ -62,6 +62,18 @@ export type Request =
 	/** Answers (experiment): the notes sent, re-ranked by the line that best answers the question. */
 	| { op: "answers:rank"; seq: number; text: string; notes: AnswerCandidate[]; meaning: string[] };
 
+/** How the saved index opened: loaded, none yet, of another format (`found`, against `version`), or unreadable. */
+export type OpenReply = {
+	loaded: boolean;
+	notes: number;
+	how: "loaded" | "none" | "format-changed" | "error";
+	found: number | null;
+	version: number;
+	/** Where the index is kept: "indexeddb", "memory" (not kept between sessions), or "other". */
+	store: string;
+	ms: number;
+};
+
 export type Stats = { notes: number; segments: number; pending: number; savedAt: number | null; bytes: number };
 
 export type QueryReply = {
@@ -82,7 +94,7 @@ export type AnswersReply = { seq: number; ranked: AnswerResult[]; order: string[
 
 /** What each request answers. */
 export type Reply<R extends Request> = R extends { op: "open" }
-	? { loaded: boolean; notes: number }
+	? OpenReply
 	: R extends { op: "query" }
 		? QueryReply
 		: R extends { op: "nearest" }
@@ -106,4 +118,10 @@ export type Reply<R extends Request> = R extends { op: "open" }
 											: { notes: number };
 
 export type Envelope = { id: number; req: Request };
-export type Answer = { id: number; result?: unknown; error?: string };
+/**
+ * A reply to a request (with its class and place when it failed), or an event the worker raised on its own: something
+ * it caught and carried on from.
+ */
+export type Answer =
+	| { id: number; result?: unknown; error?: string; name?: string; where?: string | null; event?: undefined }
+	| { event: { code: string; level: "error" | "warn"; error: string; where: string | null }; id?: undefined };

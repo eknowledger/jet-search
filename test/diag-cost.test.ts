@@ -16,10 +16,14 @@ const read = (p: string): string => readFileSync(p, "utf8");
  * the main thread only ever name it in a catch, through `fail` and `warned`.
  */
 describe("the support info stays out of the hot paths", () => {
-	it("the engine, the index and the worker do not use it", () => {
+	it("the engine and the worker do not use its memory (the worker only reads an error's class and place)", () => {
 		const off = [...files("src/engine"), ...files("src/worker").filter((f) => !f.endsWith("jet-client.ts"))];
 		expect(off.length).toBeGreaterThan(10);
-		for (const f of off) expect(read(f), f).not.toMatch(/diag\//);
+		for (const f of off) expect(read(f).replaceAll("diag/error-facts", ""), f).not.toMatch(/diag\//);
+	});
+
+	it("the engine does not even tell the worker's router about errors: only the router and the entry do", () => {
+		for (const f of files("src/engine")) expect(read(f), f).not.toMatch(/notify|\btell\(/);
 	});
 
 	it("the search, the ranking and the modal call no counter of it", () => {
@@ -32,7 +36,7 @@ describe("the support info stays out of the hot paths", () => {
 			if (f.includes("/diag/")) continue;
 			const lines = read(f).split("\n");
 			lines.forEach((line, i) => {
-				if (!/\b(fail|warned)\(/.test(line) || /^\s*(import|export)\b/.test(line)) return;
+				if (!/\b(fail|warned|noted)\(/.test(line) || /^\s*(import|export)\b/.test(line)) return;
 				// Inside a catch block, a .catch handler or the rejection handler of a .then, in the line or the few before it.
 				const near = lines.slice(Math.max(0, i - 6), i + 1).join("\n");
 				expect(near, `${f}:${i + 1}`).toMatch(/catch|\.then\(/);
@@ -41,7 +45,7 @@ describe("the support info stays out of the hot paths", () => {
 	});
 
 	it("the memory of it starts nothing: no timer, no listener, no work when it is loaded", () => {
-		const src = read("src/diag/diag.ts");
+		const src = read("src/diag/diag.ts") + read("src/diag/error-facts.ts");
 		expect(src).not.toMatch(
 			/setTimeout|setInterval|requestAnimationFrame|addEventListener|\.on\(|registerEvent|new Worker/,
 		);

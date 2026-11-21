@@ -24,6 +24,7 @@ export const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 		segments: 1,
 		pending: 0,
 		savedAt: NOW - 4 * 60_000,
+		opened: { how: "loaded", found: null, version: 2, store: "indexeddb", ms: 410, at: NOW - 12 * 60_000 },
 	},
 	worker: { running: true, since: NOW - 12 * 60_000, starts: 2, crashes: 0, sleeps: 1 },
 	open: {

@@ -1,3 +1,4 @@
+import { noted } from "./diag/diag";
 import type JetSearchPlugin from "./main";
 
 /** The index's health in words: what is indexed, how big, how fresh. */
@@ -59,11 +60,13 @@ export const statusNow = (plugin: JetSearchPlugin): IndexStatus => {
 	};
 };
 
-const refreshStats = async (plugin: JetSearchPlugin): Promise<void> => {
+/** Ask a running worker for its numbers (it is not woken: a sleeping one has none to give). */
+export const refreshStats = async (plugin: JetSearchPlugin): Promise<void> => {
 	try {
 		lastStats = await plugin.client.call({ op: "stats" });
-	} catch {
+	} catch (e) {
 		// The worker stopped meanwhile: the next status says so.
+		noted("index.stats", e);
 	}
 };
 

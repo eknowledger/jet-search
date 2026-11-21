@@ -87,6 +87,7 @@ describe("the support report", () => {
 					segments: null,
 					pending: null,
 					savedAt: null,
+					opened: null,
 				},
 			}),
 		);
@@ -106,12 +107,44 @@ describe("the support report", () => {
 					segments: null,
 					pending: null,
 					savedAt: null,
+					opened: null,
 				},
 			}),
 		);
 		expect(text).toContain("15,000 notes eligible");
 		expect(text).toContain("size and age not known yet");
 		expect(text).not.toContain("not saved yet");
+	});
+
+	it("says how the saved index opened and where it is kept", () => {
+		const open = (over: Partial<NonNullable<ReturnType<typeof snapshot>["index"]["opened"]>>) =>
+			formatReport(
+				snapshot({
+					index: { ...snapshot().index, opened: { ...snapshot().index.opened!, ...over } },
+				}),
+			);
+		expect(formatReport(snapshot())).toContain("opened: loaded from disk (IndexedDB), 410 ms");
+		expect(open({ how: "none" })).toContain("opened: nothing saved yet, built from scratch (IndexedDB)");
+		expect(open({ how: "format-changed", found: 1 })).toContain(
+			"opened: saved index is format 1, this Jet reads 2, built again",
+		);
+		expect(open({ how: "error" })).toContain("opened: saved index could not be read, built again");
+		const memory = open({ store: "memory" });
+		expect(memory).toContain("(memory only)");
+		expect(memory).toContain("index kept in memory only: it is not saved between sessions");
+		const warns = buildReport(
+			snapshot({
+				index: { ...snapshot().index, opened: { ...snapshot().index.opened!, how: "error" } },
+			}),
+		)
+			.flatMap((x) => x.lines)
+			.filter((l) => l.warn);
+		expect(warns.map((l) => l.text)).toContain("opened: saved index could not be read, built again");
+	});
+
+	it("says nothing about opening before the worker has opened the index", () => {
+		const text = formatReport(snapshot({ index: { ...snapshot().index, opened: null } }));
+		expect(text).not.toContain("opened:");
 	});
 
 	it("counts notes waiting only when there are some", () => {
