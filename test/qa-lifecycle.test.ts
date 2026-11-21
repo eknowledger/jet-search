@@ -292,6 +292,62 @@ describe("QA lifecycle: Omnisearch's ids", () => {
 		]);
 	});
 
+	/** Omnisearch was on when Jet started, then turned off in Settings: no layout change follows. */
+	const omnisearchWentOff = async () => {
+		vi.useFakeTimers();
+		const made = make({ data: { indexedAt: 1 } });
+		made.plugins.omnisearch = {};
+		const open = { id: "omnisearch:show-modal", name: "Omnisearch: Vault search", callback: () => {} };
+		const inFile = { id: "omnisearch:show-modal-infile", name: "Omnisearch: In-file search", callback: () => {} };
+		made.registry.addCommand(open);
+		made.registry.addCommand(inFile);
+		await made.plugin.onload();
+		made.ready();
+		await vi.advanceTimersByTimeAsync(1);
+		delete made.plugins.omnisearch;
+		made.registry.removeCommand(open.id);
+		made.registry.removeCommand(inFile.id);
+		return made;
+	};
+	const taken = (commands: Record<string, { name: string }>): boolean =>
+		commands["omnisearch:show-modal"]?.name === "Jet Search: Search notes (Omnisearch's shortcut)" &&
+		commands["omnisearch:show-modal-infile"]?.name === "Jet Search: Search in this note (Omnisearch's shortcut)";
+
+	it("Omnisearch turned off in Settings, no layout change after: the first tap of Shift takes its ids, so a double Shift bound to them works", async () => {
+		const { commands } = await omnisearchWentOff();
+		expect(taken(commands)).toBe(false);
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", code: "ShiftLeft" }));
+		document.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", code: "ShiftLeft" }));
+		expect(taken(commands)).toBe(true);
+	});
+
+	it("a hotkey chord takes the ids before Obsidian looks for the command, so the first press works", async () => {
+		const { commands } = await omnisearchWentOff();
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "o", code: "KeyO", metaKey: true }));
+		expect(taken(commands)).toBe(true);
+	});
+
+	it("a plain letter takes nothing and does no work", async () => {
+		const { commands } = await omnisearchWentOff();
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "a", code: "KeyA" }));
+		document.dispatchEvent(new KeyboardEvent("keyup", { key: "a", code: "KeyA" }));
+		expect(taken(commands)).toBe(false);
+	});
+
+	it("while Omnisearch is on, a Shift tap or a chord leaves its commands alone", async () => {
+		vi.useFakeTimers();
+		const { plugin, ready, commands, registry, plugins } = make({ data: { indexedAt: 1 } });
+		plugins.omnisearch = {};
+		const open = { id: "omnisearch:show-modal", name: "Omnisearch: Vault search", callback: () => {} };
+		registry.addCommand(open);
+		await plugin.onload();
+		ready();
+		await vi.advanceTimersByTimeAsync(1);
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "o", code: "KeyO", metaKey: true }));
+		document.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", code: "ShiftLeft" }));
+		expect(commands["omnisearch:show-modal"]).toBe(open);
+	});
+
 	it("turned off after Omnisearch came on, Jet leaves Omnisearch's own commands in place", async () => {
 		vi.useFakeTimers();
 		const { plugin, ready, commands, registry, plugins } = make({ data: { indexedAt: 1 } });
