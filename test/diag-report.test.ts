@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReport, formatForGithub, formatReport, layout } from "../src/diag/report";
-import { snapshot } from "./diag-fixture";
+import { searches, snapshot } from "./diag-fixture";
 
 const problem = (over: Partial<ReturnType<typeof snapshot>["problems"][number]> = {}) => ({
 	code: "save.failed",
@@ -309,4 +309,43 @@ describe("the support report", () => {
 			const text = formatReport(snapshot());
 			for (const f of facts) expect(text).toContain(f);
 		});
+});
+
+describe("the searches in the report", () => {
+	it("says how long searches take, where the time goes, and the slowest one", () => {
+		const text = formatReport(snapshot());
+		expect(text).toMatch(/Searches: +last 100 of 340 searches: median 14 ms, 95% under 41 ms/);
+		expect(text).toContain("median split: index wait 0, worker 4.1, transfer 1.2, prepare 7.0, excerpts 2.0 ms");
+		expect(text).toContain(
+			"by words 94, by meaning 6; in a scope 12, worker had to start 1, quoted phrase 4; replaced by a newer one 31",
+		);
+		expect(text).toContain(
+			"slowest: 96 ms (index wait 3.0, worker 71, transfer 2.4, prepare 15, excerpts 5.0), 4 words, 50 hits, worker had to start",
+		);
+	});
+
+	it("says none yet before the first search", () => {
+		expect(formatReport(snapshot({ searches: null }))).toMatch(/Searches: +none yet this session/);
+	});
+
+	it("does not say 'last' while every search is still kept", () => {
+		const text = formatReport(snapshot({ searches: searches({ kept: 12, total: 12 }) }));
+		expect(text).toContain("12 searches: median");
+		expect(text).not.toContain("last 12");
+	});
+
+	it("warns when a saved index was found damaged", () => {
+		const sections = buildReport(snapshot({ searches: searches({ flags: { ...searches().flags, broken: 2 } }) }));
+		const lines = sections.find((x) => x.label === "Searches")!.lines;
+		expect(lines.find((l) => l.text.includes("found damaged 2 times"))?.warn).toBe(true);
+	});
+
+	it("holds numbers and names of stages only: never a word of a search", () => {
+		const text = formatReport(snapshot());
+		const searched = text
+			.split("\n")
+			.filter((l) => /^(Searches:|\s{6,})/.test(l))
+			.join("\n");
+		expect(searched).not.toMatch(/"|query|text/i);
+	});
 });

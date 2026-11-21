@@ -3,6 +3,7 @@ import { App, Notice, TFile } from "obsidian";
 import { buttonNamed, goTo, tabOf } from "./settings-ui";
 import JetSearchPlugin from "../src/main";
 import { diag } from "../src/diag/diag";
+import { recorder } from "../src/diag/recorder";
 import { collect } from "../src/diag/collect";
 import { formatReport } from "../src/diag/report";
 
@@ -21,6 +22,7 @@ describe("the support info", () => {
 
 	beforeEach(() => {
 		diag.reset();
+		recorder.reset();
 		workers = 0;
 		vi.stubGlobal(
 			"Worker",
@@ -36,6 +38,18 @@ describe("the support info", () => {
 		vi.unstubAllGlobals();
 		document.body.replaceChildren();
 		document.body.className = "";
+	});
+
+	it("reads the recorded searches when the report is asked for, and wakes nothing to do it", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		expect(collect(plugin).searches).toBeNull();
+		recorder.add(1, 12, 2, 5, 20, 1, 8, 2, 6, 3);
+		const m = collect(plugin).searches!;
+		expect(m.kept).toBe(1);
+		expect(m.max.total).toBe(20);
+		expect(formatReport(collect(plugin))).toContain("1 search: median 20 ms");
+		expect(workers).toBe(0);
 	});
 
 	it("has a command that opens the window with the report", async () => {

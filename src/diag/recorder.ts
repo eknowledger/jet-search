@@ -22,6 +22,19 @@ export const FLAG = {
 	phrase: 128,
 } as const;
 
+/** The words in a text (runs of non-space characters), counted without making a list. */
+export const wordCount = (text: string): number => {
+	let n = 0;
+	let inside = false;
+	for (let i = 0; i < text.length; i++) {
+		const c = text.charCodeAt(i);
+		const space = c === 32 || (c >= 9 && c <= 13) || c === 160;
+		if (!space && !inside) n++;
+		inside = !space;
+	}
+	return n;
+};
+
 const KEEP = 100;
 /** Floats per row: total, ready, worker, transit, prepare, excerpts, hits. */
 const F = 7;
@@ -101,7 +114,8 @@ export class Recorder {
 		f[a] = total;
 		f[a + 1] = ready;
 		f[a + 2] = worker;
-		f[a + 3] = transit;
+		// Two clocks (here and the worker's) can disagree by a hair.
+		f[a + 3] = transit > 0 ? transit : 0;
 		f[a + 4] = prepare;
 		f[a + 5] = excerpts;
 		f[a + 6] = hits;

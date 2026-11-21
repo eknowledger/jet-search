@@ -1,4 +1,6 @@
 import type { Opened, Problem } from "./diag";
+import type { Row as SearchRow, Summary } from "./recorder";
+import { FLAG } from "./recorder";
 
 /** How the index stands, in one word. */
 export type Phase = "never-built" | "building" | "live" | "asleep";
@@ -51,6 +53,8 @@ export type Snapshot = {
 		windowsWatched: number;
 		windowsOpen: number;
 	};
+	/** The last searches as the flight recorder keeps them (null: none yet this session). */
+	searches: Summary | null;
 	meaning: { on: boolean; model: { id: string; bytes: number } | null };
 	scopes: { count: number; sizes: number[] | null; names: string[] | null };
 	settings: {
@@ -140,6 +144,46 @@ const openedLines = (o: Opened): Line[] => {
 	];
 };
 
+/** Milliseconds as a reader wants them: a decimal under 10, whole above. */
+const msText = (n: number): string => (n < 0.05 ? "0" : n < 10 ? n.toFixed(1) : String(Math.round(n)));
+
+const splitText = (r: Pick<SearchRow, "ready" | "worker" | "transit" | "prepare" | "excerpts">): string =>
+	`index wait ${msText(r.ready)}, worker ${msText(r.worker)}, transfer ${msText(r.transit)}, prepare ${msText(r.prepare)}, excerpts ${msText(r.excerpts)}`;
+
+/** The slowest search: its parts, size and what was unusual about it. No word of the search. */
+const slowestText = (r: SearchRow): string =>
+	[
+		`slowest: ${msText(r.total)} ms (${splitText(r)})`,
+		`${plural(r.words, "word")}, ${plural(r.hits, "hit")}`,
+		r.flags & FLAG.meaning ? "by meaning" : null,
+		r.flags & FLAG.cold ? "worker had to start" : null,
+		r.flags & FLAG.building ? "index was being built" : null,
+		r.flags & FLAG.broken ? "saved index was damaged" : null,
+	]
+		.filter((x): x is string => x !== null)
+		.join(", ");
+
+const searchLines = (m: Summary): Line[] => {
+	const f = m.flags;
+	const extras = [
+		f.scoped ? `in a scope ${f.scoped}` : null,
+		f.cold ? `worker had to start ${f.cold}` : null,
+		f.building ? `index being built ${f.building}` : null,
+		f.phrase ? `quoted phrase ${f.phrase}` : null,
+	].filter((x): x is string => x !== null);
+	return [
+		ln(
+			`${m.kept < m.total ? `last ${m.kept} of ${num(m.total)} searches` : plural(m.kept, "search", "searches")}: median ${msText(m.median)} ms, 95% under ${msText(m.p95)} ms`,
+		),
+		ln(`median split: ${splitText(m.stages)} ms`),
+		ln(
+			`by words ${m.kinds.words}, by meaning ${m.kinds.meaning}${extras.length ? `; ${extras.join(", ")}` : ""}; replaced by a newer one ${m.superseded}`,
+		),
+		...(f.broken ? [ln(`saved index found damaged ${plural(f.broken, "time")}`, true)] : []),
+		ln(slowestText(m.max)),
+	];
+};
+
 /** The report as sections of short lines. No names of notes, folders or scopes unless the user added them. */
 export const buildReport = (s: Snapshot): Section[] => {
 	const out: Section[] = [];
@@ -220,6 +264,8 @@ export const buildReport = (s: Snapshot): Section[] => {
 		),
 		ln(`started ${w.starts}x, crashed ${w.crashes}x, slept ${w.sleeps}x`, w.crashes > 0),
 	);
+
+	add("Searches", ...(s.searches ? searchLines(s.searches) : [ln("none yet this session")]));
 
 	const m = s.meaning;
 	add(
