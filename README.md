@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/jet-header-dark.png">
-  <img alt="Jet" src="docs/assets/jet-header-light.png" width="300">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/assets/jet-header-dark.png">
+  <img alt="Jet" src="https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/assets/jet-header-light.png" width="300">
 </picture>
 
 ### Find it before you finish typing.
@@ -11,7 +11,7 @@
 
 [![Release](https://img.shields.io/github/v/release/eknowledger/jet-search?color=8b7cf8&label=release)](https://github.com/eknowledger/jet-search/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/eknowledger/jet-search/ci.yml?label=CI)](https://github.com/eknowledger/jet-search/actions)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/eknowledger/jet-search/blob/main/LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/eknowledger/jet-search/total?color=8b7cf8)](https://github.com/eknowledger/jet-search/releases)
 [![Stars](https://img.shields.io/github/stars/eknowledger/jet-search?style=flat&color=8b7cf8)](https://github.com/eknowledger/jet-search/stargazers)
 [![Issues](https://img.shields.io/github/issues/eknowledger/jet-search)](https://github.com/eknowledger/jet-search/issues)
@@ -20,11 +20,9 @@
 ![Obsidian 1.8.0+](https://img.shields.io/badge/Obsidian-1.8.0%2B-7c3aed)
 ![Desktop](https://img.shields.io/badge/platform-desktop-lightgrey)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
-![Plugin size](https://img.shields.io/badge/plugin-318%20KB-informational)
-![Tests](https://img.shields.io/badge/tests-731%20passing-brightgreen)
 ![Telemetry](https://img.shields.io/badge/telemetry-none-brightgreen)
 ![Offline](https://img.shields.io/badge/works-offline-brightgreen)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-8b7cf8)](CONTRIBUTING.md)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-8b7cf8)](https://github.com/eknowledger/jet-search/blob/main/CONTRIBUTING.md)
 
 [Install](#install) · [Tour](#a-quick-tour) · [Speed](#how-fast) · [Demo vault](#try-it-on-the-demo-vault) · [Privacy](#privacy-network-use-and-storage) · [FAQ](#faq) · [Docs](#documentation)
 
@@ -32,7 +30,7 @@
 
 <br>
 
-![Jet Search in motion: names, full text, filters, scopes, meaning, answers, and languages including Arabic](docs/media/tour.webp)
+![Jet Search in motion: names, full text, filters, scopes, meaning, answers, and languages including Arabic](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/tour.webp)
 
 ## Why Jet
 
@@ -44,9 +42,9 @@ Search is the thing you do a hundred times a day, so a hundred small waits add u
 | **98%** | of 175 test searches had the right note in the top 3: exact and misspelled names, name starts, single words, words with a typo, two words and phrases. Omnisearch: 93%. Smart Connections: 62%. Obsidian's search: 53%. |
 | **3×** | quicker to index than Omnisearch: about 6 s for 10,000 notes against about 19 s. A saved 50,000-note index loads in **10 ms**. |
 | **0.16 ms** | the engine's typical keystroke at 10,000 notes, **0.8 ms** at 50,000. The slowest of 1,122 keystrokes at 50,000 notes took 13 ms. |
-| **0 bytes** | sent anywhere. No telemetry, no accounts, works offline. The plugin itself is 318 KB. |
+| **0 bytes** | sent anywhere. No telemetry, no accounts, works offline. The plugin is a single small file. |
 
-Every number comes from public data, a fixed seed and a runner you can run yourself. The [benchmark notes](docs/benchmarks.md) give the method, the versions tested and the caveats.
+Every number comes from public data, a fixed seed and a runner you can run yourself. The [benchmark notes](https://github.com/eknowledger/jet-search/blob/main/docs/benchmarks.md) give the method, the versions tested and the caveats.
 
 And it finds what you meant, not only what you typed:
 
@@ -54,53 +52,53 @@ And it finds what you meant, not only what you typed:
 - **Any language.** Word forms in English, French, Spanish, German, Portuguese, Italian, Dutch, Swedish and Arabic. Chinese and Japanese without spaces. Arabic and Hebrew right to left.
 - **Focused.** Scopes limit a search to a project, an area, a folder, a tag or a property. Filters become chips you can see and remove.
 - **Understands questions.** An optional model that runs on your device finds notes that say the same thing in other words, and points at the line that answers "how much was...?" or "when is...?".
-- **Tested.** 731 automated tests, run on every change.
+- **Tested.** Automated tests run on every change.
 
 ## A quick tour
 
-Each clip below is recorded in the [demo vault](demo-vault). The [guide](docs/guide.md) shows every feature in motion.
+Each clip below is recorded in the [demo vault](https://github.com/eknowledger/jet-search/tree/main/demo-vault). The [guide](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md) shows every feature in motion.
 
 ### Names as you type, typos forgiven
 
 Names, aliases and paths match in the same keystroke, before the full text arrives.
 
-![Names matching as you type, with typos](docs/media/readme/name-typo.webp)
+![Names matching as you type, with typos](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/name-typo.webp)
 
 ### Every word of every note
 
 Results are ranked, each with the line that matched, and the preview shows the note around the hit with every hit marked and ticked on the scroll bar.
 
-![Full text results with a live preview](docs/media/readme/full-text.webp)
+![Full text results with a live preview](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/full-text.webp)
 
 ### Filters become chips
 
 Type `#recipe/french`, `type:book`, `edited:7d`, `path:Journal` or `links:[[Note]]` and a space. Jet suggests keys and values as you type, and offers a fix when a key is misspelt.
 
-![Filters becoming chips, with autocomplete](docs/media/readme/autocomplete.webp)
+![Filters becoming chips, with autocomplete](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/autocomplete.webp)
 
 ### Scopes
 
 Type a scope's name with other words and press Tab to search inside it. Jet can generate scopes from your folders, links and tags.
 
-![A scope suggested while you type, Tab accepts](docs/media/readme/scope-tab.webp)
+![A scope suggested while you type, Tab accepts](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/scope-tab.webp)
 
 ### Search by meaning (optional)
 
 A question goes by meaning: `how do I stop my basil dying` finds the note about watering and cold nights.
 
-![A question finding notes by meaning](docs/media/readme/meaning-question.webp)
+![A question finding notes by meaning](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/meaning-question.webp)
 
 ### The line that answers
 
 Ask for a price, a name, a date or a reason, and Jet lists the notes by the line that answers, with the figures coloured and the line outlined in the preview.
 
-![A fact question answered with the line that holds the answer](docs/media/readme/answers.webp)
+![A fact question answered with the line that holds the answer](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/answers.webp)
 
 ### Every language, left to right and right to left
 
-![Several languages](docs/media/readme/languages.webp)
+![Several languages](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/languages.webp)
 
-![Arabic, right to left](docs/media/readme/rtl-ar.webp)
+![Arabic, right to left](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/rtl-ar.webp)
 
 ## Install
 
@@ -136,15 +134,15 @@ The first time, Jet builds its index in the background (seconds for a few hundre
 | Tab | accept a suggested scope |
 | Esc | clear the text, then the scope and filters, then close |
 
-Every key inside Jet's window can be changed in the settings. The [guide](docs/guide.md#keys-and-actions) has the full list.
+Every key inside Jet's window can be changed in the settings. The [guide](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md#keys-and-actions) has the full list.
 
 ## How fast
 
 Jet was timed against Obsidian's own search and quick switcher, and the most-installed search plugins: Omnisearch, Quick Switcher++, Another Quick Switcher and Smart Connections. Each ran alone in a fresh Obsidian, on the same notes and the same typed searches, with real key events. The clock runs from the last key to the last change of the result list on screen, so it includes drawing.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/compare-speed-dark.png">
-  <img alt="Time until results settle at 10,000 notes: Jet 15 ms, Another Quick Switcher 21 ms, Obsidian Quick Switcher 27 ms, Quick Switcher++ 28 ms, Obsidian Search 96 ms, Omnisearch 212 ms" src="docs/assets/compare-speed-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/assets/compare-speed-dark.png">
+  <img alt="Time until results settle at 10,000 notes: Jet 15 ms, Another Quick Switcher 21 ms, Obsidian Quick Switcher 27 ms, Quick Switcher++ 28 ms, Obsidian Search 96 ms, Omnisearch 212 ms" src="https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/assets/compare-speed-light.png">
 </picture>
 
 | 10,000 notes | First results | Settled, median | Settled, slowest | Index build | First search after launch |
@@ -156,7 +154,7 @@ Jet was timed against Obsidian's own search and quick switcher, and the most-ins
 | Obsidian Search | 14 ms | 96 ms | 2.2 s | none | 4.1 s |
 | Omnisearch | 208 ms | 212 ms | 334 ms | 19 s | 328 ms |
 
-Two things to keep in mind. The three quick switchers match note names only, so they do less work than Jet, which searches every word. And in a small vault everything is fast: at 1,000 notes the switchers settle in 8 to 11 ms, Jet in 13 ms, and Omnisearch still takes 203 ms. Both runs, 1,000 notes and the method are in [docs/benchmarks.md](docs/benchmarks.md).
+Two things to keep in mind. The three quick switchers match note names only, so they do less work than Jet, which searches every word. And in a small vault everything is fast: at 1,000 notes the switchers settle in 8 to 11 ms, Jet in 13 ms, and Omnisearch still takes 203 ms. Both runs, 1,000 notes and the method are in [docs/benchmarks.md](https://github.com/eknowledger/jet-search/blob/main/docs/benchmarks.md).
 
 Speed means little if the right note is not there, so the same tools were also given 175 searches on the demo vault, generated from its notes with a fixed seed. A search counts as found when the right note is in the top 3.
 
@@ -172,7 +170,7 @@ Speed means little if the right note is not there, so the same tools were also g
 
 Jet is the only tool at 97% or better on both names and the words inside notes. The switchers are perfect on names, but they cannot see inside a note. Omnisearch is level with Jet on the words inside notes and loses on misspelled names (14 of 25, against 25). Jet missed 3 searches, all a word with a typo. Questions asked in other words are what the optional search by meaning is for: on a separate set of 3 questions, Jet with the model on found 3, Smart Connections 3, Jet without it 2, Omnisearch 1 and Obsidian's search 0.
 
-The searches are generated, not hand-picked, but they run on a small, invented vault and they favour tools that forgive typos, so read this as a demonstration, not a ranking of every vault. Every search and every result is listed in [docs/benchmarks.md](docs/benchmarks.md). Omnisearch also reads PDFs and images, which Jet does not.
+The searches are generated, not hand-picked, but they run on a small, invented vault and they favour tools that forgive typos, so read this as a demonstration, not a ranking of every vault. Every search and every result is listed in [docs/benchmarks.md](https://github.com/eknowledger/jet-search/blob/main/docs/benchmarks.md). Omnisearch also reads PDFs and images, which Jet does not.
 
 Jet's engine on its own, on public data with a fixed seed (per keystroke, every prefix of the typed queries):
 
@@ -186,7 +184,7 @@ Names match on a separate, smaller index: 0.03 ms at 1,000 notes, 0.26 ms at 10,
 
 ## Try it on the demo vault
 
-[`demo-vault/`](demo-vault) holds 239 notes written for a fictional person: projects, areas, recipes in several languages and a journal. Open it as a vault in Obsidian, turn on Jet, and try:
+[`demo-vault/`](https://github.com/eknowledger/jet-search/tree/main/demo-vault) holds 239 notes written for a fictional person: projects, areas, recipes in several languages and a journal. Open it as a vault in Obsidian, turn on Jet, and try:
 
 - `kitchn renovaton` (typos in a name)
 - `ladybird larva` (full text with a preview)
@@ -205,7 +203,7 @@ Names match on a separate, smaller index: 0.03 ms at 1,000 notes, 0.26 ms at 10,
 ## Platforms
 
 - **Desktop:** developed and tested on macOS. Windows and Linux run the same code; reports are welcome.
-- **Mobile:** works on iOS 15.4 and newer and on Android with WebView 98 or newer, but is not officially supported yet: it has been tested on an emulated phone, not yet on real devices. [Details](docs/guide.md#mobile).
+- **Mobile:** works on iOS 15.4 and newer and on Android with WebView 98 or newer, but is not officially supported yet: it has been tested on an emulated phone, not yet on real devices. [Details](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md#mobile).
 
 ## FAQ
 
@@ -225,18 +223,18 @@ Names match on a separate, smaller index: 0.03 ms at 1,000 notes, 0.26 ms at 10,
 
 | Read | For |
 |---|---|
-| [Guide](docs/guide.md) | Every feature in motion, recorded in the demo vault |
-| [Reference](docs/reference.md) | Every part of the window and every setting, numbered and explained |
-| [Benchmarks](docs/benchmarks.md) | The method behind the numbers, and how to run it |
-| [Architecture](docs/architecture.md) | How Jet is built, in a 30 minute read |
-| [Architecture reference](docs/architecture-reference.md) | The long version: every part, message, number and failure path |
-| [Contributing](CONTRIBUTING.md) | Set up, test, and send a change |
-| [Security](SECURITY.md) | Reporting a vulnerability |
-| [Changelog](CHANGELOG.md) | What changed in each version |
+| [Guide](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md) | Every feature in motion, recorded in the demo vault |
+| [Reference](https://github.com/eknowledger/jet-search/blob/main/docs/reference.md) | Every part of the window and every setting, numbered and explained |
+| [Benchmarks](https://github.com/eknowledger/jet-search/blob/main/docs/benchmarks.md) | The method behind the numbers, and how to run it |
+| [Architecture](https://github.com/eknowledger/jet-search/blob/main/docs/architecture.md) | How Jet is built, in a 30 minute read |
+| [Architecture reference](https://github.com/eknowledger/jet-search/blob/main/docs/architecture-reference.md) | The long version: every part, message, number and failure path |
+| [Contributing](https://github.com/eknowledger/jet-search/blob/main/CONTRIBUTING.md) | Set up, test, and send a change |
+| [Security](https://github.com/eknowledger/jet-search/blob/main/SECURITY.md) | Reporting a vulnerability |
+| [Changelog](https://github.com/eknowledger/jet-search/blob/main/CHANGELOG.md) | What changed in each version |
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). To work on Jet:
+Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](https://github.com/eknowledger/jet-search/blob/main/CONTRIBUTING.md). To work on Jet:
 
 ```
 npm ci
@@ -250,4 +248,4 @@ Jet Search is at version 0.6.0 and under active development, by one maintainer. 
 
 ## Licence
 
-Jet Search is released under the [MIT licence](LICENSE). The meaning model, potion-base-8M by Minish Lab, is MIT-licensed.
+Jet Search is released under the [MIT licence](https://github.com/eknowledger/jet-search/blob/main/LICENSE). The meaning model, potion-base-8M by Minish Lab, is MIT-licensed.
