@@ -12,6 +12,7 @@ type Internals = {
 		enabledPlugins?: Set<string>;
 	};
 	appId?: string;
+	customCss?: { theme?: string; enabledSnippets?: Set<string> };
 	setting?: {
 		openPage?: (page: SettingPage) => void;
 		closePage?: () => void;
@@ -45,6 +46,15 @@ export const removeCommand = (app: App, id: string): void => internals(app).comm
 export const commandAt = (app: App, id: string): unknown => internals(app).commands?.commands?.[id];
 
 export const pluginOn = (app: App, id: string): boolean => !!internals(app).plugins?.enabledPlugins?.has(id);
+
+/** The ids of the community plugins that are on. */
+export const enabledPluginIds = (app: App): string[] => [...(internals(app).plugins?.enabledPlugins ?? [])].sort();
+
+/** The community theme in use (null: the default) and how many CSS snippets are on. Names of themes are public. */
+export const appearanceFacts = (app: App): { theme: string | null; snippets: number } => {
+	const css = internals(app).customCss;
+	return { theme: css?.theme || null, snippets: css?.enabledSnippets?.size ?? 0 };
+};
 
 export const plugin = (app: App, id: string): unknown => internals(app).plugins?.plugins?.[id];
 

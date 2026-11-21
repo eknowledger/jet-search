@@ -7,8 +7,12 @@
 export type Problem = {
 	/** Where it happened, e.g. `search.failed`. */
 	code: string;
+	/** A caught error, or a warning (something that went on without it). */
+	level: "error" | "warn";
 	/** The error's class name (`TypeError`), or the type of what was thrown. */
 	error: string;
+	/** Where in Jet's own code it was thrown: `function:line:column` of the bundle, or null. No file names. */
+	where: string | null;
 	/** When it last happened (ms since 1970). */
 	at: number;
 	/** How many times in a row. */
@@ -20,14 +24,35 @@ const MAX_PROBLEMS = 20;
 /** The name of what was thrown, for the report; its text is left out. */
 export const errorName = (e: unknown): string => (e instanceof Error ? e.name : e === null ? "null" : typeof e);
 
+/**
+ * The place in Jet's code an error came from, as `function:line:column`: enough to find the line in the
+ * build the report names, and nothing a note or a vault could be in (no file name or URL is kept).
+ */
+export const errorWhere = (e: unknown): string | null => {
+	const stack = e instanceof Error ? e.stack : undefined;
+	if (!stack) return null;
+	for (const line of stack.split("\n").slice(1, 6)) {
+		const m = /^\s*at (?:(?:async )?([\w$.<>]+) \()?[^()\s]*?:(\d+):(\d+)\)?\s*$/.exec(line);
+		if (m) return `${m[1] ?? "anonymous"}:${m[2]}:${m[3]}`;
+	}
+	return null;
+};
+
 class Diag {
 	workerStarts = 0;
 	workerCrashes = 0;
 	sleeps = 0;
+	/** When the running worker started (null: none is running). */
+	workerSince: number | null = null;
 	problems: Problem[] = [];
 
 	workerStarted(): void {
 		this.workerStarts++;
+		this.workerSince = Date.now();
+	}
+
+	workerStopped(): void {
+		this.workerSince = null;
 	}
 
 	workerCrashed(): void {
@@ -39,15 +64,15 @@ class Diag {
 	}
 
 	/** Record a caught error: the same one again in a row only counts. */
-	problem(code: string, e: unknown): void {
+	problem(code: string, e: unknown, level: Problem["level"] = "error", where: string | null = errorWhere(e)): void {
 		const error = errorName(e);
 		const last = this.problems[this.problems.length - 1];
-		if (last && last.code === code && last.error === error) {
+		if (last && last.code === code && last.error === error && last.level === level && last.where === where) {
 			last.count++;
 			last.at = Date.now();
 			return;
 		}
-		this.problems.push({ code, error, at: Date.now(), count: 1 });
+		this.problems.push({ code, level, error, where, at: Date.now(), count: 1 });
 		if (this.problems.length > MAX_PROBLEMS) this.problems.shift();
 	}
 
@@ -55,6 +80,7 @@ class Diag {
 		this.workerStarts = 0;
 		this.workerCrashes = 0;
 		this.sleeps = 0;
+		this.workerSince = null;
 		this.problems = [];
 	}
 }
@@ -70,5 +96,5 @@ export const fail = (code: string, text: string, e: unknown): void => {
 /** The same for a warning. */
 export const warned = (code: string, text: string, e: unknown): void => {
 	console.warn(text, e);
-	diag.problem(code, e);
+	diag.problem(code, e, "warn");
 };

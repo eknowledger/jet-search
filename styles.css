@@ -1975,21 +1975,22 @@ table.jet-set-keys {
 
 /* Support info window */
 .jet-support-modal {
-	width: min(640px, 94vw);
+	width: min(780px, 94vw);
 }
-.jet-support-lead {
-	margin-bottom: 10px;
-	color: var(--text-muted);
-	font-size: var(--font-ui-small);
-}
-.jet-support-report {
-	max-height: 46vh;
-	margin: 0 0 12px;
-	padding: 10px 12px;
-	overflow: auto;
+.jet-support-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 210px;
+	overflow: hidden;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
-	background-color: var(--background-secondary);
+}
+.jet-support-report {
+	max-height: 58vh;
+	margin: 0;
+	padding: 12px 14px;
+	overflow: auto;
+	border-right: 1px solid var(--background-modifier-border);
+	background-color: var(--background-primary);
 	font-family: var(--font-monospace);
 	font-size: 12px;
 	line-height: 1.55;
@@ -1997,15 +1998,68 @@ table.jet-set-keys {
 	overflow-wrap: anywhere;
 	user-select: text;
 }
-.jet-support-label {
-	display: block;
-	margin-bottom: 4px;
+.jet-support-line {
+	padding-left: var(--jet-label, 0ch);
+	text-indent: calc(-1 * var(--jet-label, 0ch));
+}
+.jet-support-key {
+	color: var(--text-accent);
+	font-weight: 600;
+}
+.jet-support-warn {
+	color: var(--text-warning, var(--color-orange));
+}
+.jet-support-side {
+	padding: 12px 14px;
+	background-color: var(--background-secondary);
+}
+.jet-support-side h4 {
+	margin: 0 0 6px;
+	font-size: var(--font-ui-small);
+}
+.jet-support-side .jet-support-what-title {
+	margin-top: 14px;
+}
+.jet-support-hint {
+	margin-bottom: 8px;
 	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+.jet-support-tick {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 0;
 	font-size: var(--font-ui-small);
 }
 .jet-support-what {
 	width: 100%;
 	resize: vertical;
+}
+.jet-support-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 12px;
+}
+.jet-support-note {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.jet-support-buttons {
+	display: flex;
+	gap: 8px;
+}
+@media (max-width: 600px) {
+	.jet-support-body {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.jet-support-report {
+		border-right: 0;
+		border-bottom: 1px solid var(--background-modifier-border);
+	}
 }
 
 /* Phones and tablets */

@@ -46,7 +46,7 @@ describe("the support info", () => {
 		cmd?.callback?.();
 		const modal = document.querySelector(".jet-support-modal");
 		expect(modal).not.toBeNull();
-		expect(modal?.querySelector(".jet-support-report")?.textContent).toContain("Jet Search 0.7.1");
+		expect(modal?.querySelector(".jet-support-line")?.textContent).toMatch(/Jet Search: +0\.7\.1/);
 	});
 
 	it("opens from the Support card on the Advanced page", async () => {
@@ -63,7 +63,7 @@ describe("the support info", () => {
 		const written: string[] = [];
 		vi.stubGlobal("navigator", { clipboard: { writeText: (t: string) => (written.push(t), Promise.resolve()) } });
 		plugin.supportInfo();
-		const shown = document.querySelector(".jet-support-report")?.textContent ?? "";
+		const shown = [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
 		const buttons = [...document.querySelectorAll<HTMLButtonElement>(".jet-support-modal button")];
 		const named = (t: string) => buttons.find((b) => b.textContent === t);
 		named("Copy as plain text")?.click();
@@ -101,7 +101,7 @@ describe("the support info", () => {
 		diag.problem("save.failed", new RangeError("x"));
 		const text = formatReport(collect(plugin));
 		expect(text).toContain("started 2x, crashed 1x, slept 1x");
-		expect(text).toContain("save.failed: RangeError");
+		expect(text).toMatch(/error save\.failed: RangeError/);
 	});
 
 	it("tells who handles the double tap, as the double tap itself decides", async () => {
@@ -127,13 +127,114 @@ describe("the support info", () => {
 	it("reads the theme variables, and names the ones a theme leaves out", async () => {
 		const { plugin } = make();
 		await plugin.onload();
-		expect(collect(plugin).screen.vars.missing).toHaveLength(6);
+		expect(collect(plugin).appearance.missingVars).toHaveLength(6);
 		document.body.style.setProperty("--text-muted", "#888");
 		document.body.classList.add("theme-light");
-		const screen = collect(plugin).screen;
-		expect(screen.theme).toBe("light");
-		expect(screen.vars.set).toBe(1);
-		expect(screen.vars.missing).not.toContain("--text-muted");
+		const look = collect(plugin).appearance;
+		expect(look.theme).toBe("light");
+		expect(look.missingVars).toHaveLength(5);
+		expect(look.missingVars).not.toContain("--text-muted");
+	});
+
+	it("reads the theme, the snippets, the machine and the vault", async () => {
+		const { app, plugin } = make();
+		await plugin.onload();
+		Object.assign(app, { customCss: { theme: "Minimal", enabledSnippets: new Set(["a", "b"]) } });
+		Object.assign(app, { plugins: { plugins: {}, enabledPlugins: new Set(["zeta", "alpha"]) } });
+		app.vault.files.set("a.md", new TFile("a.md"));
+		app.vault.files.set("b.png", new TFile("b.png"));
+		const snap = collect(plugin);
+		expect(snap.appearance).toMatchObject({ name: "Minimal", snippets: 2 });
+		expect(snap.vault).toMatchObject({ plugins: 2, pluginNames: null });
+		expect(snap.vault.files).toBeGreaterThanOrEqual(snap.vault.notes);
+		expect(snap.device.window.width).toBeGreaterThan(0);
+		expect(snap.device.language).not.toBe("");
+		expect(snap.obsidian.platform).toMatch(/desktop|phone|tablet|mobile/);
+	});
+
+	it("tells whether the worker runs and since when", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		expect(collect(plugin).worker).toMatchObject({ running: false, since: null });
+		diag.workerStarted();
+		expect(collect(plugin).worker.since).not.toBeNull();
+	});
+
+	it("captures every setting that shapes a search", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		const s = plugin.data.settings;
+		s.questionShows = "meaning";
+		s.answers = false;
+		s.meaningLong = true;
+		s.persistFilters = true;
+		s.stemming = ["en", "fr"];
+		const text = formatReport(collect(plugin));
+		expect(text).toContain("questions by meaning");
+		expect(text).toContain("answers off");
+		expect(text).toContain("long searches by meaning on");
+		expect(text).toContain("keep last scope and filters on");
+		expect(text).toContain("stemming en, fr");
+	});
+
+	it("shows the window with a side panel and tick boxes, and no subtitle or Refresh button", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		plugin.supportInfo();
+		const modal = document.querySelector(".jet-support-modal");
+		expect(modal?.querySelector(".jet-support-lead")).toBeNull();
+		const buttons = [...(modal?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
+		expect(buttons).toEqual(["Copy as plain text", "Copy for GitHub"]);
+		expect(modal?.querySelector(".jet-support-side")?.textContent).toContain("Add to the report");
+		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(2);
+		expect(modal?.querySelector(".jet-support-foot")?.textContent).toContain("Nothing leaves this device");
+	});
+
+	it("colours the headings in the window and still copies plain text", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		diag.problem("note.open", new Error("x"));
+		plugin.supportInfo();
+		const pre = document.querySelector(".jet-support-report");
+		const keys = [...(pre?.querySelectorAll(".jet-support-key") ?? [])].map((k) => k.textContent?.trim());
+		expect(keys).toContain("Worker:");
+		expect(keys).toContain("Index:");
+		expect([...(pre?.querySelectorAll(".jet-support-warn") ?? [])].map((w) => w.textContent).join("\n")).toContain(
+			"note.open",
+		);
+		const drawn = [...(pre?.querySelectorAll(".jet-support-line") ?? [])].map((l) => l.textContent).join("\n");
+		expect(drawn).toBe(formatReport(collect(plugin)));
+	});
+
+	it("adds scope and plugin names only after their box is ticked, and takes them out again", async () => {
+		const { app, plugin } = make();
+		await plugin.onload();
+		Object.assign(app, { plugins: { plugins: {}, enabledPlugins: new Set(["secret-sauce"]) } });
+		plugin.data.scopes.push({
+			id: "s1",
+			name: "Nebula Payroll",
+			aliases: [],
+			kind: "",
+			rules: [],
+			combine: "any",
+			mode: "both",
+			source: "manual",
+		} as never);
+		plugin.supportInfo();
+		const text = () => [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
+		expect(text()).not.toContain("secret-sauce");
+		expect(text()).not.toContain("Nebula Payroll");
+		const [scopes, plugins] = [...document.querySelectorAll<HTMLInputElement>(".jet-support-side input")];
+		scopes!.checked = true;
+		scopes!.dispatchEvent(new Event("change"));
+		expect(text()).toContain("Nebula Payroll");
+		expect(text()).not.toContain("secret-sauce");
+		plugins!.checked = true;
+		plugins!.dispatchEvent(new Event("change"));
+		expect(text()).toContain("secret-sauce");
+		scopes!.checked = false;
+		scopes!.dispatchEvent(new Event("change"));
+		expect(text()).not.toContain("Nebula Payroll");
 	});
 
 	it("never wakes the worker and never reads a note", async () => {
@@ -168,7 +269,9 @@ describe("the support info", () => {
 		diag.problem("search.words", new Error("ENOENT: Acme Merger/Salary Review.md q3-secret-plan"));
 		diag.problem("note.open", "Nebula Payroll/Quarterly Layoffs.md");
 		const snap = collect(plugin);
-		const everything = formatReport(snap) + JSON.stringify(snap);
+		Object.assign(app, { plugins: { plugins: {}, enabledPlugins: new Set(["q3-secret-plan-plugin"]) } });
+		secrets.push("q3-secret-plan-plugin");
+		const everything = formatReport(collect(plugin)) + JSON.stringify(collect(plugin));
 		for (const s of secrets) expect(everything).not.toContain(s);
 		// What it does say: counts.
 		expect(snap.settings.excludeRules).toBe(2);

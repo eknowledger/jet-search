@@ -209,7 +209,7 @@ export class Vault {
 
 	getFiles(): TFile[] {
 		this.calls.push("getFiles");
-		return [];
+		return [...this.files.values()];
 	}
 
 	readonly files = new Map<string, TFile>();
