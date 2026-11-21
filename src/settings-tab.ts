@@ -33,6 +33,7 @@ import { pickFolder } from "./settings/rule-pickers";
 import { openScopeEditor, settingRow } from "./settings/scope-editor";
 import { addScope, MODE_LABEL, type ScopesHost } from "./settings/scopes-page";
 import type JetSearchPlugin from "./main";
+import { fail } from "./diag/diag";
 
 const LANGUAGE_NAMES: Record<string, string> = {
 	en: "English",
@@ -154,7 +155,7 @@ export class JetSettingTab extends PluginSettingTab {
 			}
 			void m
 				.set(value === true)
-				.catch((e: unknown) => console.error("Jet Search: search by meaning could not be switched", e))
+				.catch((e: unknown) => fail("meaning.switch", "Jet Search: search by meaning could not be switched", e))
 				.then(() => this.redraw());
 			return;
 		}
@@ -927,7 +928,7 @@ export class JetSettingTab extends PluginSettingTab {
 				void m.rebuild().then(
 					() => this.redraw(),
 					(e: unknown) => {
-						console.error("Jet Search: making the vectors failed", e);
+						fail("meaning.vectors", "Jet Search: making the vectors failed", e);
 						new Notice("Search by meaning: the notes could not be given their meaning (see the console).");
 						this.redraw();
 					},
@@ -963,7 +964,7 @@ export class JetSettingTab extends PluginSettingTab {
 			void rebuild(this.owner).then(
 				() => this.redraw(),
 				(e: unknown) => {
-					console.error("Jet Search: rebuild failed", e);
+					fail("index.rebuild", "Jet Search: rebuild failed", e);
 					new Notice("The search index could not be rebuilt (see the console).");
 					rb.disabled = false;
 					rb.setText("Rebuild");
@@ -1037,6 +1038,13 @@ export class JetSettingTab extends PluginSettingTab {
 				this.redraw();
 			});
 		}
+		const support = this.card(body, {
+			icon: "life-buoy",
+			name: "Support",
+			desc: "Make a report you can paste into a GitHub issue. Jet sends nothing anywhere: you read it, you copy it, you paste it.",
+			aliases: "support info bug report debug diagnostics help problem",
+		});
+		this.button(support.row, "Preview and copy", () => this.owner.supportInfo(), "mod-cta");
 		this.card(body, {
 			icon: "info",
 			name: "Version",

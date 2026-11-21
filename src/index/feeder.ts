@@ -3,6 +3,7 @@ import type { RawNote } from "../engine/fields";
 import type { JetClient } from "../worker/jet-client";
 import { excluder, gather, inboundCounts } from "./gather";
 import { sliced } from "./slice";
+import { fail, warned } from "../diag/diag";
 
 /** Now if the app is in front, else when it comes back (a phone backgrounded, a window minimized). */
 const whenVisible = (): Promise<void> => {
@@ -145,7 +146,7 @@ export class Feeder {
 		this.meaningPending = null;
 		if (p)
 			void this.meaningChanged(p.on, p.forget).catch((e: unknown) =>
-				console.warn("Jet Search: search by meaning", e),
+				warned("meaning.load", "Jet Search: search by meaning", e),
 			);
 	}
 
@@ -166,7 +167,7 @@ export class Feeder {
 			try {
 				if (!(await this.loadMeaning())) return false;
 				void this.embedMissing().catch((e: unknown) =>
-					console.warn("Jet Search: notes could not be given vectors", e),
+					warned("meaning.vectors", "Jet Search: notes could not be given vectors", e),
 				);
 				return true;
 			} finally {
@@ -195,7 +196,7 @@ export class Feeder {
 		} catch (e) {
 			// The worker stopped meanwhile: that is not the model's fault.
 			if (!this.client.running) throw e;
-			console.warn("Jet Search: the meaning model could not be read; search by meaning is off", e);
+			warned("meaning.model", "Jet Search: the meaning model could not be read; search by meaning is off", e);
 			this.onMeaningBroken?.();
 			return false;
 		}
@@ -372,7 +373,7 @@ export class Feeder {
 		if (this.busy) return;
 		this.reset();
 		await this.ensure().catch((e: unknown) => {
-			if (!(e instanceof Cancelled)) console.error("Jet Search: the index could not be built again", e);
+			if (!(e instanceof Cancelled)) fail("index.recover", "Jet Search: the index could not be built again", e);
 		});
 	}
 

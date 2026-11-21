@@ -38,6 +38,7 @@ import { comboLabel, type KeyAction, type KeyMap, keyMap, tapLabel } from "./key
 import { MODE_LABEL } from "./settings/scopes-page";
 import type { Search } from "./search";
 import type { IndexStatus } from "./index-status";
+import { fail } from "./diag/diag";
 
 /** The icon for a note, by its `type` property: email, project, otherwise a page. */
 export const iconOf = (app: App, file: TFile): string => {
@@ -808,7 +809,7 @@ export class JetHost implements ModalHost {
 				view.editor.setSelection(from, to);
 				view.editor.scrollIntoView({ from, to }, true);
 			}
-		})().catch((e: unknown) => console.error("Jet Search: the note could not be opened", e));
+		})().catch((e: unknown) => fail("note.open", "Jet Search: the note could not be opened", e));
 	}
 
 	/** Your keys in the window and the double tap as hints write it (null: off). */
@@ -968,7 +969,7 @@ export class JetHost implements ModalHost {
 				});
 			await this.app.workspace.getLeaf(this.newTab() ? "tab" : false).openFile(file);
 		})().catch((e: unknown) => {
-			console.error("Jet Search: could not create the note", e);
+			fail("note.create", "Jet Search: could not create the note", e);
 			new Notice("The note could not be created.");
 		});
 	}
@@ -1047,7 +1048,7 @@ class MoveModal extends FuzzySuggestModal<MoveTarget> {
 				});
 			new Notice(`Moved to ${t.folder}`);
 		})().catch((e: unknown) => {
-			console.error("Jet Search: could not move the note", e);
+			fail("note.move", "Jet Search: could not move the note", e);
 			new Notice("The note could not be moved.");
 		});
 	}

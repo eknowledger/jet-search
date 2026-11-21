@@ -13,6 +13,7 @@ import { applyReview, type ReviewItem, review } from "../scopes/review";
 import type { Snapshot } from "../scopes/snapshot";
 import { closeSettingPage, openSettingPage } from "../internals";
 import { ruleText } from "./scopes-page";
+import { fail } from "../diag/diag";
 
 export type GenerateHost = {
 	app: App;
@@ -109,7 +110,7 @@ export class GenerateView {
 			.snapshot()
 			.then((snap) => this.draw(generate(snap), snap.notes))
 			.catch((e: unknown) => {
-				console.error("Jet Search: generating scopes failed", e);
+				fail("scopes.generate", "Jet Search: generating scopes failed", e);
 				this.containerEl.empty();
 				this.containerEl.createDiv({
 					cls: "setting-page-desc",

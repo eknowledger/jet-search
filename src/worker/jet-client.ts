@@ -1,4 +1,5 @@
 import code from "worker:./jet-worker";
+import { diag } from "../diag/diag";
 import type { AnswerCandidate } from "../answers/answers";
 import type { Answer, AnswerPoolReply, AnswersReply, NearReply, QueryReply, Reply, Request } from "./protocol";
 
@@ -105,6 +106,7 @@ export class JetClient {
 		if (this.worker) return this.worker;
 		this.url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
 		const worker = new Worker(this.url, { name: "jet-search" });
+		diag.workerStarted();
 		worker.onmessage = (e: MessageEvent<Answer>) => {
 			const p = this.pending.get(e.data.id);
 			if (!p) return;
@@ -115,6 +117,8 @@ export class JetClient {
 		worker.onerror = (e) => {
 			const message = e.message || "worker error";
 			console.error("Jet Search: worker error", message);
+			diag.workerCrashed();
+			diag.problem("worker.error", new Error(message));
 			this.stop();
 			this.onCrash?.(message);
 		};

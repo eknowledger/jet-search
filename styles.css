@@ -1973,6 +1973,41 @@ table.jet-set-keys {
 	pointer-events: none;
 }
 
+/* Support info window */
+.jet-support-modal {
+	width: min(640px, 94vw);
+}
+.jet-support-lead {
+	margin-bottom: 10px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.jet-support-report {
+	max-height: 46vh;
+	margin: 0 0 12px;
+	padding: 10px 12px;
+	overflow: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background-color: var(--background-secondary);
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	line-height: 1.55;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	user-select: text;
+}
+.jet-support-label {
+	display: block;
+	margin-bottom: 4px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.jet-support-what {
+	width: 100%;
+	resize: vertical;
+}
+
 /* Phones and tablets */
 /* Everything below applies on a phone or tablet only: every selector starts with a body class Obsidian sets there. */
 

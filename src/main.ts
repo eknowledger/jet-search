@@ -26,6 +26,8 @@ import { JetSettingTab } from "./settings-tab";
 import { DoubleTap } from "./shift";
 import { setMac, tapLabel } from "./keys/keymap";
 import { JetClient } from "./worker/jet-client";
+import { diag, fail } from "./diag/diag";
+import { SupportModal } from "./diag/support-modal";
 
 /** The first build starts this long after the layout is ready, the first time (within 5 s). */
 const FIRST_BUILD_DELAY_MS = 3000;
@@ -67,6 +69,8 @@ export default class JetSearchPlugin extends Plugin {
 	private readonly measuring = new Set<string>();
 	/** The Omnisearch ids Jet stands in for now, with the command it put there. */
 	private readonly standIns = new Map<string, Command>();
+	/** The windows whose keys are watched for the double tap, and how to let each go. */
+	private readonly watched = new Map<Document, () => void>();
 	/** Set first thing at unload; `built` once onload has made everything onunload stops. */
 	private unloaded = false;
 	private built = false;
@@ -201,6 +205,7 @@ export default class JetSearchPlugin extends Plugin {
 		};
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
+		this.addCommand({ id: "support-info", name: "Copy support info", callback: () => this.supportInfo() });
 		this.settingTab = new JetSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
 		// Search by meaning's progress in its settings, while they are on screen (at most twice a second).
@@ -257,6 +262,27 @@ export default class JetSearchPlugin extends Plugin {
 		this.client.stop();
 	}
 
+	/** The support info window: what Jet knows about itself, to read and copy. */
+	supportInfo(): void {
+		new SupportModal(this.app, this).open();
+	}
+
+	/** Every window that holds a leaf (the main one too). */
+	private openDocs(): Set<Document> {
+		const docs = new Set<Document>([activeDocument]);
+		this.app.workspace.iterateAllLeaves?.((leaf) => {
+			const doc = (leaf as { getContainer?: () => { doc?: Document } }).getContainer?.().doc;
+			if (doc) docs.add(doc);
+		});
+		return docs;
+	}
+
+	/** What the support info says about Jet's keys and windows. */
+	keyFacts(): { standIns: number; windowsWatched: number; windowsOpen: number } {
+		const held = [...this.standIns].filter(([id, cmd]) => commandAt(this.app, id) === cmd).length;
+		return { standIns: held, windowsWatched: this.watched.size, windowsOpen: this.openDocs().size };
+	}
+
 	/** A search is coming: keep the worker awake, and let it sleep after a quiet while. */
 	wake(): void {
 		if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
@@ -276,6 +302,7 @@ export default class JetSearchPlugin extends Plugin {
 					if (this.sleepTimer !== null || this.unloaded) return;
 					this.client.stop();
 					this.feeder.reset();
+					diag.slept();
 				});
 		}, SLEEP_AFTER_MS);
 	}
@@ -308,7 +335,7 @@ export default class JetSearchPlugin extends Plugin {
 				outside: m.notes - m.inside,
 			});
 		} catch (e) {
-			console.error("Jet Search: counting mentions failed", e);
+			fail("scopes.mentions", "Jet Search: counting mentions failed", e);
 		} finally {
 			this.measuring.delete(id);
 			// One redraw once every scope asked for is measured, not one per scope.
@@ -374,7 +401,7 @@ export default class JetSearchPlugin extends Plugin {
 			() => this.data.settings.shiftInterval,
 			() => this.data.settings.tapKey,
 		);
-		const watched = new Map<Document, () => void>();
+		const watched = this.watched;
 		const watch = (doc: Document): void => {
 			if (watched.has(doc)) return;
 			const win: EventTarget = doc.defaultView ?? window;
@@ -409,11 +436,7 @@ export default class JetSearchPlugin extends Plugin {
 		// and a closed one is let go of at once. One layout-change listener does it all,
 		// and checks Omnisearch's ids again, within the start budget of 9 listeners.
 		const windows = (): void => {
-			const docs = new Set<Document>([activeDocument]);
-			this.app.workspace.iterateAllLeaves?.((leaf) => {
-				const doc = (leaf as { getContainer?: () => { doc?: Document } }).getContainer?.().doc;
-				if (doc) docs.add(doc);
-			});
+			const docs = this.openDocs();
 			for (const d of docs) watch(d);
 			for (const [d, off] of watched)
 				if (!docs.has(d)) {
@@ -499,7 +522,7 @@ export default class JetSearchPlugin extends Plugin {
 				if (this.unloaded || this.data.indexedAt !== null) return;
 				this.wake();
 				void this.feeder.ensure().catch((e: unknown) => {
-					if (!(e instanceof Cancelled)) console.error("Jet Search: the first build failed", e);
+					if (!(e instanceof Cancelled)) fail("index.first-build", "Jet Search: the first build failed", e);
 				});
 			}, FIRST_BUILD_DELAY_MS);
 			this.register(() => window.clearTimeout(first));
@@ -536,7 +559,7 @@ export default class JetSearchPlugin extends Plugin {
 		try {
 			this.jade.start();
 		} catch (e) {
-			console.error("Jet Search: Jade could not be joined", e);
+			fail("jade.join", "Jet Search: Jade could not be joined", e);
 		}
 	}
 

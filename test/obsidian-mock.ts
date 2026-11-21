@@ -414,6 +414,9 @@ const versionAtLeast = (have: string, want: string): boolean => {
 	return true;
 };
 
+/** Obsidian's `apiVersion`: the app's version (follows `mockApi`). */
+export const apiVersion = mockApi.version;
+
 export const requireApiVersion = (version: string): boolean => versionAtLeast(mockApi.version, version);
 
 export class PluginSettingTab {
