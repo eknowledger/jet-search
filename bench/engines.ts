@@ -1,5 +1,5 @@
 import type { BenchEngine } from "./engine";
-import { fts5Engine, initFts5 } from "./fts5-engine";
+import { fts5Engine, initFts5 } from "./fts5-engine.spec";
 import { jadeEngine } from "./jade-engine";
 import { ALL_LANGUAGES, jetEngine } from "./jet-engine";
 

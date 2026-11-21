@@ -8,7 +8,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { generate } from "../src/scopes/generate";
 import { fold } from "../src/scopes/names";
-import { readSnapshot } from "./vault-snapshot";
+import { readSnapshot } from "./vault-snapshot.spec";
 
 type Truth = {
 	scopes: Array<{

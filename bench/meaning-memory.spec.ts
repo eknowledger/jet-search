@@ -2,7 +2,7 @@
  * Search by meaning's cost: the memory the packed model and the note vectors hold,
  * the time to embed a note, and the nearest scan at 1,500 and 15,000 notes. Needs the model's two files
  * (JET_MODEL, JET_TOKENIZER). Synthetic notes: no vault is read.
- *   esbuild bench/meaning-memory.ts --bundle --platform=node --format=esm --outfile=meaning-memory.mjs && node --expose-gc meaning-memory.mjs
+ *   esbuild bench/meaning-memory.spec.ts --bundle --platform=node --format=esm --outfile=meaning-memory.mjs && node --expose-gc meaning-memory.mjs
  */
 import { readFileSync } from "node:fs";
 import { embed, packModel, unpackModel } from "../src/meaning/model";

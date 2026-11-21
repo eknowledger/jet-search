@@ -1174,7 +1174,7 @@ Search by meaning is opt-in. It finds notes that say the same thing in other wor
 | Tokenizer | BERT uncased WordPiece, 100 characters per word at most, written in `tokenizer.ts` to match Hugging Face's normalizer | `tokenizer.ts` |
 | Kept as | one packed file `meaning-potion-base-8M.bin` in the plugin's own folder (`manifest.dir`) | `MODEL_FILE` in `install.ts` |
 
-The packed file is Jet's, not Hugging Face's. `packModel` writes a 24-byte header (magic `JETM`, version 1, dims, rows, the unknown-piece id, the vocabulary's byte length), the vocabulary as newline-joined text padded to 4 bytes, one float32 scale per row, then the table as int8. Each row's scale is its largest absolute value divided by 127. `unpackModel` rejects a wrong magic or version and a truncated file ("the Jet meaning model file is incomplete") instead of throwing a raw `RangeError`. `packModel` reads F32 or F16 tables and refuses any other dtype. Measured while writing this document with `bench/meaning-memory.ts`: the packed file is 7.9 MB for 29,528 pieces, and the unpacked model holds 9.6 MB in memory. A test (`test/meaning.test.ts`) asserts it stays under 8.5 MB when the model is on the machine.
+The packed file is Jet's, not Hugging Face's. `packModel` writes a 24-byte header (magic `JETM`, version 1, dims, rows, the unknown-piece id, the vocabulary's byte length), the vocabulary as newline-joined text padded to 4 bytes, one float32 scale per row, then the table as int8. Each row's scale is its largest absolute value divided by 127. `unpackModel` rejects a wrong magic or version and a truncated file ("the Jet meaning model file is incomplete") instead of throwing a raw `RangeError`. `packModel` reads F32 or F16 tables and refuses any other dtype. Measured while writing this document with `bench/meaning-memory.spec.ts`: the packed file is 7.9 MB for 29,528 pieces, and the unpacked model holds 9.6 MB in memory. A test (`test/meaning.test.ts`) asserts it stays under 8.5 MB when the model is on the machine.
 
 #### The install flow
 
@@ -1223,7 +1223,7 @@ The sequence shows opt-in install, from the toggle to the first vectors. Three t
 
 #### Storage beside the index
 
-Vectors live in the worker (`Vectors` in `vectors.ts`, held by `Router`). They are saved with the index, in the same per-vault IndexedDB database (`jet-search/<vaultId>`), object store `index`, under the key `vectors`. The saved shape is `{model, dim, paths[], mtimes[], data}` where `data` is one Int8Array of `paths.length * dim` bytes. `Router.save` writes them only when `Vectors.dirty` is true. On `meaning:load` the worker reads them, ignores them if the model id or dimension differs, and drops vectors of notes the index no longer has. A vector that cannot be read is logged and made again. In memory the vectors take about 1.2 MB for 1,500 notes and 8.7 MB for 15,000 (`bench/meaning-memory.ts`).
+Vectors live in the worker (`Vectors` in `vectors.ts`, held by `Router`). They are saved with the index, in the same per-vault IndexedDB database (`jet-search/<vaultId>`), object store `index`, under the key `vectors`. The saved shape is `{model, dim, paths[], mtimes[], data}` where `data` is one Int8Array of `paths.length * dim` bytes. `Router.save` writes them only when `Vectors.dirty` is true. On `meaning:load` the worker reads them, ignores them if the model id or dimension differs, and drops vectors of notes the index no longer has. A vector that cannot be read is logged and made again. In memory the vectors take about 1.2 MB for 1,500 notes and 8.7 MB for 15,000 (`bench/meaning-memory.spec.ts`).
 
 #### The flat scan
 
@@ -1323,7 +1323,7 @@ A scope also has an id (`scopeId`, FNV-1a of the lower-cased name plus the first
 
 #### The generator (`scopes/generate.ts`)
 
-`generate(snapshot)` is pure and deterministic: the same snapshot gives the same proposals. The snapshot (`snapshot.ts`) is every file path, each note's facts (path, properties, resolved frontmatter links, tags) and the vault's settings that describe it. `snapshot-obsidian.ts` builds it from the metadata cache and the config folder without reading any note; `bench/vault-snapshot.ts` builds it from files on disk for tests. The steps follow the code:
+`generate(snapshot)` is pure and deterministic: the same snapshot gives the same proposals. The snapshot (`snapshot.ts`) is every file path, each note's facts (path, properties, resolved frontmatter links, tags) and the vault's settings that describe it. `snapshot-obsidian.ts` builds it from the metadata cache and the config folder without reading any note; `bench/vault-snapshot.spec.ts` builds it from files on disk for tests. The steps follow the code:
 
 1. **Masks.** Excluded paths, `.trash`, the templates folder, the attachments folder, then by shape: a folder with at least 3 files, at least 80% not notes and fewer than 5 notes is attachments; a folder where at least half of its notes (and at least 2) hold `{{date}}`-style placeholders is templates.
 2. **Flags.** Folders to look through: *periods* (years, `YYYY-MM`, quarters, weeks, month names from `Intl` in the vault's locales) when at least 80% of the siblings are periods; *sequences* ("Week 1", "Week 2", "A", "B", small or nearly consecutive numbers; course codes like CS 110 are topics); *repeated subfolders* (the same name under 3 siblings, or half of at least 4); Johnny.Decimal ids.
@@ -2048,7 +2048,7 @@ Recipes for the changes people make most. Each says which files to touch, which 
 | `test:timed` | the six timed files with `--no-file-parallelism` |
 | `test:watch` | `vitest` |
 | `check` | `format:check`, `lint`, `typecheck`, `test`, in that order |
-| `bench:engine`, `bench:mem` | `scripts/bench.mjs run` or `mem`: bundles `bench/run.ts` or `bench/mem.ts` to `bench/.out` (untracked) and runs it with `--expose-gc` |
+| `bench:engine`, `bench:mem` | `scripts/bench.mjs run` or `mem`: bundles `bench/run.spec.ts` or `bench/mem.spec.ts` to `bench/.out` (untracked) and runs it with `--expose-gc` |
 
 ### 11.2 esbuild and the inline worker
 
@@ -2138,7 +2138,7 @@ Numbers marked "bench" come from `docs/benchmarks.md` (Apple M3 Pro, Obsidian 1.
 | Changes merged and saved | after `IDLE_MS` (2 s) of quiet | | `router.ts` constant |
 | Scope generation | under 1 s for a 15,000-note vault with many nested tags (it runs on the main thread) | was 5.4 s before the rule index | test: `qa2-generate.test.ts` |
 | Stemmers | 50,000 words under 0.5 s per language | | test: `stem.test.ts` |
-| Meaning: vector scan | none asserted | median 0.37 ms (p95 0.84 ms) at 1,500 notes; 3.9 ms at 15,000 | `bench/meaning-memory.ts`, run while writing this |
+| Meaning: vector scan | none asserted | median 0.37 ms (p95 0.84 ms) at 1,500 notes; 3.9 ms at 15,000 | `bench/meaning-memory.spec.ts`, run while writing this |
 | Meaning: embed a note | none asserted | 0.29 ms per note | same |
 | Meaning memory | packed model under 8.5 MB | model 9.6 MB in memory; vectors 1.2 MB at 1,500 notes, 8.7 MB at 15,000 | test: `meaning.test.ts`; same bench |
 | Answers wait | text rests 250 ms; 8 notes per slice | no time bound asserted | `ANSWER_PAUSE_MS`, `SLICE` |

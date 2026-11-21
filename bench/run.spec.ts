@@ -7,8 +7,8 @@
 import { performance } from "node:perf_hooks";
 import type { BenchEngine, BenchNote } from "./engine";
 import { jetEngine } from "./jet-engine";
-import { fts5Engine, initFts5 } from "./fts5-engine";
-import { readNotes } from "./notes";
+import { fts5Engine, initFts5 } from "./fts5-engine.spec";
+import { readNotes } from "./notes.spec";
 import { NameIndex } from "../src/tier0/names";
 
 const [dir, sizesArg, ...flags] = process.argv.slice(2);

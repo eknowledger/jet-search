@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeVault, SHAPES } from "../bench/fixtures/make-vaults.mjs";
-import { readSnapshot } from "../bench/vault-snapshot";
+import { readSnapshot } from "../bench/vault-snapshot.spec";
 import { type Generated, generate, support } from "../src/scopes/generate";
 import type { Rule } from "../src/scopes/model";
 

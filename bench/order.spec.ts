@@ -19,7 +19,7 @@ import { hasPhrase } from "../src/excerpt/excerpt";
 import { SEQUENCE_CHECK_LIMIT, applySequenceBoost } from "../src/rank";
 import { autoQuality } from "./compare/queries.mjs";
 import type { BenchNote } from "./engine";
-import { readNotes } from "./notes";
+import { readNotes } from "./notes.spec";
 
 const [dir] = process.argv.slice(2);
 if (!dir) throw new Error("usage: npm run bench:order -- <demo-vault-dir>");
