@@ -102,7 +102,9 @@ Ask for a price, a name, a date or a reason, and Jet lists the notes by the line
 
 ## Install
 
-Jet is not in the Community plugins list yet. Until it is, install it by hand or with BRAT.
+**From Obsidian**: open **Settings > Community plugins > Browse**, search for **Jet Search**, then install and enable it. The listing is at [community.obsidian.md/plugins/jet-search](https://community.obsidian.md/plugins/jet-search).
+
+Or install it another way:
 
 **By hand**
 
@@ -244,7 +246,7 @@ npm run build   # main.js, manifest.json and styles.css
 
 ## Status
 
-Jet Search is at version 0.6.0 and under active development, by one maintainer. Please open an [issue](https://github.com/eknowledger/jet-search/issues) for bugs, ideas and questions.
+Jet Search is under active development, by one maintainer. Please open an [issue](https://github.com/eknowledger/jet-search/issues) for bugs, ideas and questions.
 
 ## Licence
 

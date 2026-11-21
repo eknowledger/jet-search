@@ -23,4 +23,17 @@ describe("README", () => {
 		expect(readme).not.toMatch(/plugin-\d+%20KB/);
 		expect(readme).not.toMatch(/\bis \d+ KB\b/);
 	});
+
+	// The version is on the release badge and the directory page; a number typed here was 0.6.0 for a week after 0.7.0.
+	it("does not type the current version by hand", () => {
+		expect(readme).not.toMatch(/\bat version \d+\.\d+/i);
+	});
+
+	// Jet is in the directory, so the first way to install it is the one inside Obsidian.
+	it("tells people to install from Community plugins first", () => {
+		expect(readme).not.toMatch(/not in the Community plugins list/i);
+		const install = readme.slice(readme.indexOf("## Install"));
+		expect(install.indexOf("Browse")).toBeGreaterThan(-1);
+		expect(install.indexOf("Browse")).toBeLessThan(install.indexOf("By hand"));
+	});
 });
