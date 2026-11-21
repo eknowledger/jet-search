@@ -4,6 +4,10 @@
  * keystroke or per result, so it costs nothing a search could notice. A problem keeps a code and the
  * error's name, never its message: a message can carry a note's path.
  */
+import { errorName, errorWhere } from "./error-facts";
+
+export { errorName, errorWhere };
+
 export type Problem = {
 	/** Where it happened, e.g. `search.failed`. */
 	code: string;
@@ -21,22 +25,21 @@ export type Problem = {
 
 const MAX_PROBLEMS = 20;
 
-/** The name of what was thrown, for the report; its text is left out. */
-export const errorName = (e: unknown): string => (e instanceof Error ? e.name : e === null ? "null" : typeof e);
-
-/**
- * The place in Jet's code an error came from, as `function:line:column`: enough to find the line in the
- * build the report names, and nothing a note or a vault could be in (no file name or URL is kept).
- */
-export const errorWhere = (e: unknown): string | null => {
-	const stack = e instanceof Error ? e.stack : undefined;
-	if (!stack) return null;
-	for (const line of stack.split("\n").slice(1, 6)) {
-		const m = /^\s*at (?:(?:async )?([\w$.<>]+) \()?[^()\s]*?:(\d+):(\d+)\)?\s*$/.exec(line);
-		if (m) return `${m[1] ?? "anonymous"}:${m[2]}:${m[3]}`;
-	}
-	return null;
+/** How the saved index opened, as the worker reported it when it started. */
+export type Opened = {
+	how: "loaded" | "none" | "format-changed" | "error";
+	/** The format the saved index had (format-changed), and the one this Jet reads. */
+	found: number | null;
+	version: number;
+	/** Where the index is kept: "indexeddb", or "memory" (not kept between sessions). */
+	store: string;
+	/** How long the open took in the worker. */
+	ms: number;
+	at: number;
 };
+
+/** What the worker tells the main thread when something it caught went wrong (no message text). */
+export type WorkerEvent = { code: string; level: Problem["level"]; error: string; where: string | null };
 
 class Diag {
 	workerStarts = 0;
@@ -45,6 +48,8 @@ class Diag {
 	/** When the running worker started (null: none is running). */
 	workerSince: number | null = null;
 	problems: Problem[] = [];
+	/** How the saved index opened the last time the worker started (null: not opened yet). */
+	opened: Opened | null = null;
 
 	workerStarted(): void {
 		this.workerStarts++;
@@ -65,7 +70,15 @@ class Diag {
 
 	/** Record a caught error: the same one again in a row only counts. */
 	problem(code: string, e: unknown, level: Problem["level"] = "error", where: string | null = errorWhere(e)): void {
-		const error = errorName(e);
+		this.record(code, level, errorName(e), where);
+	}
+
+	/** Something the worker caught and told us about. */
+	workerEvent(ev: WorkerEvent): void {
+		this.record(ev.code, ev.level, ev.error, ev.where);
+	}
+
+	private record(code: string, level: Problem["level"], error: string, where: string | null): void {
 		const last = this.problems[this.problems.length - 1];
 		if (last && last.code === code && last.error === error && last.level === level && last.where === where) {
 			last.count++;
@@ -81,6 +94,7 @@ class Diag {
 		this.workerCrashes = 0;
 		this.sleeps = 0;
 		this.workerSince = null;
+		this.opened = null;
 		this.problems = [];
 	}
 }
@@ -96,5 +110,10 @@ export const fail = (code: string, text: string, e: unknown): void => {
 /** The same for a warning. */
 export const warned = (code: string, text: string, e: unknown): void => {
 	console.warn(text, e);
+	diag.problem(code, e, "warn");
+};
+
+/** An error caught and passed over on purpose: not printed, but remembered so a report can show it. */
+export const noted = (code: string, e: unknown): void => {
 	diag.problem(code, e, "warn");
 };

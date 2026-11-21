@@ -304,4 +304,27 @@ describe("the support info", () => {
 		expect(collect(plugin).open.standIns).toBe(0);
 		plugin.unload();
 	});
+
+	it("fills in the index's size and age when a running worker answers, without waking a sleeping one", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		const calls: string[] = [];
+		Object.defineProperty(plugin.client, "running", { get: () => true });
+		plugin.client.call = ((req: { op: string }) => {
+			calls.push(req.op);
+			return Promise.resolve({
+				notes: 7,
+				segments: 2,
+				pending: 0,
+				savedAt: Date.now() - 60_000,
+				bytes: 2_000_000,
+			});
+		}) as never;
+		plugin.supportInfo();
+		await new Promise((r) => setTimeout(r, 0));
+		const text = [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
+		expect(calls).toEqual(["stats"]);
+		expect(text).toContain("7 of");
+		expect(text).toContain("2.0 MB, 2 segments, saved 1 min ago");
+	});
 });

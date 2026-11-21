@@ -26,7 +26,7 @@ import { JetSettingTab } from "./settings-tab";
 import { DoubleTap } from "./shift";
 import { setMac, tapLabel } from "./keys/keymap";
 import { JetClient } from "./worker/jet-client";
-import { diag, fail } from "./diag/diag";
+import { diag, fail, noted } from "./diag/diag";
 import { SupportModal } from "./diag/support-modal";
 
 /** The first build starts this long after the layout is ready, the first time (within 5 s). */
@@ -296,7 +296,7 @@ export default class JetSearchPlugin extends Plugin {
 			}
 			void this.client
 				.call({ op: "save" })
-				.catch(() => {})
+				.catch((e: unknown) => noted("index.save", e))
 				.finally(() => {
 					// A search came while it saved: it woke Jet again, so the worker stays.
 					if (this.sleepTimer !== null || this.unloaded) return;

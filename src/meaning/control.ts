@@ -5,6 +5,7 @@
  */
 import { type App, normalizePath, Notice } from "obsidian";
 import type { JetData } from "../data";
+import { noted } from "../diag/diag";
 import type { Feeder } from "../index/feeder";
 import { download, install, readModel, removeModel } from "./install";
 import { MODEL } from "./model";
@@ -42,7 +43,7 @@ export class Meaning {
 		};
 		feeder.onMeaningBroken = () => {
 			void (async () => {
-				await removeModel(this.app, this.dir).catch(() => {});
+				await removeModel(this.app, this.dir).catch((e: unknown) => noted("meaning.remove", e));
 				const d = this.data();
 				d.meaningModel = null;
 				d.settings.meaning = false;

@@ -24,6 +24,9 @@ const BUILD_SAVE_MS = 20_000;
 /** Timers, passed in: the worker's own (it has no window), or manual ones in tests. */
 export type Timers = { set: (fn: () => void, ms: number) => unknown; clear: (h: unknown) => void };
 
+/** Tells the main thread something the worker caught (a code and the error; the main thread keeps its class only). */
+export type Notify = (code: string, e: unknown, level: "error" | "warn") => void;
+
 /**
  * The worker's request handler, kept free of the Worker itself so tests can drive
  * it: the engine, its persistence, and the idle merge and save after changes.
@@ -48,7 +51,14 @@ export class Router {
 		private readonly timers: Timers,
 		/** How often a long first build saves what it has, so an interrupted one resumes. */
 		private readonly buildSaveMs = BUILD_SAVE_MS,
+		private readonly notify: Notify = () => {},
 	) {}
+
+	/** What was caught goes to this worker's console as before, and to the main thread for the support info. */
+	private caught(code: string, text: string, e: unknown, level: "error" | "warn" = "warn"): void {
+		console.warn(text, e);
+		this.notify(code, e, level);
+	}
 
 	private buildSavedAt = 0;
 
@@ -58,7 +68,10 @@ export class Router {
 				this.configure(req.stemming);
 				this.store = this.makeStore(req.vaultId);
 				this.buildSavedAt = Date.now();
+				const t0 = performance.now();
 				let loaded = false;
+				let how: "loaded" | "none" | "format-changed" | "error" = "none";
+				let found: number | null = null;
 				try {
 					const saved = await this.store.load();
 					if (saved && saved.version === INDEX_VERSION) {
@@ -67,17 +80,30 @@ export class Router {
 						this.savedBase = saved.base;
 						this.bytes = saved.base.byteLength + saved.sidecar.byteLength;
 						loaded = true;
+						how = "loaded";
+					} else if (saved) {
+						how = "format-changed";
+						found = saved.version;
 					}
 				} catch (e) {
 					// A broken or unreadable index is rebuilt, never fatal; nothing half-loaded
 					// is kept (a base whose sidecar failed would keep notes deleted since).
-					console.warn("Jet Search: the saved index could not be read; rebuilding", e);
+					this.caught("index.read", "Jet Search: the saved index could not be read; rebuilding", e);
 					this.engine.build([]);
 					loaded = false;
+					how = "error";
 				}
 				// Root groups for word forms are built while the worker waits for the first query.
 				this.timers.set(() => this.engine.warm(), 0);
-				return { loaded, notes: this.engine.size };
+				return {
+					loaded,
+					notes: this.engine.size,
+					how,
+					found,
+					version: INDEX_VERSION,
+					store: this.store.kind ?? "other",
+					ms: performance.now() - t0,
+				};
 			}
 			case "configure":
 				this.configure(req.stemming);
@@ -91,14 +117,16 @@ export class Router {
 				if (!req.last && Date.now() - this.buildSavedAt >= this.buildSaveMs) {
 					this.buildSavedAt = Date.now();
 					this.engine.merge();
-					await this.save().catch((e: unknown) => console.warn("Jet Search: could not save the index", e));
+					await this.save().catch((e: unknown) =>
+						this.caught("index.save", "Jet Search: could not save the index", e),
+					);
 				}
 				if (req.last) {
 					this.engine.merge();
 					this.timers.set(() => this.engine.warm(), 0);
 					// A save that fails (a full disk) leaves the index working from memory, saved later.
 					await this.save().catch((e: unknown) => {
-						console.warn("Jet Search: could not save the index; trying again later", e);
+						this.caught("index.save", "Jet Search: could not save the index; trying again later", e);
 						this.changed();
 					});
 				}
@@ -137,7 +165,11 @@ export class Router {
 					const saved = await this.store?.loadVectors?.();
 					if (saved && saved.model === model.id && saved.dim === model.dim) vectors = Vectors.load(saved);
 				} catch (e) {
-					console.warn("Jet Search: the saved note vectors could not be read; making them again", e);
+					this.caught(
+						"vectors.read",
+						"Jet Search: the saved note vectors could not be read; making them again",
+						e,
+					);
 				}
 				// Vectors of notes the index no longer has go.
 				const known = new Set(this.engine.mtimes().map(([p]) => p));
@@ -212,9 +244,9 @@ export class Router {
 		} catch (e) {
 			// A damaged saved index (a flipped byte) answers nothing, is dropped from the device, and the
 			// plugin builds it again.
-			console.warn("Jet Search: the index is damaged; building it again", e);
+			this.caught("index.damaged", "Jet Search: the index is damaged; building it again", e, "error");
 			this.engine.build([]);
-			void this.store?.clear().catch(() => {});
+			void this.store?.clear().catch((err: unknown) => this.notify("index.clear", err, "warn"));
 			return { seq: req.seq, hits: [], terms: [], ms: 0, broken: true };
 		}
 	}
@@ -342,7 +374,9 @@ export class Router {
 		this.idle = this.timers.set(() => {
 			this.idle = null;
 			if (this.engine.wantsMerge) this.engine.merge();
-			void this.save().catch((e: unknown) => console.warn("Jet Search: could not save the index", e));
+			void this.save().catch((e: unknown) =>
+				this.caught("index.save", "Jet Search: could not save the index", e),
+			);
 		}, IDLE_MS);
 	}
 

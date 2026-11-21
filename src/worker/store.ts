@@ -12,6 +12,8 @@ export type Save = { base?: ArrayBuffer; sidecar: Uint8Array; savedAt: number; v
 
 /** What the router needs from storage; tests pass an in-memory one. */
 export type Store = {
+	/** Where it keeps the index: "indexeddb" (kept between sessions) or "memory" (not). */
+	kind?: string;
 	load(): Promise<Saved | null>;
 	save(s: Save): Promise<void>;
 	clear(): Promise<void>;
@@ -45,11 +47,12 @@ const open = (name: string, store: string): Promise<IDBDatabase> => {
 };
 
 /** The vault's index in IndexedDB (`jet-search/<vaultId>`): base, sidecar and meta written in one transaction. */
-export const idbStore = (vaultId: string): Store => {
+export const idbStore = (vaultId: string, tell: (code: string, e: unknown) => void = () => {}): Store => {
 	const name = `${REGISTRY}/${vaultId}`;
 	let db: Promise<IDBDatabase> | null = null;
 	const get = (): Promise<IDBDatabase> => (db ??= open(name, "index"));
 	return {
+		kind: "indexeddb",
 		async load() {
 			const d = await get();
 			const t = d.transaction("index", "readonly");
@@ -72,9 +75,10 @@ export const idbStore = (vaultId: string): Store => {
 			s.put({ savedAt: x.savedAt, version: x.version }, "meta");
 			await done(t);
 			// The registry is bookkeeping: its failure must not fail a save that is done.
-			await touch(vaultId).catch((e: unknown) =>
-				console.warn("Jet Search: the vault registry was not updated", e),
-			);
+			await touch(vaultId).catch((e: unknown) => {
+				console.warn("Jet Search: the vault registry was not updated", e);
+				tell("registry.update", e);
+			});
 		},
 		async clear() {
 			const d = await get();
@@ -123,6 +127,7 @@ export const touch = async (vaultId: string, now = Date.now()): Promise<string[]
 /** A store in memory, for tests and when IndexedDB is unavailable (search still works). */
 export const memoryStore = (): Store & { saved: Saved | null; vectors: SavedVectors | null } => {
 	const m = {
+		kind: "memory",
 		saved: null as Saved | null,
 		vectors: null as SavedVectors | null,
 		loadVectors: () => Promise.resolve(m.vectors),

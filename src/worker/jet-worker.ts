@@ -3,6 +3,7 @@
  * one at a time; a query that a newer query has already replaced is answered as stale without being
  * run (latest wins). Nothing here touches the vault or the DOM.
  */
+import { errorName, errorWhere } from "../diag/error-facts";
 import type { Answer, Envelope } from "./protocol";
 import { Router } from "./router";
 import { idbStore, memoryStore } from "./store";
@@ -11,10 +12,20 @@ type Scope = { onmessage: ((e: MessageEvent<Envelope>) => void) | null; postMess
 const scope = self as unknown as Scope;
 
 const worker = self as unknown as { setTimeout(fn: () => void, ms: number): number; clearTimeout(h: number): void };
-const router = new Router((vaultId) => (typeof indexedDB === "undefined" ? memoryStore() : idbStore(vaultId)), {
-	set: (fn, ms) => worker.setTimeout(fn, ms),
-	clear: (h) => worker.clearTimeout(h as number),
-});
+/** What this worker caught and carried on from, told to the main thread: a code, the error's class and where it was thrown. */
+const tell = (code: string, e: unknown, level: "error" | "warn" = "warn"): void => {
+	const at = errorWhere(e);
+	scope.postMessage({ event: { code, level, error: errorName(e), where: at ? `worker:${at}` : null } });
+};
+const router = new Router(
+	(vaultId) => (typeof indexedDB === "undefined" ? memoryStore() : idbStore(vaultId, tell)),
+	{
+		set: (fn, ms) => worker.setTimeout(fn, ms),
+		clear: (h) => worker.clearTimeout(h as number),
+	},
+	undefined,
+	tell,
+);
 const queue: Envelope[] = [];
 let busy = false;
 // Answers (experiment): a re-rank stops when a newer search is queued (a query typed, another question).
@@ -44,7 +55,13 @@ const pump = async (): Promise<void> => {
 		try {
 			scope.postMessage({ id, result: await router.handle(req) });
 		} catch (err) {
-			scope.postMessage({ id, error: err instanceof Error ? (err.stack ?? err.message) : String(err) });
+			const at = errorWhere(err);
+			scope.postMessage({
+				id,
+				error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+				name: errorName(err),
+				where: at ? `worker:${at}` : null,
+			});
 		}
 	}
 	busy = false;

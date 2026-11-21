@@ -1,5 +1,6 @@
 import { Modal, Notice, type App } from "obsidian";
 import type JetSearchPlugin from "../main";
+import { refreshStats } from "../index-status";
 import { collect } from "./collect";
 import {
 	buildReport,
@@ -49,6 +50,13 @@ export class SupportModal extends Modal {
 		const grid = body.createDiv({ cls: "jet-support-body" });
 		this.pre = grid.createEl("pre", { cls: "jet-support-report", attr: { tabindex: "0" } });
 		this.draw();
+		// A running worker knows the index's size and age: ask, and draw again when it answers.
+		if (this.plugin.client.running)
+			void refreshStats(this.plugin).then(() => {
+				if (!this.pre.isConnected) return;
+				this.snap = collect(this.plugin, Date.now(), this.opts);
+				this.draw();
+			});
 
 		const side = grid.createDiv({ cls: "jet-support-side" });
 		side.createEl("h4", { text: "Add to the report" });

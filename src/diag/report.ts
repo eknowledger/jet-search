@@ -1,4 +1,4 @@
-import type { Problem } from "./diag";
+import type { Opened, Problem } from "./diag";
 
 /** How the index stands, in one word. */
 export type Phase = "never-built" | "building" | "live" | "asleep";
@@ -35,6 +35,8 @@ export type Snapshot = {
 		segments: number | null;
 		pending: number | null;
 		savedAt: number | null;
+		/** How the saved index opened when the worker last started (null: not yet this session). */
+		opened: Opened | null;
 	};
 	worker: { running: boolean; since: number | null; starts: number; crashes: number; sleeps: number };
 	open: {
@@ -119,6 +121,25 @@ const PHASES: Record<Phase, string> = {
 
 const ln = (text: string, warn = false): Line => (warn ? { text, warn } : { text });
 
+const STORES: Record<string, string> = { indexeddb: "IndexedDB", memory: "memory only" };
+
+/** How the saved index opened, and where it is kept; warns when it is not kept between sessions. */
+const openedLines = (o: Opened): Line[] => {
+	const where = STORES[o.store] ?? o.store;
+	const how =
+		o.how === "loaded"
+			? `loaded from disk (${where}), ${Math.round(o.ms)} ms`
+			: o.how === "none"
+				? `nothing saved yet, built from scratch (${where})`
+				: o.how === "format-changed"
+					? `saved index is format ${o.found ?? "?"}, this Jet reads ${o.version}, built again`
+					: "saved index could not be read, built again";
+	return [
+		ln(`opened: ${how}`, o.how === "error"),
+		...(o.store === "memory" ? [ln("index kept in memory only: it is not saved between sessions", true)] : []),
+	];
+};
+
 /** The report as sections of short lines. No names of notes, folders or scopes unless the user added them. */
 export const buildReport = (s: Snapshot): Section[] => {
 	const out: Section[] = [];
@@ -178,6 +199,7 @@ export const buildReport = (s: Snapshot): Section[] => {
 	add(
 		"Index",
 		ln(i.progress ? `building, ${num(i.progress.done)} of ${num(i.progress.total)} notes` : PHASES[i.phase]),
+		...(i.opened ? openedLines(i.opened) : []),
 		ln(
 			i.indexed !== null
 				? `${num(i.indexed)} of ${num(i.eligible)} notes indexed`

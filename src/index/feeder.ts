@@ -3,7 +3,7 @@ import type { RawNote } from "../engine/fields";
 import type { JetClient } from "../worker/jet-client";
 import { excluder, gather, inboundCounts } from "./gather";
 import { sliced } from "./slice";
-import { fail, warned } from "../diag/diag";
+import { diag, fail, noted, warned } from "../diag/diag";
 
 /** Now if the app is in front, else when it comes back (a phone backgrounded, a window minimized). */
 const whenVisible = (): Promise<void> => {
@@ -122,14 +122,23 @@ export class Feeder {
 	}
 
 	private async open(gen: number): Promise<void> {
-		const { loaded } = await this.client.call({
+		const opened = await this.client.call({
 			op: "open",
 			vaultId: this.vaultId,
 			stemming: [...this.stemming()],
 		});
+		const { loaded } = opened;
+		diag.opened = {
+			how: opened.how,
+			found: opened.found,
+			version: opened.version,
+			store: opened.store,
+			ms: opened.ms,
+			at: Date.now(),
+		};
 		this.alive(gen);
 		// A model the data says is installed but whose file is not here (another device): forgotten.
-		await this.meaningCheck?.().catch(() => {});
+		await this.meaningCheck?.().catch((e: unknown) => noted("meaning.check", e));
 		// Removed while the worker slept: its saved vectors go now.
 		if (this.forgetOnOpen) {
 			this.forgetOnOpen = false;
@@ -363,7 +372,7 @@ export class Feeder {
 		void (async () => {
 			if (pending) await this.client.call({ op: "delete", paths: [file.path] });
 			await this.client.call({ op: "rename", from, to: file.path });
-		})().catch(() => {});
+		})().catch((e: unknown) => noted("index.rename", e));
 		// The name's terms changed with the path: index it again.
 		this.touch(file, "upsert");
 	}

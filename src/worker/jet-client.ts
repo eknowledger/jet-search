@@ -109,11 +109,21 @@ export class JetClient {
 		const worker = new Worker(this.url, { name: "jet-search" });
 		diag.workerStarted();
 		worker.onmessage = (e: MessageEvent<Answer>) => {
-			const p = this.pending.get(e.data.id);
+			const m = e.data;
+			if (m.event) {
+				diag.workerEvent(m.event);
+				return;
+			}
+			const p = this.pending.get(m.id);
 			if (!p) return;
-			this.pending.delete(e.data.id);
-			if (e.data.error !== undefined) p.reject(new Error(e.data.error));
-			else p.resolve(e.data.result);
+			this.pending.delete(m.id);
+			if (m.error !== undefined) {
+				// The error keeps its class and the place it was thrown in the worker, for the support info.
+				const err = new Error(m.error) as Error & { where?: string | null };
+				err.name = m.name ?? "Error";
+				err.where = m.where ?? null;
+				p.reject(err);
+			} else p.resolve(m.result);
 		};
 		worker.onerror = (e) => {
 			const message = e.message || "worker error";

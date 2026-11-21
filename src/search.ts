@@ -43,7 +43,7 @@ import { contentWords, isQuestion } from "./meaning/question";
 import { joinNames, unionOf, type Where, whereIds, wireWhere } from "./scopes/where";
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
-import { fail, warned } from "./diag/diag";
+import { fail, noted, warned } from "./diag/diag";
 
 type Item = Extract<Entry, { type: "item" }>;
 
@@ -313,7 +313,9 @@ export class Search {
 	warm(): void {
 		// The saved index opens in the worker meanwhile, so it is ready by the time the names are. A failure
 		// is left to the first search, which tries again and says so.
-		this.feeder.ensure().catch(() => {});
+		this.feeder.ensure().catch((e: unknown) => {
+			if (!(e instanceof Cancelled)) noted("index.open", e);
+		});
 		window.setTimeout(() => {
 			this.nameIndex();
 			if (this.indexNotReady()) this.metaIndex();
@@ -431,7 +433,8 @@ export class Search {
 			if (this.current?.text !== text) return;
 			try {
 				await this.feeder.ensure();
-			} catch {
+			} catch (e) {
+				if (!(e instanceof Cancelled)) noted("index.open", e);
 				return;
 			}
 			await this.feeder.ensureMeaning?.();
