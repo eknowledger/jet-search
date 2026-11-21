@@ -42,6 +42,9 @@ Inside a scope, **Shift Shift** searches the whole vault with the same text; Shi
 
 ![Shift Shift widens to everywhere and back](media/widen.webp)
 
+### If you used Omnisearch
+While Omnisearch is off, Jet answers its two commands, so a hotkey or a double-tap binding made for Omnisearch opens Jet instead. In the command palette and on the Hotkeys page they are named *Search notes (Omnisearch's shortcut)* and *Search in this note (Omnisearch's shortcut)*. When Omnisearch is turned on, Jet steps aside and Omnisearch keeps its own commands. Jet changes nothing in Omnisearch's settings.
+
 ## Find by name
 
 ### Names as you type, typos forgiven
