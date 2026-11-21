@@ -1,4 +1,5 @@
 import code from "worker:./jet-worker";
+import { diag } from "../diag/diag";
 import type { AnswerCandidate } from "../answers/answers";
 import type { Answer, AnswerPoolReply, AnswersReply, NearReply, QueryReply, Reply, Request } from "./protocol";
 
@@ -95,6 +96,7 @@ export class JetClient {
 	stop(): void {
 		this.worker?.terminate();
 		this.worker = null;
+		diag.workerStopped();
 		if (this.url) URL.revokeObjectURL(this.url);
 		this.url = null;
 		for (const p of this.pending.values()) p.reject(new Error("Jet Search: the worker stopped"));
@@ -105,6 +107,7 @@ export class JetClient {
 		if (this.worker) return this.worker;
 		this.url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
 		const worker = new Worker(this.url, { name: "jet-search" });
+		diag.workerStarted();
 		worker.onmessage = (e: MessageEvent<Answer>) => {
 			const p = this.pending.get(e.data.id);
 			if (!p) return;
@@ -115,6 +118,13 @@ export class JetClient {
 		worker.onerror = (e) => {
 			const message = e.message || "worker error";
 			console.error("Jet Search: worker error", message);
+			diag.workerCrashed();
+			// The message can carry text from a note, so only its class (`TypeError: ...`) and the place in the worker are kept.
+			const name = /^(?:Uncaught )?([A-Za-z]*Error)\b/.exec(message)?.[1] ?? "Error";
+			const where = e.lineno ? `worker:${e.lineno}:${e.colno}` : null;
+			const kind = new Error();
+			kind.name = name;
+			diag.problem("worker.error", kind, "error", where);
 			this.stop();
 			this.onCrash?.(message);
 		};

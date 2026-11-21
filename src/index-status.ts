@@ -12,7 +12,11 @@ const ago = (t: number): string => {
 };
 
 /** The last stats the worker gave, kept so the settings can show them without waiting (see `statusNow`). */
-let lastStats: { notes: number; bytes: number; savedAt: number | null; pending: number } | null = null;
+let lastStats: { notes: number; segments: number; bytes: number; savedAt: number | null; pending: number } | null =
+	null;
+
+/** The worker's last stats, if it ever gave any this session (the support info reads them without waking it). */
+export const knownStats = (): typeof lastStats => lastStats;
 
 /**
  * The index's status, at once, for the settings tab. It must not change the page after it is drawn:

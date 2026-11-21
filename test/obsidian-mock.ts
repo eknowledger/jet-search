@@ -209,7 +209,7 @@ export class Vault {
 
 	getFiles(): TFile[] {
 		this.calls.push("getFiles");
-		return [];
+		return [...this.files.values()];
 	}
 
 	readonly files = new Map<string, TFile>();
@@ -413,6 +413,9 @@ const versionAtLeast = (have: string, want: string): boolean => {
 	for (let i = 0; i < 3; i++) if ((h[i] ?? 0) !== (w[i] ?? 0)) return (h[i] ?? 0) > (w[i] ?? 0);
 	return true;
 };
+
+/** Obsidian's `apiVersion`: the app's version (follows `mockApi`). */
+export const apiVersion = mockApi.version;
 
 export const requireApiVersion = (version: string): boolean => versionAtLeast(mockApi.version, version);
 

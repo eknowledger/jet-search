@@ -39,7 +39,7 @@ describe("plugin start", () => {
 	it("registers the two search commands", async () => {
 		const { plugin } = make();
 		await plugin.onload();
-		expect(plugin.commands.map((c) => c.id)).toEqual(["open", "open-in-note"]);
+		expect(plugin.commands.map((c) => c.id)).toEqual(["open", "open-in-note", "support-info"]);
 		expect(plugin.commands[0]?.name).toBe("Search notes");
 	});
 
@@ -112,6 +112,7 @@ describe("settings tab", () => {
 		expect(textsOf(goTo(tab, "advanced"), ".jet-set-name")).toEqual([
 			"Word forms",
 			"Folders to leave out",
+			"Support",
 			"Version",
 		]);
 	});

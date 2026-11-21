@@ -3,6 +3,7 @@ import { answerSpans } from "../answers/answers";
 import { findHits } from "../excerpt/excerpt";
 import { crumb, titleOf } from "../modal/format";
 import { sectionAround } from "./section";
+import { warned } from "../diag/diag";
 
 export type PreviewAction = "link" | "split" | "open";
 
@@ -106,7 +107,7 @@ export class Preview {
 		try {
 			await MarkdownRenderer.render(this.app, text.slice(from, to), fresh, file.path, this.comp);
 		} catch (e) {
-			console.warn("Jet Search: preview could not render; showing the text", e);
+			warned("preview.render", "Jet Search: preview could not render; showing the text", e);
 			fresh.empty();
 			fresh.createEl("pre", { cls: "jet-plain", text: text.slice(from, to) });
 		}

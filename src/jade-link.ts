@@ -8,6 +8,7 @@
  */
 import type { App, Plugin } from "obsidian";
 import type { JadeApi, JadePartner } from "./jade-api";
+import { fail } from "./diag/diag";
 
 export type JadeHost = {
 	/** Open Jet with this text. */
@@ -76,7 +77,7 @@ export class JadeLink {
 		try {
 			p = api.join(this.plugin);
 		} catch (e) {
-			console.error("Jet Search: joining Jade failed", e);
+			fail("jade.join", "Jet Search: joining Jade failed", e);
 			return;
 		}
 		this.partner = p;
@@ -85,7 +86,7 @@ export class JadeLink {
 		try {
 			this.offer(api, p);
 		} catch (e) {
-			console.error("Jet Search: joining Jade failed", e);
+			fail("jade.join", "Jet Search: joining Jade failed", e);
 			try {
 				p.leave();
 			} catch {

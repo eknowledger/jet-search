@@ -12,6 +12,7 @@ type Internals = {
 		enabledPlugins?: Set<string>;
 	};
 	appId?: string;
+	customCss?: { theme?: string; enabledSnippets?: Set<string> };
 	setting?: {
 		openPage?: (page: SettingPage) => void;
 		closePage?: () => void;
@@ -46,17 +47,26 @@ export const commandAt = (app: App, id: string): unknown => internals(app).comma
 
 export const pluginOn = (app: App, id: string): boolean => !!internals(app).plugins?.enabledPlugins?.has(id);
 
+/** The ids of the community plugins that are on. */
+export const enabledPluginIds = (app: App): string[] => [...(internals(app).plugins?.enabledPlugins ?? [])].sort();
+
+/** The community theme in use (null: the default) and how many CSS snippets are on. Names of themes are public. */
+export const appearanceFacts = (app: App): { theme: string | null; snippets: number } => {
+	const css = internals(app).customCss;
+	return { theme: css?.theme || null, snippets: css?.enabledSnippets?.size ?? 0 };
+};
+
 export const plugin = (app: App, id: string): unknown => internals(app).plugins?.plugins?.[id];
 
 /** This vault's id (one index database per vault); falls back to its name. */
 export const vaultId = (app: App): string => internals(app).appId ?? app.vault.getName();
 
 /**
- * Whether another plugin already turns double Shift into a command (then Jet's own
+ * The plugin that already turns a double tap of this key into a command, or null (then Jet's own
  * detector stays off and that plugin's binding opens Jet through the stand-in command ids).
  */
-export const tapOwnedElsewhere = (app: App, key: string): boolean => {
-	if (key === "Shift" && pluginOn(app, "obsidian-doubleshift")) return true;
+export const tapOwnerElsewhere = (app: App, key: string): string | null => {
+	if (key === "Shift" && pluginOn(app, "obsidian-doubleshift")) return "obsidian-doubleshift";
 	const jade = plugin(app, "jade") as
 		| {
 				registry?: {
@@ -66,8 +76,34 @@ export const tapOwnedElsewhere = (app: App, key: string): boolean => {
 		  }
 		| undefined;
 	const r = jade?.registry;
-	if (!r?.isRunning?.("commands")) return false;
-	return !!r.settingsOf?.("commands")?.taps?.some((t) => t.code === `${key}Left` || t.code === `${key}Right`);
+	if (!r?.isRunning?.("commands")) return null;
+	return r.settingsOf?.("commands")?.taps?.some((t) => t.code === `${key}Left` || t.code === `${key}Right`)
+		? "jade"
+		: null;
+};
+
+export const tapOwnedElsewhere = (app: App, key: string): boolean => tapOwnerElsewhere(app, key) !== null;
+
+/** The internals Jet relies on, each with how to tell it is there. The support info lists which are missing. */
+const PROBES: ReadonlyArray<readonly [string, (i: Internals) => boolean]> = [
+	["commands.commands", (i) => typeof i.commands?.commands === "object" && i.commands.commands !== null],
+	["commands.addCommand", (i) => typeof i.commands?.addCommand === "function"],
+	["commands.removeCommand", (i) => typeof i.commands?.removeCommand === "function"],
+	["plugins.plugins", (i) => typeof i.plugins?.plugins === "object" && i.plugins.plugins !== null],
+	["plugins.enabledPlugins", (i) => i.plugins?.enabledPlugins instanceof Set],
+	["appId", (i) => typeof i.appId === "string" && i.appId !== ""],
+	["setting.open", (i) => typeof i.setting?.open === "function"],
+	["setting.openTabById", (i) => typeof i.setting?.openTabById === "function"],
+	["setting.openPage", (i) => typeof i.setting?.openPage === "function"],
+	["setting.closePage", (i) => typeof i.setting?.closePage === "function"],
+	["hotkeyManager.printHotkeyForCommand", (i) => typeof i.hotkeyManager?.printHotkeyForCommand === "function"],
+];
+
+/** Which of the internals are there on this Obsidian (a missing one is a likely cause of "does nothing"). */
+export const internalsFound = (app: App): { found: number; of: number; missing: string[] } => {
+	const i = internals(app);
+	const missing = PROBES.filter(([, ok]) => !ok(i)).map(([name]) => name);
+	return { found: PROBES.length - missing.length, of: PROBES.length, missing };
 };
 
 /**

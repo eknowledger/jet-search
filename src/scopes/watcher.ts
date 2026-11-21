@@ -8,6 +8,7 @@ import { generate } from "./generate";
 import type { Scope } from "./model";
 import { applyReview, review } from "./review";
 import type { Snapshot } from "./snapshot";
+import { fail } from "../diag/diag";
 
 export type WatchHost = {
 	mode(): "tell" | "add" | "nothing";
@@ -87,7 +88,7 @@ export class ScopeWatcher {
 			} else this.fresh = fresh.length;
 			this.h.noticed();
 		} catch (e) {
-			console.error("Jet Search: looking for new scopes failed", e);
+			fail("scopes.watch", "Jet Search: looking for new scopes failed", e);
 		} finally {
 			this.running = false;
 		}

@@ -43,6 +43,7 @@ import { contentWords, isQuestion } from "./meaning/question";
 import { joinNames, unionOf, type Where, whereIds, wireWhere } from "./scopes/where";
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
+import { fail, warned } from "./diag/diag";
 
 type Item = Extract<Entry, { type: "item" }>;
 
@@ -262,7 +263,7 @@ export class Search {
 			} catch (e) {
 				// Cleared or rebuilt meanwhile: names stay; the next key searches the new index.
 				if (e instanceof Cancelled) return;
-				console.error("Jet Search: the index could not be opened", e);
+				fail("index.open", "Jet Search: the index could not be opened", e);
 				out(this.compose(tier0, null, now, new Map(), meta), "Full text unavailable (see console)");
 				return;
 			}
@@ -302,7 +303,7 @@ export class Search {
 				/\s$/u.test(text) ? undefined : typed.at(-1),
 			);
 			if (excerpts.size) out(offer(this.compose(tier0, reply, now, excerpts, meta)), this.status());
-		})().catch((e: unknown) => console.error("Jet Search: search failed", e));
+		})().catch((e: unknown) => fail("search.words", "Jet Search: search failed", e));
 	}
 
 	/**
@@ -354,7 +355,7 @@ export class Search {
 			try {
 				await this.feeder.ensure();
 			} catch (e) {
-				if (!(e instanceof Cancelled)) console.error("Jet Search: the index could not be opened", e);
+				if (!(e instanceof Cancelled)) fail("index.open", "Jet Search: the index could not be opened", e);
 				return;
 			}
 			// The first question of the session loads the model; vectors follow in the background.
@@ -408,7 +409,7 @@ export class Search {
 					}),
 			);
 			if (this.current?.text === text) paint(rows(ex), this.status());
-		})().catch((e: unknown) => console.error("Jet Search: search by meaning failed", e));
+		})().catch((e: unknown) => fail("search.meaning", "Jet Search: search by meaning failed", e));
 	}
 
 	/**
@@ -488,7 +489,7 @@ export class Search {
 			}
 			done();
 			paint([{ type: "header", label: "Answers", count: items.length, answers: true }, ...items], this.status());
-		})().catch((e: unknown) => console.error("Jet Search: finding answers failed", e));
+		})().catch((e: unknown) => fail("search.answers", "Jet Search: finding answers failed", e));
 	}
 
 	/** Nothing by meaning: the same words searched as words is one key away. */
@@ -862,7 +863,7 @@ export class Search {
 			this.namesBuilding = false;
 			this.namesGone.clear();
 			this.namesTouched.clear();
-			console.warn("Jet Search: the names could not be listed", e);
+			warned("names.list", "Jet Search: the names could not be listed", e);
 		});
 		return null;
 	}
