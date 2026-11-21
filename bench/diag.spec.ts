@@ -6,6 +6,7 @@
  */
 import { performance } from "node:perf_hooks";
 import { diag } from "../src/diag/diag";
+import { FLAG, Recorder } from "../src/diag/recorder";
 
 const N = 20_000_000;
 const ROUNDS = 7;
@@ -32,6 +33,8 @@ const base = time((n) => {
 const ring = new Float64Array(256);
 const err = new Error("x");
 const off = false as boolean;
+
+const rec = new Recorder();
 
 const cases: Array<[string, (n: number) => number]> = [
 	[
@@ -76,6 +79,32 @@ const cases: Array<[string, (n: number) => number]> = [
 		},
 	],
 	[
+		"the flight recorder: one search added (ten values)",
+		(n) => {
+			let x = 0;
+			for (let i = 0; i < n; i++) {
+				rec.add(FLAG.words, 12, 2, 5, 14, 1, 6, 1, 2, 4);
+				x += i & 1;
+			}
+			return x;
+		},
+	],
+	[
+		"one search as the code would do it: four clock reads and the add",
+		(n) => {
+			let x = 0;
+			for (let i = 0; i < n; i++) {
+				const t0 = performance.now();
+				const t1 = performance.now();
+				const t2 = performance.now();
+				const t3 = performance.now();
+				rec.add(FLAG.words, 12, 2, 5, t3 - t0, t1 - t0, 6, t2 - t1, 2, 4);
+				x += i & 1;
+			}
+			return x;
+		},
+	],
+	[
 		"a problem recorded, same one again (counts up)",
 		(n) => {
 			let x = 0;
@@ -98,4 +127,13 @@ for (const [name, fn] of cases)
 			.toFixed(2)
 			.padStart(10),
 	);
+
+// Reading the recorder happens when a report is asked for, never while searching.
+for (let i = 0; i < 100; i++) rec.add(FLAG.words, 12, 2, 5, 14 + (i % 17), 1, 6, 1, 2, 4);
+const reads = 20_000;
+const t0 = performance.now();
+for (let i = 0; i < reads; i++) sink += rec.summary()?.kept ?? 0;
+console.log(
+	`\nsummary() of 100 searches (only when a report is asked for): ${(((performance.now() - t0) * 1000) / reads).toFixed(1)} us`,
+);
 if (sink === 1) console.log(sink);
