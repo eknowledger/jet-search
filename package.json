@@ -12,6 +12,7 @@
 		"bench:engine": "node scripts/bench.mjs run",
 		"bench:mem": "node scripts/bench.mjs mem",
 		"bench:order": "node scripts/bench.mjs order",
+		"bench:diag": "node scripts/bench.mjs diag",
 		"format": "oxfmt src test bench vitest.config.mts",
 		"format:check": "oxfmt --check src test bench vitest.config.mts",
 		"lint": "oxlint src test bench vitest.config.mts && eslint src package.json",
