@@ -17,6 +17,14 @@ describe("Jet data", () => {
 		expect(d.searches).toEqual(["q"]);
 	});
 
+	it("keeps the trace's length to the ones offered, and its next-start switch off unless it was saved on", () => {
+		expect(normalizeData(null).settings).toMatchObject({ traceMinutes: 15, traceNextStart: false });
+		const a = normalizeData({ settings: { traceMinutes: 30, traceNextStart: true } }).settings;
+		expect([a.traceMinutes, a.traceNextStart]).toEqual([30, true]);
+		const b = normalizeData({ settings: { traceMinutes: 7, traceNextStart: "yes" } }).settings;
+		expect([b.traceMinutes, b.traceNextStart]).toEqual([15, false]);
+	});
+
 	it("decays opens with a 30-day half-life and boosts by frecency", () => {
 		const d = normalizeData(null);
 		recordOpen(d, "a.md", 0);

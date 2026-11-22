@@ -2,6 +2,7 @@ import { type Filter, validFilter } from "./filters/filter";
 import { normalizeScopes, type OwnMode, type Scope } from "./scopes/model";
 import { type Combo, KEY_ACTIONS, TAP_KEYS, type TapKey } from "./keys/keymap";
 import type { BothLayout, MeaningMode } from "./modal/both";
+import { DEFAULT_TRACE_MINUTES, TRACE_MINUTES } from "./diag/trace";
 
 /**
  * Data saved before "every scope" existed (no `scopeMode` yet): Suggest was the default then, so a
@@ -63,6 +64,10 @@ export type JetSettings = {
 	persistFilters: boolean;
 	/** Offer the property key a misspelt one is close to; on by default. */
 	fixKeys: boolean;
+	/** How long a trace runs (minutes), for the button, the command and the next start. */
+	traceMinutes: number;
+	/** Record a trace from the next time Obsidian starts (it clears itself when that has started). */
+	traceNextStart: boolean;
 };
 
 export const DEFAULT_SETTINGS: JetSettings = {
@@ -84,6 +89,8 @@ export const DEFAULT_SETTINGS: JetSettings = {
 	answers: true,
 	persistFilters: false,
 	fixKeys: true,
+	traceMinutes: DEFAULT_TRACE_MINUTES,
+	traceNextStart: false,
 };
 
 /** Per note: a frecency score (decays with a 30-day half-life) and when it was last opened. */
@@ -165,6 +172,10 @@ export const normalizeData = (raw: unknown): JetData => {
 		answers: s.answers !== false,
 		persistFilters: typeof s.persistFilters === "boolean" ? s.persistFilters : DEFAULT_SETTINGS.persistFilters,
 		fixKeys: s.fixKeys !== false,
+		traceMinutes: (TRACE_MINUTES as readonly unknown[]).includes(s.traceMinutes)
+			? (s.traceMinutes as number)
+			: DEFAULT_TRACE_MINUTES,
+		traceNextStart: s.traceNextStart === true,
 	};
 	const scopeUses: Record<string, number> = {};
 	if (r.scopeUses && typeof r.scopeUses === "object")
