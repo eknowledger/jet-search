@@ -156,13 +156,13 @@ describe("the explanation pane", () => {
 		expect(pane.escape()).toBe(false);
 	});
 
-	it("adds the explanation to the support info and shows it, from a button in its own bar", async () => {
+	it("adds the explanation to the report and shows it, from a button in its own bar", async () => {
 		const { pane, kept, shown, el } = rig();
 		pane.open(sel, "words", false);
 		await wait(20);
 		const btn = el.querySelector(".jet-ex-bar .jet-ex-add") as HTMLButtonElement;
-		expect(btn.textContent).toBe("Add to support info");
-		expect(btn.getAttribute("aria-label")).toMatch(/support info/);
+		expect(btn.textContent).toBe("Report issue");
+		expect(btn.getAttribute("aria-label")).toMatch(/Report issue/);
 		btn.click();
 		expect(kept).toHaveLength(1);
 		expect(shown).toHaveLength(1);

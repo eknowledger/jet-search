@@ -274,7 +274,7 @@ export class ExplainPane {
 		if (this.failed) {
 			this.bodyEl.createDiv({
 				cls: "jet-ex-hint",
-				text: "Jet could not explain this search. Try again, or copy the support info and report it.",
+				text: "Jet could not explain this search. Try again, or use Report issue to report it.",
 			});
 			return;
 		}
@@ -291,8 +291,8 @@ export class ExplainPane {
 		this.drawSetup(view.setup);
 		const btn = this.barEl.createEl("button", {
 			cls: "jet-ex-add mod-cta",
-			text: "Add to support info",
-			attr: { "aria-label": "Opens the support info with this explanation in it" },
+			text: "Report issue",
+			attr: { "aria-label": "Opens Report issue with this explanation in it" },
 		});
 		btn.addEventListener("mousedown", (e) => e.preventDefault());
 		btn.addEventListener("click", () => {

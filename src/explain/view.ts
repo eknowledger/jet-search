@@ -320,7 +320,7 @@ export const noteView = (
 		out.detail = `${plural(r.list.withAll, "note")} hold${r.list.withAll === 1 ? "s" : ""} every word, so notes with only some are dropped.`;
 	} else {
 		out.head = "Not listed, and the reason is not one of Jet's rules.";
-		out.detail = "Check that the note is saved. If this looks wrong, copy the support info and report it.";
+		out.detail = "Check that the note is saved. If this looks wrong, use Report issue to report it.";
 	}
 	if (note.rank === null) out.notes.push("The note is indexed and not excluded.");
 	return out;
@@ -359,7 +359,7 @@ const meaningNote = (c: Context, r: MeaningExplanation, nc: NoteContext, n: Name
 		out.detail = `Ranked ${num(note.rank)}. Its closeness is ${fixed(note.score ?? 0)}; the last listed is at ${fixed(r.list.cut ?? 0)}. Jet lists the nearest ${r.list.k}.`;
 	} else {
 		out.head = "Not listed, and the reason is not one of Jet's rules.";
-		out.detail = "If this looks wrong, copy the support info and report it.";
+		out.detail = "If this looks wrong, use Report issue to report it.";
 	}
 	return out;
 };

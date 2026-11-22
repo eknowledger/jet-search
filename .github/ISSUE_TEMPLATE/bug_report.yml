@@ -1,6 +1,7 @@
 name: Bug report
 description: Something does not work as it should
 labels: [bug]
+type: Bug
 body:
   - type: textarea
     id: what
@@ -14,7 +15,7 @@ body:
     attributes:
       label: Support info
       description: |
-        Filled in for you when you open this form with "Open on GitHub" in Jet's Report issue window. Otherwise run "Jet Search: Copy support info" in the command palette and paste it here as it is. It holds versions, your device, timings and counts, and no note names or search text unless you tick them. For a slow or intermittent problem, record a trace first (Settings, Advanced, Trace).
+        Filled in for you when you open this form with "Open on GitHub" in Jet's Report issue window. Otherwise open "Report issue" in Jet (command palette: "Jet Search: Report issue"), press Copy and paste it here as it is. It holds versions, your device, timings and counts, and no note names or search text unless you tick them. For a slow or intermittent problem, record a trace first (Settings, Advanced, Trace).
       placeholder: Paste the support info here
   - type: input
     id: versions
