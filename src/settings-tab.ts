@@ -1055,17 +1055,17 @@ export class JetSettingTab extends PluginSettingTab {
 		const support = this.card(body, {
 			icon: "life-buoy",
 			name: "Support",
-			desc: "Make a report you can paste into a GitHub issue. Jet sends nothing anywhere: you read it, you copy it, you paste it.",
+			desc: "Make a report to copy or send with a bug report.",
 			aliases: "support info bug report debug diagnostics help problem",
 		});
-		this.button(support.row, "Preview and copy", () => this.owner.supportInfo(), "mod-cta");
+		this.button(support.row, "Report issue", () => this.owner.supportInfo(), "mod-cta");
 		const rec = trace.state();
 		const tr = this.card(body, {
 			icon: "activity",
 			name: "Trace",
 			desc: rec.recording
-				? `Recording until ${new Date(rec.endsAt ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. It stops by itself, or press Stop.`
-				: "Record what Jet does for a few minutes: timings and events, kept in memory, never a word of a search or a note name. It goes into the support info.",
+				? `Recording until ${new Date(rec.endsAt ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
+				: "Record what Jet does for a few minutes. Never your searches or note names.",
 			aliases: "trace record log timeline events slow performance startup debug",
 		});
 		if (rec.recording) this.button(tr.row, "Stop recording", () => trace.stop("user"));
@@ -1078,17 +1078,13 @@ export class JetSettingTab extends PluginSettingTab {
 			this.button(tr.row, "Record", () => trace.start(this.owner.data.settings.traceMinutes), "mod-cta");
 		}
 		this.toggle(
-			settingRow(
-				tr.opts(),
-				"Also record the next start",
-				"For a problem that happens while Obsidian starts. It records once, then turns itself off.",
-			),
+			settingRow(tr.opts(), "Also record the next start", "For a problem at startup. Records once."),
 			"traceNextStart",
 		);
 		const why = this.card(body, {
 			icon: "circle-help",
 			name: "Why is a note not found?",
-			desc: "Jet opens with your last search and says how it read the words, why the results are what they are, and where a note you expected stands. In Jet's window the same is one key away.",
+			desc: "See why your last search found what it did.",
 			aliases: "explain why not found missing note results ranking debug",
 		});
 		this.button(why.row, "Explain a search", () => this.owner.explainSearch());

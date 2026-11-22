@@ -9,14 +9,19 @@ body:
       description: What you did, what you expected and what you saw. A screenshot or a short recording helps.
     validations:
       required: true
+  - type: textarea
+    id: support
+    attributes:
+      label: Support info
+      description: |
+        Filled in for you when you open this form with "Open on GitHub" in Jet's Report issue window. Otherwise run "Jet Search: Copy support info" in the command palette and paste it here as it is. It holds versions, your device, timings and counts, and no note names or search text unless you tick them. For a slow or intermittent problem, record a trace first (Settings, Advanced, Trace).
+      placeholder: Paste the support info here
   - type: input
     id: versions
     attributes:
       label: Versions
-      description: Jet Search, Obsidian and your operating system (Settings, About).
+      description: Jet Search, Obsidian and your operating system (Settings, About). Filled in for you, or skip it if you pasted the support info.
       placeholder: "Jet 0.6.0, Obsidian 1.15.1, macOS 26"
-    validations:
-      required: true
   - type: input
     id: size
     attributes:
