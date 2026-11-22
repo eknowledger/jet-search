@@ -56,7 +56,7 @@ describe("the trace in the search settings", () => {
 		expect([...sel.options].map((o) => o.value)).toEqual(["5", "10", "15", "30", "60"]);
 		expect(sel.value).toBe("30");
 		expect(control(el, "Record")).toBeDefined();
-		expect(row(el).textContent).toContain("never a word of a search");
+		expect(row(el).textContent).toContain("Capture debug events");
 	});
 
 	it("keeps a length chosen here, and records for it", () => {

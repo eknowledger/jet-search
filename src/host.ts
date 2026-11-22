@@ -722,7 +722,7 @@ export class JetHost implements ModalHost {
 			desc?.setText(
 				st.recording
 					? `Recording, ${leftText((st.endsAt ?? Date.now()) - Date.now())} left`
-					: "Timings and events for a report, never a word of a search",
+					: "Capture debug events",
 			);
 			if (!st.recording) {
 				const sel = r.createEl("select", { cls: "dropdown jet-tc" });
