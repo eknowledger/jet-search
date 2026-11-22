@@ -4,6 +4,7 @@ import type { JetClient } from "../worker/jet-client";
 import { excluder, gather, inboundCounts } from "./gather";
 import { sliced } from "./slice";
 import { diag, fail, noted, warned } from "../diag/diag";
+import { KIND, OPENED, trace } from "../diag/trace";
 
 /** Now if the app is in front, else when it comes back (a phone backgrounded, a window minimized). */
 const whenVisible = (): Promise<void> => {
@@ -136,6 +137,7 @@ export class Feeder {
 			ms: opened.ms,
 			at: Date.now(),
 		};
+		if (trace.on) trace.add(KIND.indexOpen, opened.ms, 0, 0, 0, OPENED[opened.how]);
 		this.alive(gen);
 		// A model the data says is installed but whose file is not here (another device): forgotten.
 		await this.meaningCheck?.().catch((e: unknown) => noted("meaning.check", e));
@@ -290,6 +292,8 @@ export class Feeder {
 		const files = this.notes().sort((a, b) => b.stat.mtime - a.stat.mtime);
 		const inbound = inboundCounts(this.app);
 		this.progress = { done: 0, total: files.length };
+		const began = Date.now();
+		if (trace.on) trace.add(KIND.buildStart, files.length);
 		this.onProgress?.();
 		for (let i = 0; i < files.length || i === 0; i += BATCH) {
 			const slice = files.slice(i, i + BATCH);
@@ -304,6 +308,7 @@ export class Feeder {
 		}
 		this.progress = null;
 		this.building = false;
+		if (trace.on) trace.add(KIND.buildEnd, Date.now() - began, files.length);
 		this.onProgress?.();
 	}
 
@@ -317,11 +322,15 @@ export class Feeder {
 		const stale = files.filter((f) => known.get(f.path) !== f.stat.mtime);
 		if (gone.length) await this.client.call({ op: "delete", paths: gone });
 		const inbound = inboundCounts(this.app);
+		const began = Date.now();
 		for (let i = 0; i < stale.length; i += BATCH) {
 			const notes = await this.read(stale.slice(i, i + BATCH), inbound);
 			this.alive(gen);
 			await this.client.call({ op: "upsert", notes });
 		}
+		// flags 1: the catch-up after the saved index was loaded.
+		if (trace.on && (gone.length || stale.length))
+			trace.add(KIND.changes, Date.now() - began, stale.length, gone.length, 0, 1);
 	}
 
 	/** The batch's text (read in parallel), then each note gathered in slices of ≤ 8 ms. */
@@ -443,6 +452,7 @@ export class Feeder {
 			return;
 		}
 		const batch = [...this.dirty];
+		const began = Date.now();
 		this.dirty.clear();
 		const excluded = excluder(this.app, this.excludedFolders());
 		// An excluded path (moved there, or the setting changed) leaves the index.
@@ -462,6 +472,8 @@ export class Feeder {
 			);
 			if (live.length) await this.client.call({ op: "upsert", notes: live });
 		}
+		if (trace.on && (deletes.length || upserts.length))
+			trace.add(KIND.changes, Date.now() - began, upserts.length, deletes.length);
 		if (deletes.length || upserts.length) this.onChanged?.();
 	}
 

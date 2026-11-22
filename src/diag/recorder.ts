@@ -1,3 +1,5 @@
+import { KIND, trace } from "./trace";
+
 /**
  * The flight recorder: the last 100 searches as numbers, for the support info. One search is a row of
  * seven floats and three small integers in two typed arrays that are made on the first search, so nothing
@@ -107,6 +109,7 @@ export class Recorder {
 		prepare: number,
 		excerpts: number,
 	): void {
+		if (trace.on) trace.add(KIND.search, total, ready, worker, hits, flags);
 		const f = (this.f ??= new Float32Array(KEEP * F));
 		const u = (this.u ??= new Uint16Array(KEEP * U));
 		const i = this.n % KEEP;
