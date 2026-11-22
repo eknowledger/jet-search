@@ -1,14 +1,27 @@
 import type { Opened, Problem } from "./diag";
 import type { Row as SearchRow, Summary } from "./recorder";
 import { FLAG } from "./recorder";
+import { msText, num, plural } from "./format";
+import { traceLines, type TraceSummary } from "./trace-report";
 
 /** How the index stands, in one word. */
 export type Phase = "never-built" | "building" | "live" | "asleep";
 
 /** What the user chose to add to the report (all off by default; names are never read otherwise). */
-export type ReportOptions = { scopeNames: boolean; pluginNames: boolean; explainNames: boolean };
+export type ReportOptions = {
+	scopeNames: boolean;
+	pluginNames: boolean;
+	explainNames: boolean;
+	/** Add the trace's timeline to the summary. */
+	traceTimeline: boolean;
+};
 
-export const NO_OPTIONS: ReportOptions = { scopeNames: false, pluginNames: false, explainNames: false };
+export const NO_OPTIONS: ReportOptions = {
+	scopeNames: false,
+	pluginNames: false,
+	explainNames: false,
+	traceTimeline: false,
+};
 
 /** Everything the report says, as plain facts (numbers, flags, codes). Gathering it is in `collect.ts`. */
 export type Snapshot = {
@@ -55,6 +68,9 @@ export type Snapshot = {
 	};
 	/** The last searches as the flight recorder keeps them (null: none yet this session). */
 	searches: Summary | null;
+	/** What the trace recorded (null: none was started this session), and its timeline when the user asked for it. */
+	trace: TraceSummary | null;
+	traceTimeline: string[] | null;
 	/** The explanation the user added (lines, with tags for names unless they allowed them), if any. */
 	explain: string[] | null;
 	meaning: { on: boolean; model: { id: string; bytes: number } | null };
@@ -89,11 +105,7 @@ export type Section = { label: string; lines: Line[] };
 /** A line as drawn: the label column (padded; blank after the first line of a section) and the text. */
 export type Row = { label: string; text: string; warn: boolean; first: boolean; section: string };
 
-const num = (n: number): string => n.toLocaleString("en-US");
-
 const mb = (bytes: number): string => `${(bytes / 1e6).toFixed(1)} MB`;
-
-const plural = (n: number, one: string, many = `${one}s`): string => `${num(n)} ${n === 1 ? one : many}`;
 
 const ago = (now: number, t: number): string => {
 	const s = Math.max(0, Math.round((now - t) / 1000));
@@ -145,9 +157,6 @@ const openedLines = (o: Opened): Line[] => {
 		...(o.store === "memory" ? [ln("index kept in memory only: it is not saved between sessions", true)] : []),
 	];
 };
-
-/** Milliseconds as a reader wants them: a decimal under 10, whole above. */
-const msText = (n: number): string => (n < 0.05 ? "0" : n < 10 ? n.toFixed(1) : String(Math.round(n)));
 
 const splitText = (r: Pick<SearchRow, "ready" | "worker" | "transit" | "prepare" | "excerpts">): string =>
 	`index wait ${msText(r.ready)}, worker ${msText(r.worker)}, transfer ${msText(r.transit)}, prepare ${msText(r.prepare)}, excerpts ${msText(r.excerpts)}`;
@@ -269,6 +278,8 @@ export const buildReport = (s: Snapshot): Section[] => {
 
 	add("Searches", ...(s.searches ? searchLines(s.searches) : [ln("none yet this session")]));
 	if (s.explain?.length) add("Explain", ...s.explain.map((t) => ln(t)));
+	if (s.trace) add("Trace", ...traceLines(s.trace));
+	if (s.trace && s.traceTimeline?.length) add("Timeline", ...s.traceTimeline.map((t) => ln(t)));
 
 	const m = s.meaning;
 	add(
@@ -371,11 +382,26 @@ export const formatReport = (s: Snapshot): string =>
 /** The report for a GitHub issue: what happened, then the text in a code block. */
 export const formatForGithub = (s: Snapshot, what: string): string => {
 	const said = what.trim();
+	// The timeline is long: it goes in a block the reader opens, so the issue stays short.
+	const timeline = s.traceTimeline?.length ? s.traceTimeline : null;
+	const body = timeline ? { ...s, traceTimeline: null } : s;
 	return [
 		...(said ? ["**What happened**", said, ""] : []),
 		"**Support info**",
 		"```text",
-		formatReport(s),
+		formatReport(body),
 		"```",
+		...(timeline
+			? [
+					"",
+					`<details><summary>Trace timeline (${plural(timeline.length, "line")})</summary>`,
+					"",
+					"```text",
+					...timeline,
+					"```",
+					"",
+					"</details>",
+				]
+			: []),
 	].join("\n");
 };
