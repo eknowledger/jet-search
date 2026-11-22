@@ -1058,7 +1058,7 @@ export class JetSettingTab extends PluginSettingTab {
 			desc: "Make a report to copy or send with a bug report.",
 			aliases: "support info bug report debug diagnostics help problem",
 		});
-		this.button(support.row, "Preview and copy", () => this.owner.supportInfo(), "mod-cta");
+		this.button(support.row, "Report issue", () => this.owner.supportInfo(), "mod-cta");
 		const rec = trace.state();
 		const tr = this.card(body, {
 			icon: "activity",

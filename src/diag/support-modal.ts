@@ -52,7 +52,7 @@ export class SupportModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("jet-support-modal");
-		this.titleEl.setText("Support info");
+		this.titleEl.setText("Report issue");
 		const body = this.contentEl;
 		body.empty();
 		const card = body.createDiv({ cls: "jet-support-what-card" });
@@ -108,7 +108,7 @@ export class SupportModal extends Modal {
 		const buttons = foot.createDiv({ cls: "jet-support-buttons" });
 		buttons.createEl("button", { text: "Copy" }).addEventListener("click", () => void this.copy());
 		buttons
-			.createEl("button", { cls: "mod-cta", text: "Report issue" })
+			.createEl("button", { cls: "mod-cta", text: "Open on GitHub" })
 			.addEventListener("click", () => void this.reportOnGithub());
 	}
 

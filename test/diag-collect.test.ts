@@ -89,7 +89,7 @@ describe("the support info", () => {
 		const { plugin } = make();
 		await plugin.onload();
 		const el = goTo(tabOf(plugin), "advanced");
-		buttonNamed(el, "Preview and copy")?.click();
+		buttonNamed(el, "Report issue")?.click();
 		expect(document.querySelector(".jet-support-modal")).not.toBeNull();
 	});
 
@@ -119,7 +119,7 @@ describe("the support info", () => {
 		if (what) what.value = "Double Shift does nothing";
 		const shown = [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
 		[...document.querySelectorAll<HTMLButtonElement>(".jet-support-modal button")]
-			.find((b) => b.textContent === "Report issue")
+			.find((b) => b.textContent === "Open on GitHub")
 			?.click();
 		await Promise.resolve();
 		expect(open).toHaveBeenCalledTimes(1);
@@ -148,7 +148,7 @@ describe("the support info", () => {
 		const what = document.querySelector<HTMLTextAreaElement>(".jet-support-what");
 		if (what) what.value = "It is slow";
 		[...document.querySelectorAll<HTMLButtonElement>(".jet-support-modal button")]
-			.find((b) => b.textContent === "Report issue")
+			.find((b) => b.textContent === "Open on GitHub")
 			?.click();
 		await new Promise((r) => setTimeout(r, 0));
 		const url = new URL(String(open.mock.calls[0]?.[0]));
@@ -268,7 +268,7 @@ describe("the support info", () => {
 		const modal = document.querySelector(".jet-support-modal");
 		expect(modal?.querySelector(".jet-support-lead")).toBeNull();
 		const buttons = [...(modal?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-		expect(buttons).toEqual(["Record", "Copy", "Report issue"]);
+		expect(buttons).toEqual(["Record", "Copy", "Open on GitHub"]);
 		expect(modal?.querySelector(".jet-support-side")?.textContent).toContain("Add to the report");
 		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(4);
 		expect(modal?.querySelector(".jet-support-foot")?.textContent).not.toContain("sends nothing");
