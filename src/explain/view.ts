@@ -29,8 +29,10 @@ export type Context = {
 	scoped: boolean;
 	filters: number;
 	titleOnly: boolean;
-	/** The order, as the window names it ("Best first"). */
+	/** The order, as the window names it ("Best match"). */
 	sort: string;
+	/** The window lists by relevance (else by the sort above, and a rank is still the relevance rank). */
+	byRelevance: boolean;
 	/** What the window lists. */
 	limit: number;
 	/** The index is being built: how far (else null). */
@@ -172,6 +174,8 @@ export const searchView = (c: Context, r: WordsExplanation | MeaningExplanation,
 		out.detail = "Notes with only some of the words are listed only when no note holds them all.";
 	}
 	if (r.excluded.length) out.notes.push(`Notes with ${list(r.excluded.map((w) => `-${n.word(w)}`))} are left out.`);
+	if (c.titleOnly)
+		out.notes.push("Title only is on: only note names are searched, so the text of notes is not looked at.");
 	out.notes.push(footOf(c));
 	return out;
 };
@@ -262,6 +266,10 @@ export const noteView = (
 				: `It holds ${note.matched} of the ${total} words.`;
 		const rows = factorRows(r);
 		if (rows.length) out.tables.push({ title: "What moved it", head: ["", ""], rows });
+		if (!c.byRelevance)
+			out.notes.push(
+				`The window lists by "${c.sort}", so this is its rank by relevance, not its place in the list.`,
+			);
 	} else if (note.rank !== null) {
 		out.head = `Below the cut: ranked ${num(note.rank)}, and Jet lists the top ${r.list.limit}.`;
 		out.detail = "Narrow the search, or add a word, to bring it up.";

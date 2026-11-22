@@ -40,7 +40,8 @@ const ctx = (over: Partial<Context> = {}): Context => ({
 	scoped: false,
 	filters: 0,
 	titleOnly: false,
-	sort: "Best first",
+	sort: "Best match",
+	byRelevance: true,
 	limit: 50,
 	building: null,
 	...over,
@@ -61,7 +62,7 @@ describe("explaining the search", () => {
 		const v = searchView(ctx(), words("walnut kiosk", null));
 		expect(v.head).toBe("2 notes hold every word, so only those are listed.");
 		expect(v.detail).toMatch(/only some of the words/);
-		expect(v.chips).toEqual(["By words", "Everywhere", "No filters", "Best first", "Top 50"]);
+		expect(v.chips).toEqual(["By words", "Everywhere", "No filters", "Best match", "Top 50"]);
 		expect(v.tables[0]?.rows).toHaveLength(2);
 		expect(v.tables[0]?.rows[1]?.[0]?.text).toBe("kiosk (last word)");
 	});
@@ -79,7 +80,10 @@ describe("explaining the search", () => {
 	});
 
 	it("says the exclusions, and what the scope and filters are", () => {
-		const v = searchView(ctx({ scoped: true, filters: 2, sort: "Newest first" }), words("kiosk -cabinet", null));
+		const v = searchView(
+			ctx({ scoped: true, filters: 2, sort: "Newest first", byRelevance: false }),
+			words("kiosk -cabinet", null),
+		);
 		expect(v.notes[0]).toBe("Notes with -cabinet are left out.");
 		expect(v.chips).toContain("In a scope");
 		expect(v.chips).toContain("2 filters");
@@ -142,6 +146,13 @@ describe("explaining a note", () => {
 	it("says a note without the quoted phrase is left out for it", () => {
 		const v = noteView(ctx(), words("walnut kiosk", "Projects/Walnut kiosk pilot.md"), nc({ phrase: false }));
 		expect(v.head).toBe("Left out: it does not hold the quoted phrase.");
+	});
+
+	it("says the rank is by relevance when the window lists in another order", () => {
+		const r = words("walnut kiosk", "Projects/Walnut kiosk pilot.md");
+		const v = noteView(ctx({ sort: "Last edited: newest first", byRelevance: false }), r, nc());
+		expect(v.notes.join(" ")).toContain("not its place in the list");
+		expect(noteView(ctx(), r, nc()).notes.join(" ")).not.toContain("not its place");
 	});
 
 	it("says a note below the cut is below it", () => {
