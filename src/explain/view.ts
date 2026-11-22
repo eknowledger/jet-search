@@ -6,20 +6,35 @@ import type { MeaningExplanation } from "../meaning/explain";
  * facts the worker found. Pure. Every word of the search and every note name goes through a `Namer`, so the
  * report can show tags (`word#1`, `note#1`) where the screen shows the words.
  */
-export type Namer = { word(w: string): string; note(name: string): string };
+export type Namer = {
+	word(w: string): string;
+	note(name: string): string;
+	scope(name: string): string;
+	/** A filter as said with its values, or without when they are the vault's own words. */
+	filter(f: FilterWords): string;
+};
 
-export const realNames: Namer = { word: (w) => w, note: (n) => n };
+/** What a filter says: with its values (`text`), and without (`hidden`: "tag", "edited past 30 days"). */
+export type FilterWords = { text: string; hidden: string };
+
+export const realNames: Namer = { word: (w) => w, note: (n) => n, scope: (n) => n, filter: (f) => f.text };
 
 /** Words and notes by tag, numbered in the order they first appear. */
 export const tagNames = (): Namer => {
 	const words = new Map<string, number>();
 	const notes = new Map<string, number>();
+	const scopes = new Map<string, number>();
 	const tag = (m: Map<string, number>, key: string, label: string): string => {
 		let i = m.get(key);
 		if (i === undefined) m.set(key, (i = m.size + 1));
 		return `${label}#${i}`;
 	};
-	return { word: (w) => tag(words, w, "word"), note: (n) => tag(notes, n, "note") };
+	return {
+		word: (w) => tag(words, w, "word"),
+		note: (n) => tag(notes, n, "note"),
+		scope: (n) => tag(scopes, n, "scope"),
+		filter: (f) => f.hidden,
+	};
 };
 
 /** What the dialog knows that the worker does not. */
@@ -27,7 +42,11 @@ export type Context = {
 	text: string;
 	mode: "words" | "meaning";
 	scoped: boolean;
+	/** The names of the scopes searched in. */
+	scopeNames: string[];
 	filters: number;
+	/** The filters, each as it is said (the title-only switch is not one of them). */
+	filterItems: FilterWords[];
 	titleOnly: boolean;
 	/** The order, as the window names it ("Best match"). */
 	sort: string;
@@ -54,15 +73,18 @@ export type NoteContext = {
 	shown: string | null;
 };
 
-export type Cell = { text: string; pill?: "ok" | "no" };
-export type Table = { title: string; head: string[]; rows: Cell[][] };
+/** `note` is said beside the text, in smaller type ("last word"). */
+export type Cell = { text: string; pill?: "ok" | "no"; note?: string };
+/** `cards`: each row is drawn as a card, the first cell as its title and the others under their head. */
+export type Table = { title: string; head: string[]; rows: Cell[][]; cards?: boolean };
 export type View = {
 	tone: "ok" | "warn";
 	head: string;
 	detail: string | null;
-	chips: string[];
 	tables: Table[];
 	notes: string[];
+	/** How the search was set, one fact to a line: what, where, which filters, in what order. */
+	setup: Array<[label: string, value: string]>;
 };
 
 const num = (n: number): string => n.toLocaleString("en-US");
@@ -75,17 +97,20 @@ const fixed = (x: number): string => x.toFixed(2);
 const days = (d: number): string =>
 	d < 1 ? "today" : d < 2 ? "yesterday" : d < 60 ? `${Math.round(d)} days ago` : `${Math.round(d / 30)} months ago`;
 
-const chipsOf = (c: Context): string[] => [
-	c.mode === "words" ? "By words" : "By meaning",
-	c.scoped ? "In a scope" : "Everywhere",
-	c.filters ? plural(c.filters, "filter") : "No filters",
-	c.sort,
-	`Top ${c.limit}`,
-	...(c.titleOnly ? ["Title only"] : []),
+/** How the search was set, as lines for the report: the vault's own names only through the namer. */
+const setupOf = (c: Context, n: Namer): Array<[string, string]> => [
+	["Searched", `${c.mode === "words" ? "by words" : "by meaning"}${c.titleOnly ? ", note names only" : ""}`],
+	[
+		"Where",
+		c.scopeNames.length
+			? `in ${list(c.scopeNames.map((x) => n.scope(x)))}`
+			: c.scoped
+				? "in a scope"
+				: "everywhere",
+	],
+	["Filters", c.filterItems.length ? c.filterItems.map((f) => n.filter(f)).join(", ") : "none"],
+	["Order", `${c.sort.toLowerCase()}, top ${c.limit} listed`],
 ];
-
-const footOf = (c: Context): string =>
-	`${c.mode === "words" ? "By words" : "By meaning"}, ${c.scoped ? "in a scope" : "no scope"}, ${c.filters ? plural(c.filters, "filter") : "no filter"}, ${c.sort.toLowerCase()}, top ${c.limit} listed.`;
 
 const typosText = (w: WordFact): string => {
 	if (!w.typos) return "not tried, found";
@@ -95,8 +120,9 @@ const typosText = (w: WordFact): string => {
 const readTable = (words: WordFact[], n: Namer): Table => ({
 	title: "How each word was read",
 	head: ["Word", "Exact", "As a prefix", "Other forms", "Typos"],
+	cards: true,
 	rows: words.map((w) => [
-		{ text: w.prefix ? `${n.word(w.word)} (last word)` : n.word(w.word) },
+		w.prefix ? { text: n.word(w.word), note: "last word" } : { text: n.word(w.word) },
 		{ text: plural(w.notes.exact, "note") },
 		{ text: w.prefix ? String(w.notes.prefix) : "not a prefix" },
 		{ text: String(w.notes.form) },
@@ -148,13 +174,17 @@ const factorRows = (x: WordsExplanation): Cell[][] => {
 	return rows;
 };
 
-const base = (c: Context): Pick<View, "chips" | "tables" | "notes"> => ({ chips: chipsOf(c), tables: [], notes: [] });
+const base = (c: Context, n: Namer): Pick<View, "tables" | "notes" | "setup"> => ({
+	tables: [],
+	notes: [],
+	setup: setupOf(c, n),
+});
 
 /** The search alone: how it was read, and the rule that decided what is listed. */
 export const searchView = (c: Context, r: WordsExplanation | MeaningExplanation, n: Namer = realNames): View => {
-	if (r.kind === "meaning") return meaningSearch(c, r);
+	if (r.kind === "meaning") return meaningSearch(c, r, n);
 	const { list: l } = r;
-	const out: View = { tone: "ok", head: "", detail: null, ...base(c), tables: [readTable(r.words, n)], notes: [] };
+	const out: View = { tone: "ok", head: "", detail: null, ...base(c, n), tables: [readTable(r.words, n)], notes: [] };
 	if (!r.words.length) {
 		out.tone = "warn";
 		out.head = "There is no word to look for in this search.";
@@ -178,12 +208,11 @@ export const searchView = (c: Context, r: WordsExplanation | MeaningExplanation,
 	if (r.excluded.length) out.notes.push(`Notes with ${list(r.excluded.map((w) => `-${n.word(w)}`))} are left out.`);
 	if (c.titleOnly)
 		out.notes.push("Title only is on: only note names are searched, so the text of notes is not looked at.");
-	out.notes.push(footOf(c));
 	return out;
 };
 
-const meaningSearch = (c: Context, r: MeaningExplanation): View => {
-	const out: View = { tone: "ok", head: "", detail: null, ...base(c), tables: [], notes: [footOf(c)] };
+const meaningSearch = (c: Context, r: MeaningExplanation, n: Namer): View => {
+	const out: View = { tone: "ok", head: "", detail: null, ...base(c, n), tables: [], notes: [] };
 	if (!r.on) {
 		out.tone = "warn";
 		out.head = "Search by meaning is not ready.";
@@ -240,15 +269,14 @@ export const noteView = (
 	nc: NoteContext,
 	n: Namer = realNames,
 ): View => {
-	const out: View = { tone: "warn", head: "", detail: null, ...base(c), chips: [], tables: [], notes: [] };
+	const out: View = { tone: "warn", head: "", detail: null, ...base(c, n), tables: [], notes: [] };
 	if (!r.note) return { ...out, head: "Pick a note to explain." };
-	if (r.kind === "meaning") return meaningNote(c, r, nc);
+	if (r.kind === "meaning") return meaningNote(c, r, nc, n);
 	const note = r.note;
 	const outside = reasonOut(c, nc, note.indexed, note.allowed);
 	if (outside) {
 		out.head = outside[0];
 		out.detail = outside[1];
-		out.notes.push(footOf(c));
 		return out;
 	}
 	const total = r.words.length;
@@ -295,12 +323,11 @@ export const noteView = (
 		out.detail = "Check that the note is saved. If this looks wrong, copy the support info and report it.";
 	}
 	if (note.rank === null) out.notes.push("The note is indexed and not excluded.");
-	out.notes.push(footOf(c));
 	return out;
 };
 
-const meaningNote = (c: Context, r: MeaningExplanation, nc: NoteContext): View => {
-	const out: View = { tone: "warn", head: "", detail: null, ...base(c), chips: [], tables: [], notes: [footOf(c)] };
+const meaningNote = (c: Context, r: MeaningExplanation, nc: NoteContext, n: Namer): View => {
+	const out: View = { tone: "warn", head: "", detail: null, ...base(c, n), tables: [], notes: [] };
 	const note = r.note;
 	if (!note) return { ...out, head: "Pick a note to explain." };
 	if (!r.on) {
@@ -346,10 +373,11 @@ export const viewLines = (v: View): string[] => [
 		...t.rows.map(
 			(r) =>
 				`  ${r
-					.map((x) => x.text)
+					.map((x) => (x.note ? `${x.text} (${x.note})` : x.text))
 					.filter(Boolean)
 					.join(" | ")}`,
 		),
 	]),
 	...v.notes,
+	...v.setup.map(([k, x]) => `${k}: ${x}`),
 ];

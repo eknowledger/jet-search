@@ -14,7 +14,7 @@ const item = (path: string, over: Partial<Extract<Entry, { type: "item" }>> = {}
 	icon: "file-text",
 	...over,
 });
-const view = (head: string): View => ({ tone: "ok", head, detail: null, chips: ["By words"], tables: [], notes: [] });
+const view = (head: string): View => ({ tone: "ok", head, detail: null, tables: [], notes: [], setup: [] });
 const wait = (ms = 30): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 type Asked = { text: string; mode: string; path: string | null; name: string; shown: string | null };

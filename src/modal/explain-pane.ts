@@ -15,6 +15,10 @@ export type PaneIo = {
 	find(text: string): Candidate[];
 	/** Keep the explanation for the support info. */
 	keep(e: Explained): void;
+	/** Show the support info, with the explanation in it. */
+	support(): void;
+	/** Back to the list (where the pane takes the whole window). */
+	back(): void;
 };
 
 const TABS: Array<[Tab, string]> = [
@@ -35,6 +39,7 @@ export class ExplainPane {
 	readonly el: HTMLElement;
 	private readonly tabsEl: HTMLElement;
 	private readonly bodyEl: HTMLElement;
+	private readonly barEl: HTMLElement;
 	private tab: Tab = "search";
 	private mode: Mode = "words";
 	private both = false;
@@ -46,19 +51,21 @@ export class ExplainPane {
 	private result: Explained | null = null;
 	private token = 0;
 	private timer: number | null = null;
-	private kept = false;
 	private failed = false;
 	shown = false;
 
 	constructor(
 		parent: HTMLElement,
 		private readonly io: PaneIo,
-		private readonly keys: { toggle: string },
 	) {
 		this.el = parent.createDiv({ cls: "jet-ex", attr: { "aria-label": "Why these results" } });
 		const card = this.el.createDiv({ cls: "jet-exc" });
+		const up = card.createDiv({ cls: "jet-ex-up", text: "‹ Results", attr: { role: "button" } });
+		up.addEventListener("mousedown", (e) => e.preventDefault());
+		up.addEventListener("click", () => this.io.back());
 		this.tabsEl = card.createDiv({ cls: "jet-ex-tabs", attr: { role: "tablist" } });
 		this.bodyEl = card.createDiv({ cls: "jet-ex-body", attr: { "aria-live": "polite" } });
+		this.barEl = card.createDiv({ cls: "jet-ex-bar" });
 	}
 
 	/** Open on the selected note's tab, or on the search's when no note is selected. */
@@ -68,7 +75,6 @@ export class ExplainPane {
 		this.mode = mode;
 		this.both = both;
 		this.tab = selected ? "note" : "search";
-		this.kept = false;
 		this.draw();
 		this.ask(0);
 	}
@@ -110,7 +116,6 @@ export class ExplainPane {
 
 	private go(tab: Tab): void {
 		this.tab = tab;
-		this.kept = false;
 		this.draw();
 		if (tab === "expected") this.bodyEl.querySelector<HTMLInputElement>(".jet-ex-in")?.focus();
 		else this.ask(0);
@@ -147,7 +152,6 @@ export class ExplainPane {
 				.then((r) => {
 					if (token !== this.token) return;
 					this.result = r;
-					this.kept = false;
 					this.draw();
 				})
 				.catch((e: unknown) => {
@@ -190,6 +194,7 @@ export class ExplainPane {
 		}
 		const typedBefore = this.typed;
 		this.bodyEl.empty();
+		this.barEl.empty();
 		if (this.tab === "expected") this.drawFinder();
 		this.drawView();
 		if (this.tab === "expected" && hadFocus) {
@@ -278,37 +283,54 @@ export class ExplainPane {
 			this.bodyEl.createDiv({ cls: "jet-ex-hint", text: "Looking…" });
 			return;
 		}
-		if (this.tab === "search" && view.chips.length) {
-			const chips = this.bodyEl.createDiv({ cls: "jet-ex-chips" });
-			for (const c of view.chips) chips.createSpan({ cls: "jet-ex-chip", text: c });
-		}
 		const verdict = this.bodyEl.createDiv({ cls: `jet-ex-verdict ${view.tone === "ok" ? "is-ok" : "is-warn"}` });
 		verdict.createDiv({ cls: "jet-ex-v1", text: view.head });
 		if (view.detail) verdict.createDiv({ cls: "jet-ex-v2", text: view.detail });
 		for (const t of view.tables) this.drawTable(t);
 		for (const n of view.notes) this.bodyEl.createDiv({ cls: "jet-ex-note", text: n });
-		const keep = this.bodyEl.createDiv({ cls: "jet-ex-keep" });
-		const btn = keep.createEl("button", {
-			cls: "jet-ex-add",
-			text: this.kept ? "Added to the support info" : "Add to support info",
+		this.drawSetup(view.setup);
+		const btn = this.barEl.createEl("button", {
+			cls: "jet-ex-add mod-cta",
+			text: "Add to support info",
+			attr: { "aria-label": "Opens the support info with this explanation in it" },
 		});
-		btn.disabled = this.kept;
 		btn.addEventListener("mousedown", (e) => e.preventDefault());
 		btn.addEventListener("click", () => {
 			if (!this.result) return;
 			this.io.keep(this.result);
-			this.kept = true;
-			this.draw();
+			this.io.support();
 		});
-		keep.createSpan({
-			cls: "jet-ex-back",
-			text: `${this.keys.toggle} goes back to the preview`,
-		});
+	}
+
+	/** How the search was set: plain facts, one to a line, under the answer. */
+	private drawSetup(rows: ReadonlyArray<readonly [string, string]>): void {
+		const sec = this.bodyEl.createDiv({ cls: "jet-ex-sl" });
+		sec.createEl("h4", { text: "How this search was set" });
+		const dl = sec.createEl("dl", { cls: "jet-ex-dl" });
+		for (const [label, value] of rows) {
+			dl.createEl("dt", { text: label });
+			dl.createEl("dd", { text: value });
+		}
 	}
 
 	private drawTable(t: Table): void {
 		const sec = this.bodyEl.createDiv({ cls: "jet-ex-sec" });
 		sec.createEl("h4", { text: t.title });
+		if (t.cards) {
+			for (const row of t.rows) {
+				const [title, ...rest] = row;
+				const card = sec.createDiv({ cls: "jet-ex-wc" });
+				const name = card.createDiv({ cls: "jet-ex-wn", text: title?.text ?? "" });
+				if (title?.note) name.createEl("i", { text: title.note });
+				const figs = card.createDiv({ cls: "jet-ex-figs" });
+				rest.forEach((c, i) => {
+					const fig = figs.createDiv({ cls: "jet-ex-fig" });
+					fig.createDiv({ cls: "jet-ex-fl", text: t.head[i + 1] ?? "" });
+					fig.createDiv({ cls: "jet-ex-fv", text: c.text });
+				});
+			}
+			return;
+		}
 		const table = sec.createEl("table");
 		if (t.head.some(Boolean)) {
 			const tr = table.createEl("thead").createEl("tr");

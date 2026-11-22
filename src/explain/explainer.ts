@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { Filter } from "../filters/filter";
+import { type Filter, filterLabel } from "../filters/filter";
 import { excluder } from "../index/gather";
 import type { Progress } from "../index/feeder";
 import { filterPhrases, quotedPhrases } from "../rank";
@@ -8,6 +8,7 @@ import type { JetClient } from "../worker/jet-client";
 import type { ExplainReply } from "../worker/protocol";
 import {
 	type Context,
+	type FilterWords,
 	type NoteContext,
 	noteView,
 	realNames,
@@ -26,6 +27,8 @@ export type ExplainRequest = {
 	text: string;
 	mode: "words" | "meaning";
 	scope?: Where;
+	/** The names of the scopes searched in. */
+	scopeNames?: readonly string[];
 	filters: readonly Filter[];
 	/** The sort's name as the window shows it, and whether it is by relevance. */
 	sort: string;
@@ -57,6 +60,24 @@ export type ExplainDeps = {
 	excluded: () => readonly string[];
 };
 
+/** What a filter says with its values, and without the vault's own words (a tag, a property, a folder, a note). */
+const filterWords = (f: Filter): FilterWords => {
+	const [head, value] = filterLabel(f);
+	const text = `${head} ${value}`.trim();
+	switch (f.kind) {
+		case "prop":
+			return { text, hidden: "property" };
+		case "tag":
+			return { text, hidden: "tag" };
+		case "path":
+			return { text, hidden: head };
+		case "links":
+			return { text, hidden: "links to a note" };
+		default:
+			return { text, hidden: text };
+	}
+};
+
 /**
  * Explains a search the window just ran. It asks the worker only now, once; no search calls it. The facts only
  * the main thread knows (the exclude rules, the scope, the filters, a quoted phrase) are added to what the
@@ -80,7 +101,9 @@ export class Explainer {
 			text: req.text,
 			mode: req.mode,
 			scoped: whereIds(req.scope).length > 0,
+			scopeNames: [...(req.scopeNames ?? [])],
 			filters: req.filters.length,
+			filterItems: req.filters.filter((f) => f.kind !== "title").map(filterWords),
 			titleOnly: req.filters.some((f) => f.kind === "title"),
 			sort: req.sort,
 			byRelevance: req.byRelevance,
@@ -107,7 +130,7 @@ export class Explainer {
 			...real,
 			lines: (names) => {
 				const v = build(names ? realNames : tagNames());
-				const head = names ? `search "${req.text}"` : "the search";
+				const head = names ? `search "${req.text.trim()}"` : "the search";
 				return [head, ...viewLines(v.search), ...(v.note ? ["", ...viewLines(v.note)] : [])];
 			},
 		};

@@ -142,4 +142,42 @@ describe("the explainer", () => {
 		expect(x.lines(true).join("\n")).toContain('search "walnut kiosk"');
 		expect(x.lines(true).join("\n")).toContain('"walnut"');
 	});
+
+	it("puts the scope and each filter in the report, by their values only when names are allowed", async () => {
+		const { explainer } = rig(texts);
+		const x = await explainer.run(
+			req({
+				scope: "s1",
+				scopeNames: ["Cobalt"],
+				filters: [
+					{ kind: "tag", tag: "#journal" },
+					{ kind: "edited", days: 30 },
+					{ kind: "prop", key: "status", value: "open" },
+					{ kind: "path", prefix: "Projects" },
+					{ kind: "links", name: "Atlas" },
+					{ kind: "title" },
+				],
+				text: "walnut kiosk ",
+			}),
+		);
+		const real = x.lines(true).join("\n");
+		expect(real).toContain('search "walnut kiosk"');
+		expect(real).toContain("Where: in Cobalt");
+		expect(real).toContain(
+			"Filters: tag #journal, edited past 30 days, status open, in folder Projects, links to Atlas",
+		);
+		expect(real).toContain("Searched: by words, note names only");
+		expect(real).toContain("Order: best match, top 50 listed");
+		const tagged = x.lines(false).join("\n");
+		expect(tagged).not.toMatch(/Cobalt|journal|status|open|Projects|Atlas/);
+		expect(tagged).toContain("Where: in scope#1");
+		expect(tagged).toContain("Filters: tag, edited past 30 days, property, in folder, links to a note");
+	});
+
+	it("says there is no scope and no filter in so many words", async () => {
+		const { explainer } = rig(texts);
+		const lines = (await explainer.run(req())).lines(false).join("\n");
+		expect(lines).toContain("Where: everywhere");
+		expect(lines).toContain("Filters: none");
+	});
 });

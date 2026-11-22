@@ -8,13 +8,16 @@ const view = (head: string, over: Partial<View> = {}): View => ({
 	tone: "ok",
 	head,
 	detail: null,
-	chips: [],
 	tables: [],
 	notes: [],
+	setup: [
+		["Searched", "by words"],
+		["Where", "in Cobalt"],
+	],
 	...over,
 });
 const explained = (note: string | null): Explained => ({
-	search: view("2 notes hold every word, so only those are listed.", { chips: ["By words", "Everywhere"] }),
+	search: view("2 notes hold every word, so only those are listed.", {}),
 	note: note
 		? view(note, {
 				tables: [
@@ -34,6 +37,8 @@ const wait = (ms = 160): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const rig = (over: Partial<PaneIo> = {}) => {
 	const asked: Array<[Pick | null, string]> = [];
 	const kept: Explained[] = [];
+	const shown: number[] = [];
+	const backs: number[] = [];
 	const io: PaneIo = {
 		explain: (n, m) => {
 			asked.push([n, m]);
@@ -45,12 +50,14 @@ const rig = (over: Partial<PaneIo> = {}) => {
 				{ path: "B/Kiosk.md", name: "Kiosk", folder: "B" },
 			].filter((c) => c.name.toLowerCase().includes(t.toLowerCase())) as Candidate[],
 		keep: (e) => kept.push(e),
+		support: () => void shown.push(1),
+		back: () => void backs.push(1),
 		...over,
 	};
 	const parent = document.createElement("div");
 	document.body.append(parent);
-	const pane = new ExplainPane(parent, io, { toggle: "⌘⇧E" });
-	return { pane, asked, kept, el: pane.el };
+	const pane = new ExplainPane(parent, io);
+	return { pane, asked, kept, shown, backs, el: pane.el };
 };
 const sel: Pick = { path: "Projects/Pilot.md", name: "Pilot" };
 
@@ -77,7 +84,7 @@ describe("the explanation pane", () => {
 			"A note I expected",
 		]);
 		expect(el.querySelector(".jet-ex-v1")?.textContent).toMatch(/hold every word/);
-		expect([...el.querySelectorAll(".jet-ex-chip")].map((c) => c.textContent)).toEqual(["By words", "Everywhere"]);
+		expect(el.querySelector(".jet-ex-chip")).toBeNull();
 	});
 
 	it("cycles the tabs, and asks for the search or the note as the tab needs", async () => {
@@ -149,14 +156,88 @@ describe("the explanation pane", () => {
 		expect(pane.escape()).toBe(false);
 	});
 
-	it("keeps the explanation for the support info, once", async () => {
-		const { pane, kept, el } = rig();
+	it("adds the explanation to the support info and shows it, from a button in its own bar", async () => {
+		const { pane, kept, shown, el } = rig();
 		pane.open(sel, "words", false);
 		await wait(20);
-		(el.querySelector(".jet-ex-add") as HTMLButtonElement).click();
+		const btn = el.querySelector(".jet-ex-bar .jet-ex-add") as HTMLButtonElement;
+		expect(btn.textContent).toBe("Add to support info");
+		expect(btn.getAttribute("aria-label")).toMatch(/support info/);
+		btn.click();
 		expect(kept).toHaveLength(1);
-		expect((el.querySelector(".jet-ex-add") as HTMLButtonElement).textContent).toBe("Added to the support info");
-		expect((el.querySelector(".jet-ex-add") as HTMLButtonElement).disabled).toBe(true);
+		expect(shown).toHaveLength(1);
+		// Nothing greys out: it can be pressed again for another note.
+		expect(btn.disabled).toBe(false);
+		expect(el.querySelector(".jet-ex-body .jet-ex-add")).toBeNull();
+	});
+
+	it("has no bar until there is something to add", () => {
+		const { pane, el } = rig({ explain: () => new Promise(() => undefined) });
+		pane.open(sel, "words", false);
+		expect(el.querySelector(".jet-ex-add")).toBeNull();
+	});
+
+	it("has a way back to the list that a touch screen can reach", () => {
+		const { pane, backs, el } = rig();
+		pane.open(sel, "words", false);
+		(el.querySelector(".jet-ex-up") as HTMLElement).click();
+		expect(backs).toHaveLength(1);
+	});
+
+	it("draws each word as a card with its figures under their labels", async () => {
+		const table = {
+			title: "How each word was read",
+			head: ["Word", "Exact", "As a prefix", "Other forms", "Typos"],
+			cards: true,
+			rows: [
+				[
+					{ text: "kitchen" },
+					{ text: "89 notes" },
+					{ text: "not a prefix" },
+					{ text: "3" },
+					{ text: "not tried, found" },
+				],
+				[
+					{ text: "tracker", note: "last word" },
+					{ text: "12 notes" },
+					{ text: "1" },
+					{ text: "0" },
+					{ text: "not tried, found" },
+				],
+			],
+		};
+		const { pane, el } = rig({
+			explain: () => Promise.resolve({ ...explained(null), search: view("x", { tables: [table] }) }),
+		});
+		pane.open(null, "words", false);
+		await wait(20);
+		const cards = [...el.querySelectorAll(".jet-ex-wc")];
+		expect(cards).toHaveLength(2);
+		expect(cards[1]?.querySelector(".jet-ex-wn")?.textContent).toBe("tracker" + "last word");
+		expect([...(cards[0]?.querySelectorAll(".jet-ex-fl") ?? [])].map((x) => x.textContent)).toEqual([
+			"Exact",
+			"As a prefix",
+			"Other forms",
+			"Typos",
+		]);
+		expect([...(cards[0]?.querySelectorAll(".jet-ex-fv") ?? [])].map((x) => x.textContent)).toEqual([
+			"89 notes",
+			"not a prefix",
+			"3",
+			"not tried, found",
+		]);
+	});
+
+	it("says how the search was set, in plain lines under the answer, on every tab", async () => {
+		const { pane, el } = rig();
+		pane.open(sel, "words", false);
+		await wait(20);
+		const lines = () => [...el.querySelectorAll(".jet-ex-dl dt, .jet-ex-dl dd")].map((n) => n.textContent);
+		expect(el.querySelector(".jet-ex-sl h4")?.textContent).toBe("How this search was set");
+		expect(lines()).toEqual(["Searched", "by words", "Where", "in Cobalt"]);
+		pane.cycle(1);
+		await wait(20);
+		expect(lines()).toEqual(["Searched", "by words", "Where", "in Cobalt"]);
 	});
 
 	it("says so when it cannot explain, and notes the problem", async () => {

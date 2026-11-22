@@ -2091,6 +2091,17 @@ table.jet-set-keys {
 .jet-support-warn {
 	color: var(--text-warning, var(--color-orange));
 }
+.jet-support-added {
+	padding: 7px 14px;
+	border-bottom: 1px solid var(--color-green);
+	background: var(--background-secondary);
+	color: var(--color-green);
+	font-size: var(--font-ui-small);
+}
+.jet-support-line.is-added {
+	background-color: hsla(var(--interactive-accent-hsl), 0.14);
+	box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
 .jet-support-side {
 	padding: 12px 14px;
 	background-color: var(--background-secondary);
@@ -2147,7 +2158,7 @@ table.jet-set-keys {
 /* The explanation, in the preview's place */
 .jet-ex {
 	flex: none;
-	width: 45%;
+	width: 55%;
 	min-width: 0;
 	padding: 10px 12px 12px 4px;
 	display: none;
@@ -2224,21 +2235,6 @@ table.jet-set-keys {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	margin: 6px 0;
-}
-
-.jet-ex-chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	margin-bottom: 10px;
-}
-
-.jet-ex-chip {
-	padding: 0 8px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 9px;
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
 }
 
 .jet-ex-verdict {
@@ -2344,15 +2340,96 @@ table.jet-set-keys {
 	font-size: var(--font-ui-smaller);
 }
 
-.jet-ex-keep {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	margin-top: 10px;
+.jet-ex-sl {
+	margin-top: 12px;
+	padding-top: 8px;
+	border-top: 1px solid var(--background-modifier-border);
 }
 
-.jet-ex-back {
-	color: var(--text-faint);
+.jet-ex-sl h4 {
+	margin: 0 0 4px;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.jet-ex-dl {
+	display: grid;
+	grid-template-columns: 76px minmax(0, 1fr);
+	gap: 3px 10px;
+	margin: 0;
+	font-size: var(--font-ui-small);
+}
+
+.jet-ex-dl dt {
+	color: var(--text-muted);
+}
+
+.jet-ex-dl dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.jet-ex-up {
+	display: none;
+	flex: none;
+	padding: 8px 12px 0;
+	color: var(--text-accent);
+	cursor: pointer;
+}
+
+.jet-modal.is-explaining.is-narrow .jet-ex-up {
+	display: block;
+}
+
+/* Under the words: the one action, in a bar of its own. */
+.jet-ex-bar {
+	flex: none;
+	display: flex;
+	justify-content: flex-end;
+	padding: 9px 12px;
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+}
+
+.jet-ex-bar:empty {
+	display: none;
+}
+
+/* One card per word: the number of notes, then how the word was read. */
+.jet-ex-wc {
+	margin-bottom: 8px;
+	padding: 8px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.jet-ex-wn {
+	margin-bottom: 6px;
+	font-weight: 600;
+}
+
+.jet-ex-wn i {
+	margin-left: 6px;
+	font-style: normal;
+	font-weight: 400;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jet-ex-figs {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 8px;
+}
+
+.jet-modal.is-explaining.is-narrow .jet-ex-figs {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.jet-ex-fl {
+	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
 
@@ -2443,4 +2520,14 @@ body.is-mobile .jet-set-opts .setting-item {
 
 body.is-mobile .jet-set-opts .setting-item:first-child {
 	border-top: 0;
+}
+
+/* The explanation: a finger-sized button and "back" row. */
+body.is-mobile .jet-ex-add {
+	flex: 1;
+	min-height: 44px;
+}
+
+body.is-mobile .jet-ex-up {
+	padding: 12px 12px 4px;
 }

@@ -59,7 +59,7 @@ describe("the support info", () => {
 		await plugin.onload();
 		expect(collect(plugin).explain).toBeNull();
 		keepExplained({
-			search: { tone: "ok", head: "", detail: null, chips: [], tables: [], notes: [] },
+			search: { tone: "ok", head: "", detail: null, tables: [], notes: [], setup: [] },
 			note: null,
 			lines: (names) => (names ? ['search "walnut kiosk"'] : ["the search", "word#1 word#2"]),
 		});
@@ -220,6 +220,26 @@ describe("the support info", () => {
 		expect(modal?.querySelector(".jet-support-side")?.textContent).toContain("Add to the report");
 		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(3);
 		expect(modal?.querySelector(".jet-support-foot")?.textContent).toContain("Nothing leaves this device");
+	});
+
+	it("says what was added, and marks the explanation's lines, when it is shown after adding one", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		keepExplained({
+			search: { tone: "ok", head: "h", detail: null, tables: [], notes: [], setup: [] },
+			note: null,
+			lines: () => ["search word#1, by words", "1 note holds it"],
+		});
+		plugin.supportInfo(true);
+		const pre = document.querySelector(".jet-support-report");
+		expect(document.querySelector(".jet-support-added")?.textContent).toMatch(/^Added/);
+		const marked = [...(pre?.querySelectorAll(".jet-support-line.is-added") ?? [])].map((l) => l.textContent);
+		expect(marked.join("\n")).toContain("1 note holds it");
+		expect(marked).toHaveLength(2);
+		document.body.replaceChildren();
+		plugin.supportInfo();
+		expect(document.querySelector(".jet-support-added")).toBeNull();
+		expect(document.querySelector(".jet-support-line.is-added")).toBeNull();
 	});
 
 	it("colours the headings in the window and still copies plain text", async () => {

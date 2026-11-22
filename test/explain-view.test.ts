@@ -38,7 +38,9 @@ const ctx = (over: Partial<Context> = {}): Context => ({
 	text: "walnut kiosk",
 	mode: "words",
 	scoped: false,
+	scopeNames: [],
 	filters: 0,
+	filterItems: [],
 	titleOnly: false,
 	sort: "Best match",
 	byRelevance: true,
@@ -63,9 +65,17 @@ describe("explaining the search", () => {
 		const v = searchView(ctx(), words("walnut kiosk", null));
 		expect(v.head).toBe("2 notes hold every word, so only those are listed.");
 		expect(v.detail).toMatch(/only some of the words/);
-		expect(v.chips).toEqual(["By words", "Everywhere", "No filters", "Best match", "Top 50"]);
+		expect(v.setup).toEqual([
+			["Searched", "by words"],
+			["Where", "everywhere"],
+			["Filters", "none"],
+			["Order", "best match, top 50 listed"],
+		]);
 		expect(v.tables[0]?.rows).toHaveLength(2);
-		expect(v.tables[0]?.rows[1]?.[0]?.text).toBe("kiosk (last word)");
+		expect(v.tables[0]?.rows[1]?.[0]).toEqual({ text: "kiosk", note: "last word" });
+		expect(v.tables[0]?.cards).toBe(true);
+		// How the search was set is kept apart from the notes.
+		expect(v.notes.join(" ")).not.toMatch(/no scope|everywhere/);
 	});
 
 	it("says when no note holds every word", () => {
@@ -86,9 +96,9 @@ describe("explaining the search", () => {
 			words("kiosk -cabinet", null),
 		);
 		expect(v.notes[0]).toBe("Notes with -cabinet are left out.");
-		expect(v.chips).toContain("In a scope");
-		expect(v.chips).toContain("2 filters");
-		expect(v.chips).toContain("Newest first");
+		const set = Object.fromEntries(v.setup);
+		expect(set.Where).toBe("in a scope");
+		expect(set.Order).toBe("newest first, top 50 listed");
 	});
 });
 
@@ -243,6 +253,18 @@ describe("what a report may hold", () => {
 	it("shows the words when the names are allowed", () => {
 		const r = words("walnut kiosk", "Projects/Kiosk rollout.md");
 		expect(viewLines(noteView(ctx(), r, nc(), realNames)).join("\n")).toContain('"walnut"');
+	});
+
+	it("keeps the last-word mark and how the search was set in the report's lines", () => {
+		const r = words("walnut kiosk", null);
+		const lines = viewLines(searchView(ctx(), r));
+		expect(lines.some((l) => l.includes("kiosk (last word)"))).toBe(true);
+		expect(lines.slice(-4)).toEqual([
+			"Searched: by words",
+			"Where: everywhere",
+			"Filters: none",
+			"Order: best match, top 50 listed",
+		]);
 	});
 
 	it("never uses a dash as punctuation in what it says", () => {

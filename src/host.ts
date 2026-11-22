@@ -121,6 +121,9 @@ export class JetHost implements ModalHost {
 					text: r.text,
 					mode: r.mode,
 					scope: r.scope,
+					scopeNames: whereIds(r.scope).flatMap(
+						(id) => this.data().scopes.find((x) => x.id === id)?.name ?? [],
+					),
 					filters: r.filters,
 					sort: SORTS.find(([k]) => k === r.sort)?.[1] ?? "Best match",
 					byRelevance: r.sort === "best",
@@ -133,6 +136,7 @@ export class JetHost implements ModalHost {
 			},
 			find: (text) => this.findNotes(text),
 			keep: (e) => keepExplained(e),
+			support: () => this.support?.(),
 		};
 	}
 
@@ -370,6 +374,8 @@ export class JetHost implements ModalHost {
 
 	/** Search inside a note (the ⌘K panel's last action): the plugin opens its in-note search. */
 	inNote?: (file: TFile) => void;
+	/** Shows the support info (set by the plugin): the explanation was just added to it. */
+	support?: () => void;
 
 	/** The ⌘K panel's actions on a note, with their keys. */
 	actions(path: string): NoteAction[] {

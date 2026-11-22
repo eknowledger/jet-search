@@ -287,6 +287,8 @@ export type ModalHost = {
 		}): Promise<Explained>;
 		find(text: string): Candidate[];
 		keep(e: Explained): void;
+		/** Show the support info, the explanation in it. */
+		support(): void;
 	};
 	/**
 	 * Your keys in the window, and the double tap as the hints write it (null: off).
@@ -375,10 +377,10 @@ export class JetModal extends Modal {
 	private previewKey: string | null = null;
 	private previewTimer: number | null = null;
 	private resize: ResizeObserver | null = null;
-	// Scopes: the applied chip, what the text says, and their elements.
-	/** The last scope applied: ⌫ selects it, ⇥ cycles its name, its card opens on hover. */
 	/** Tells the hints bar that the window changed its width. */
 	private hintsUpdate: (() => void) | null = null;
+	// Scopes: the applied chip, what the text says, and their elements.
+	/** The last scope applied: ⌫ selects it, ⇥ cycles its name, its card opens on hover. */
 	private chip: ScopeView | null = null;
 	/** The scopes added before it: the search covers them all, first added first. */
 	private kept: ScopeView[] = [];
@@ -527,25 +529,23 @@ export class JetModal extends Modal {
 		this.modalEl.toggleClass("is-preview-off", !host.previewOn());
 		const ex = host.explain;
 		if (ex)
-			this.explainPane = new ExplainPane(
-				body,
-				{
-					explain: (note, mode) =>
-						ex.run({
-							text: this.ranText,
-							mode,
-							scope: this.ranScope,
-							filters: [...this.filters],
-							sort: this.sort,
-							path: note?.path ?? null,
-							name: note?.name ?? "",
-							shown: note ? this.sectionOf(note.path) : null,
-						}),
-					find: (text) => ex.find(text),
-					keep: (e) => ex.keep(e),
-				},
-				{ toggle: this.lab("explain") },
-			);
+			this.explainPane = new ExplainPane(body, {
+				explain: (note, mode) =>
+					ex.run({
+						text: this.ranText,
+						mode,
+						scope: this.ranScope,
+						filters: [...this.filters],
+						sort: this.sort,
+						path: note?.path ?? null,
+						name: note?.name ?? "",
+						shown: note ? this.sectionOf(note.path) : null,
+					}),
+				find: (text) => ex.find(text),
+				keep: (e) => ex.keep(e),
+				support: () => ex.support(),
+				back: () => this.closeExplain(),
+			});
 		this.footEl = this.contentEl.createDiv({ cls: "jet-ft" });
 
 		this.inputEl.addEventListener("input", () => {

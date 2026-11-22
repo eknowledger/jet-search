@@ -192,6 +192,7 @@ export default class JetSearchPlugin extends Plugin {
 			}),
 		);
 		this.host.inNote = () => this.openInNote("");
+		this.host.support = () => this.supportInfo(true);
 		this.meaning = new Meaning(
 			this.app,
 			this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
@@ -280,8 +281,8 @@ export default class JetSearchPlugin extends Plugin {
 	}
 
 	/** The support info window: what Jet knows about itself, to read and copy. */
-	supportInfo(): void {
-		new SupportModal(this.app, this).open();
+	supportInfo(added = false): void {
+		new SupportModal(this.app, this, added).open();
 	}
 
 	/** Every window that holds a leaf (the main one too). */

@@ -87,7 +87,7 @@ export type Snapshot = {
 export type Line = { text: string; warn?: boolean };
 export type Section = { label: string; lines: Line[] };
 /** A line as drawn: the label column (padded; blank after the first line of a section) and the text. */
-export type Row = { label: string; text: string; warn: boolean; first: boolean };
+export type Row = { label: string; text: string; warn: boolean; first: boolean; section: string };
 
 const num = (n: number): string => n.toLocaleString("en-US");
 
@@ -357,6 +357,7 @@ export const layout = (sections: Section[]): Row[] => {
 			text: l.text,
 			warn: !!l.warn,
 			first: k === 0,
+			section: x.label,
 		})),
 	);
 };
