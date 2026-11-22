@@ -411,7 +411,7 @@ The honest short list. The reference has [the full one](architecture-reference.m
 * **Mobile is not officially supported yet.** `isDesktopOnly` is off. The code is written for mobile (8 ms slices, pause while hidden, a phone layout under `body.is-mobile` and `body.is-phone`, a start-up check in `src/compat.ts` for iOS 15.4 or Android WebView 98) and was checked on an emulated phone and in WebKit, not on a real phone.
 * **The modal is one large class** with state in separate booleans. A change to scopes, filters or meaning touches several handlers.
 * **Accessibility is partial.** Roles and `aria-activedescendant` are in place, but there is no live region to announce results, and it was not tried with a screen reader.
-* **The support tools are young.** The trace keeps the last 500 events, so a long recording keeps the end of it and not the start. The GitHub link has a budget of 6,000 characters, so a long report is pasted by hand, and the form reads the report's field only from the default branch. Explain re-runs the real query each time it asks, and asking for a meaning explanation after the worker has slept can answer "not ready" until meaning has loaded.
+* **The support tools are young.** The trace keeps the last 500 events, so a long recording keeps the end of it and not the start. The GitHub link has a budget of 6,000 characters, so a long report is pasted by hand, and the form reads the report's field only from the default branch. Explain re-runs the real query each time it asks.
 * **Release job** builds but runs no lint or tests.
 
 ## 15. Where to go next

@@ -1657,7 +1657,7 @@ The pane is opened with ⌘⇧E (`toggleExplain`, key action `explain`), from "E
 
 `ExplainPane` takes the place of the preview. It waits 120 ms after the last change in the list or the selection (`REST_MS`; no wait when it opens, a tab or the mode changes, or a note is picked), then asks `io.explain(note, mode)`. The window adds the search as it ran (`ranText`, `ranScope`, the filters, the sort, the note and the heading it is listed under), `JetHost.explain.run` adds the scope names and the sets of paths the scope and the filters keep, and `Explainer.run` does the rest:
 
-1. `await ensure()`: the index is open (it opens it if the worker slept).
+1. `await ensure()`: the index is open (it opens it if the worker slept). In meaning mode, `ensureMeaning()` then loads the model, as a search by meaning does.
 2. `client.explain({ mode, text, path, limit: 50, allow | scope })`. The worker op `explain` goes to `Router.explain`: in words mode to `JetEngine.explain`, which calls `explainWords`; in meaning mode to `explainMeaning`.
 3. Back on the main thread, the facts only it knows are added: an exclude rule from the settings (`excluder`), whether the note is in the scope, whether the filters keep it, whether it holds a quoted phrase (`filterPhrases` over one `cachedRead`), and the heading the window lists it under.
 4. `searchView` and `noteView` make the views.
@@ -2613,7 +2613,6 @@ What Jet does not do, and what is not yet verified. Where a number is known, it 
 - **Explain runs the real query again.** It costs one query, uncut (every matching note is scored and listed, not the top 50), plus lookups for each word, each time the pane asks. It is asked once per settled change while the pane is open, not per keystroke, and its cost on a large vault is measured by `npm run bench:explain` and not asserted by a test.
 - **Explain shows the figures of a text search even when the window did not run one.** With Title only on, the window asks no worker, but the pane still asks the text index, adds a note that only names are searched, and gives ranks of a search the window did not make. A note the window lists by its name, and the text search does not list, is told it is "listed under Titles", with no figures for the names tier.
 - **Explain does not cover every list.** The in-note window has none. The Answers list has no explanation of its own: a note the text search does not list but the window shows under another heading is told it is "listed under" that heading, "not by the text". The wording of the explanation is English only.
-- **Explaining by meaning after the worker slept can say "not ready".** `Explainer.run` opens the index (`ensure()`) but does not load the model (`ensureMeaning()`), and a fresh worker has none, so the reply is "Meaning is off, or its model is not installed" until a search by meaning loads it again. By reading the code; no test covers it.
 - **A report window open at unload stays open.** `onunload` closes Jet's search window but does not keep or close the report window; its trace listener is released only when that window is closed.
 
 ## 16. Contributing

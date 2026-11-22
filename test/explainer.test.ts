@@ -16,7 +16,11 @@ const note = (path: string, text: string): NoteInput => ({
 /** A client whose worker is a real engine, so the facts are real. */
 const rig = (
 	texts: Record<string, string>,
-	over: { exclude?: string[]; progress?: { done: number; total: number } | null } = {},
+	over: {
+		exclude?: string[];
+		progress?: { done: number; total: number } | null;
+		meaning?: () => Promise<boolean>;
+	} = {},
 ) => {
 	const engine = new JetEngine();
 	engine.build(Object.entries(texts).map(([p, t]) => note(p, t)));
@@ -46,6 +50,7 @@ const rig = (
 			ensured++;
 			return Promise.resolve();
 		},
+		ensureMeaning: over.meaning,
 		progress: () => over.progress ?? null,
 		excluded: () => over.exclude ?? [],
 	});
@@ -80,6 +85,20 @@ describe("the explainer", () => {
 		expect(asked).toHaveLength(1);
 		expect(x.note).toBeNull();
 		expect(x.search.head).toMatch(/hold every word/);
+	});
+
+	it("loads the model before explaining by meaning, and never for words", async () => {
+		let loaded = 0;
+		const meaning = () => {
+			loaded++;
+			return Promise.resolve(true);
+		};
+		const words = rig(texts, { meaning });
+		await words.explainer.run(req());
+		expect(loaded).toBe(0);
+		const m = rig(texts, { meaning });
+		await m.explainer.run(req({ mode: "meaning" })).catch(() => undefined);
+		expect(loaded).toBe(1);
 	});
 
 	it("explains a note left out for a missing word", async () => {
