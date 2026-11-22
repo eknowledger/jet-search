@@ -379,15 +379,12 @@ export const formatReport = (s: Snapshot): string =>
 		.map((r) => r.label + r.text)
 		.join("\n");
 
-/** The report for a GitHub issue: what happened, then the text in a code block. */
-export const formatForGithub = (s: Snapshot, what: string): string => {
-	const said = what.trim();
+/** The report as it goes into the bug report's form: the text in a code block, with the long timeline folded under it. */
+export const formatForIssue = (s: Snapshot): string => {
 	// The timeline is long: it goes in a block the reader opens, so the issue stays short.
 	const timeline = s.traceTimeline?.length ? s.traceTimeline : null;
 	const body = timeline ? { ...s, traceTimeline: null } : s;
 	return [
-		...(said ? ["**What happened**", said, ""] : []),
-		"**Support info**",
 		"```text",
 		formatReport(body),
 		"```",
@@ -404,4 +401,10 @@ export const formatForGithub = (s: Snapshot, what: string): string => {
 				]
 			: []),
 	].join("\n");
+};
+
+/** The report for a GitHub issue: what happened, then the report. */
+export const formatForGithub = (s: Snapshot, what: string): string => {
+	const said = what.trim();
+	return [...(said ? ["**What happened**", said, ""] : []), "**Support info**", formatForIssue(s)].join("\n");
 };

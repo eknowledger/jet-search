@@ -1055,7 +1055,7 @@ export class JetSettingTab extends PluginSettingTab {
 		const support = this.card(body, {
 			icon: "life-buoy",
 			name: "Support",
-			desc: "Make a report you can paste into a GitHub issue. Jet sends nothing anywhere: you read it, you copy it, you paste it.",
+			desc: "Make a report for a bug report. You read it first, then copy it or open a GitHub issue with it filled in. Jet sends nothing itself: you press Submit.",
 			aliases: "support info bug report debug diagnostics help problem",
 		});
 		this.button(support.row, "Preview and copy", () => this.owner.supportInfo(), "mod-cta");

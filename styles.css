@@ -2155,6 +2155,7 @@ table.jet-set-keys {
 .jet-support-buttons {
 	display: flex;
 	gap: 8px;
+	margin-left: auto;
 }
 /* The trace's controls, under the ticks of the side column */
 .jet-trace-box {

@@ -2,11 +2,13 @@ import { Modal, Notice, type App } from "obsidian";
 import type JetSearchPlugin from "../main";
 import { refreshStats } from "../index-status";
 import { collect } from "./collect";
+import { issueFacts, issueLink } from "./issue";
 import { trace } from "./trace";
 import { TraceBox } from "./trace-ui";
 import {
 	buildReport,
 	formatForGithub,
+	formatForIssue,
 	formatReport,
 	labelWidth,
 	layout,
@@ -105,15 +107,13 @@ export class SupportModal extends Modal {
 		const foot = body.createDiv({ cls: "jet-support-foot" });
 		foot.createSpan({
 			cls: "jet-support-note",
-			text: "Nothing leaves this device. You paste it where you choose.",
+			text: "Jet sends nothing. You press Submit on GitHub.",
 		});
 		const buttons = foot.createDiv({ cls: "jet-support-buttons" });
+		buttons.createEl("button", { text: "Copy as plain text" }).addEventListener("click", () => void this.copy());
 		buttons
-			.createEl("button", { text: "Copy as plain text" })
-			.addEventListener("click", () => void this.copy(false));
-		buttons
-			.createEl("button", { cls: "mod-cta", text: "Copy for GitHub" })
-			.addEventListener("click", () => void this.copy(true));
+			.createEl("button", { cls: "mod-cta", text: "Report on GitHub" })
+			.addEventListener("click", () => void this.reportOnGithub());
 	}
 
 	/** Read the report again and draw it. */
@@ -151,22 +151,55 @@ export class SupportModal extends Modal {
 	}
 
 	/** What a copy puts on the clipboard. */
-	text(github: boolean): string {
-		return github ? formatForGithub(this.snap, this.what.value) : formatReport(this.snap);
+	text(): string {
+		return formatReport(this.snap);
 	}
 
-	async copy(github: boolean): Promise<void> {
-		if (await copyText(this.text(github))) {
+	/**
+	 * Open a new bug report on GitHub in the browser with the form filled in. Jet posts nothing: the person
+	 * reads the page and presses Submit. A report too long for the link goes on the clipboard instead.
+	 */
+	async reportOnGithub(): Promise<void> {
+		const { url, filled } = issueLink({
+			...issueFacts(this.snap),
+			what: this.what.value,
+			support: formatForIssue(this.snap),
+		});
+		window.open(url, "_blank");
+		if (filled.support) {
+			new Notice("GitHub is open with the report filled in. Read it, then press Submit.");
+			return;
+		}
+		// What is not in the link goes on the clipboard, for the person to paste into the form.
+		const text = filled.what ? formatForGithub(this.snap, "") : formatForGithub(this.snap, this.what.value);
+		if (await copyText(text)) {
+			new Notice(
+				"GitHub is open. The report is too long for the link: it is on your clipboard, paste it into the Support info box.",
+			);
+			return;
+		}
+		this.selectReport(
+			"Jet could not copy by itself. The text is selected: press Ctrl/Cmd+C, then paste it into the Support info box on GitHub.",
+		);
+	}
+
+	async copy(): Promise<void> {
+		if (await copyText(this.text())) {
 			new Notice("Support info copied");
 			return;
 		}
+		this.selectReport("Jet could not copy by itself. The text is selected: press Ctrl/Cmd+C.");
+	}
+
+	/** Select the report in the window, so Ctrl/Cmd+C finishes a copy the platform would not allow. */
+	private selectReport(message: string): void {
 		// Selected, so Ctrl/Cmd+C finishes it.
 		const range = activeDocument.createRange();
 		range.selectNodeContents(this.pre);
 		const sel = window.getSelection();
 		sel?.removeAllRanges();
 		sel?.addRange(range);
-		new Notice("Jet could not copy by itself. The text is selected: press Ctrl/Cmd+C.");
+		new Notice(message);
 	}
 
 	onClose(): void {
