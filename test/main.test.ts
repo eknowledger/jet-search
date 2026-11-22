@@ -39,7 +39,14 @@ describe("plugin start", () => {
 	it("registers the two search commands", async () => {
 		const { plugin } = make();
 		await plugin.onload();
-		expect(plugin.commands.map((c) => c.id)).toEqual(["open", "open-in-note", "support-info", "explain"]);
+		expect(plugin.commands.map((c) => c.id)).toEqual([
+			"open",
+			"open-in-note",
+			"support-info",
+			"explain",
+			"trace-start",
+			"trace-stop",
+		]);
 		expect(plugin.commands[0]?.name).toBe("Search notes");
 	});
 
@@ -113,6 +120,7 @@ describe("settings tab", () => {
 			"Word forms",
 			"Folders to leave out",
 			"Support",
+			"Trace",
 			"Why is a note not found?",
 			"Version",
 		]);

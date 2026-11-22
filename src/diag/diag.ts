@@ -5,6 +5,7 @@
  * error's name, never its message: a message can carry a note's path.
  */
 import { errorName, errorWhere } from "./error-facts";
+import { KIND, trace } from "./trace";
 
 export { errorName, errorWhere };
 
@@ -54,18 +55,22 @@ class Diag {
 	workerStarted(): void {
 		this.workerStarts++;
 		this.workerSince = Date.now();
+		if (trace.on) trace.add(KIND.workerStart);
 	}
 
 	workerStopped(): void {
 		this.workerSince = null;
+		if (trace.on) trace.add(KIND.workerStop);
 	}
 
 	workerCrashed(): void {
 		this.workerCrashes++;
+		if (trace.on) trace.add(KIND.workerCrash);
 	}
 
 	slept(): void {
 		this.sleeps++;
+		if (trace.on) trace.add(KIND.workerSleep);
 	}
 
 	/** Record a caught error: the same one again in a row only counts. */
@@ -79,6 +84,7 @@ class Diag {
 	}
 
 	private record(code: string, level: Problem["level"], error: string, where: string | null): void {
+		if (trace.on) trace.add(KIND.problem, 0, 0, 0, 0, level === "warn" ? 1 : 0, code);
 		const last = this.problems[this.problems.length - 1];
 		if (last && last.code === code && last.error === error && last.level === level && last.where === where) {
 			last.count++;

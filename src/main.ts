@@ -28,6 +28,8 @@ import { setMac, tapLabel } from "./keys/keymap";
 import { JetClient } from "./worker/jet-client";
 import { diag, fail, noted } from "./diag/diag";
 import { SupportModal } from "./diag/support-modal";
+import { KIND, trace } from "./diag/trace";
+import { TraceIndicator, tell } from "./diag/trace-ui";
 import { Explainer } from "./explain/explainer";
 import { keepExplained } from "./explain/last";
 
@@ -76,6 +78,8 @@ export default class JetSearchPlugin extends Plugin {
 	/** Set first thing at unload; `built` once onload has made everything onunload stops. */
 	private unloaded = false;
 	private built = false;
+	/** The status bar line while a trace records (nothing exists until one does). */
+	private readonly traceIndicator = new TraceIndicator(this);
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
 
 	async onload(): Promise<void> {
@@ -88,6 +92,15 @@ export default class JetSearchPlugin extends Plugin {
 		// Turned off while its data was read: nothing is made.
 		if (this.unloaded) return;
 		this.data = normalizeData(raw);
+		// A trace starts or ends: the status line, the notice and the settings follow.
+		this.register(trace.onChange(() => this.traceChanged()));
+		// Asked for at the last session: record this start, once.
+		if (this.data.settings.traceNextStart) {
+			this.data.settings.traceNextStart = false;
+			void this.saveData(this.data);
+			trace.start(this.data.settings.traceMinutes);
+			if (trace.on) trace.add(KIND.mark, 0, 0, 0, 0, 0, "plugin loaded");
+		}
 		// Key hints as this platform writes them (⌘C on macOS, Ctrl+C elsewhere).
 		setMac(Platform.isMacOS);
 		// The first run: Jade's search settings, once. A file read only then.
@@ -217,6 +230,24 @@ export default class JetSearchPlugin extends Plugin {
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
 		this.addCommand({ id: "support-info", name: "Copy support info", callback: () => this.supportInfo() });
 		this.addCommand({ id: "explain", name: "Explain why a note is found", callback: () => this.explainSearch() });
+		this.addCommand({
+			id: "trace-start",
+			name: "Start recording a trace",
+			checkCallback: (checking) => {
+				if (trace.on) return false;
+				if (!checking) trace.start(this.data.settings.traceMinutes);
+				return true;
+			},
+		});
+		this.addCommand({
+			id: "trace-stop",
+			name: "Stop recording a trace",
+			checkCallback: (checking) => {
+				if (!trace.on) return false;
+				if (!checking) trace.stop("user");
+				return true;
+			},
+		});
 		this.settingTab = new JetSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
 		// Search by meaning's progress in its settings, while they are on screen (at most twice a second).
@@ -258,6 +289,8 @@ export default class JetSearchPlugin extends Plugin {
 
 	onunload(): void {
 		this.unloaded = true;
+		trace.stop("unload");
+		this.traceIndicator.hide();
 		keepExplained(null);
 		this.app.workspace.trigger("jet-search:off");
 		if (!this.built) return;
@@ -278,6 +311,14 @@ export default class JetSearchPlugin extends Plugin {
 	explainSearch(): void {
 		this.open(this.data.searches[0] ?? "");
 		this.modal?.explainNow();
+	}
+
+	/** A trace began or ended. */
+	private traceChanged(): void {
+		if (trace.on) this.traceIndicator.show();
+		else this.traceIndicator.hide();
+		tell();
+		if (this.built) this.settingTab.refresh();
 	}
 
 	/** The support info window: what Jet knows about itself, to read and copy. */
@@ -407,6 +448,7 @@ export default class JetSearchPlugin extends Plugin {
 	}
 
 	private listen(): void {
+		if (trace.on) trace.add(KIND.mark, 0, 0, 0, 0, 0, "layout ready");
 		// The layout got ready after Jet was turned off (Obsidian's startup queue): nothing to do.
 		if (this.unloaded) return;
 		// Stand-ins for Omnisearch's ids, so its hotkeys and double-Shift bindings open Jet.

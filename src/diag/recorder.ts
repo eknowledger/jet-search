@@ -1,3 +1,5 @@
+import { KIND, trace } from "./trace";
+
 /**
  * The flight recorder: the last 100 searches as numbers, for the support info. One search is a row of
  * seven floats and three small integers in two typed arrays that are made on the first search, so nothing
@@ -21,6 +23,12 @@ export const FLAG = {
 	/** The query held a quoted phrase. */
 	phrase: 128,
 } as const;
+
+/**
+ * A search event in the trace carries how long the query was in the flags' high byte (255 at most), so the
+ * timeline shows one row per keystroke as such. A length is a number: no word of the query is kept.
+ */
+export const SEARCH_CHARS = 8;
 
 /** The words in a text (runs of non-space characters), counted without making a list. */
 export const wordCount = (text: string): number => {
@@ -107,6 +115,8 @@ export class Recorder {
 		prepare: number,
 		excerpts: number,
 	): void {
+		if (trace.on)
+			trace.add(KIND.search, total, ready, worker, hits, flags | (Math.min(chars, 255) << SEARCH_CHARS));
 		const f = (this.f ??= new Float32Array(KEEP * F));
 		const u = (this.u ??= new Uint16Array(KEEP * U));
 		const i = this.n % KEEP;

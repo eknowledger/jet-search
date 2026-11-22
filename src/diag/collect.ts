@@ -5,6 +5,8 @@ import { knownStats } from "../index-status";
 import { appearanceFacts, enabledPluginIds, hotkeyLabel, internalsFound, tapOwnerElsewhere } from "../internals";
 import { diag } from "./diag";
 import { recorder } from "./recorder";
+import { trace } from "./trace";
+import { summarize, timelineLines } from "./trace-report";
 import { keptExplained } from "../explain/last";
 import { NO_OPTIONS, type Phase, type ReportOptions, type Snapshot } from "./report";
 
@@ -74,6 +76,8 @@ export const collect = (plugin: JetSearchPlugin, now = Date.now(), opts: ReportO
 	const look = appearanceFacts(plugin.app);
 	const plugins = enabledPluginIds(plugin.app);
 	const heap = (performance as unknown as Heap).memory;
+	const traced = trace.state();
+	const events = traced.startedAt === null ? null : trace.list();
 	const nav = navigator as Navigator & { deviceMemory?: number };
 	const win = activeDocument.defaultView ?? window;
 	return {
@@ -155,6 +159,8 @@ export const collect = (plugin: JetSearchPlugin, now = Date.now(), opts: ReportO
 			openedNotes: Object.keys(plugin.data.opened).length,
 		},
 		searches: recorder.summary(),
+		trace: events ? summarize(events, traced, now) : null,
+		traceTimeline: events && opts.traceTimeline ? timelineLines(events) : null,
 		explain: keptExplained()?.lines(opts.explainNames) ?? null,
 		internals,
 		problems: diag.problems.map((p) => ({ ...p })),

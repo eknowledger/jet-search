@@ -335,7 +335,12 @@ export class App {
 
 export type PluginManifest = { id: string; name: string; version: string; dir?: string };
 
-export type Command = { id: string; name: string; callback?: () => unknown };
+export type Command = {
+	id: string;
+	name: string;
+	callback?: () => unknown;
+	checkCallback?: (checking: boolean) => boolean | void;
+};
 
 export class Component {
 	private cleanups: (() => void)[] = [];
@@ -389,6 +394,14 @@ export class Plugin extends Component {
 	addCommand(command: Command): Command {
 		this.commands.push(command);
 		return command;
+	}
+
+	/** Items added to the status bar (desktop); removing one takes it out of the document too. */
+	addStatusBarItem(): HTMLElement {
+		const item = document.createElement("div");
+		item.className = "status-bar-item";
+		document.body.appendChild(item);
+		return item;
 	}
 
 	addSettingTab(tab: PluginSettingTab): void {

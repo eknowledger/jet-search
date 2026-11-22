@@ -34,6 +34,7 @@ import { openScopeEditor, settingRow } from "./settings/scope-editor";
 import { addScope, MODE_LABEL, type ScopesHost } from "./settings/scopes-page";
 import type JetSearchPlugin from "./main";
 import { fail } from "./diag/diag";
+import { TRACE_MINUTES, trace } from "./diag/trace";
 
 const LANGUAGE_NAMES: Record<string, string> = {
 	en: "English",
@@ -94,6 +95,8 @@ export class JetSettingTab extends PluginSettingTab {
 			const a = KEY_ACTIONS.find((x) => x.id === key.slice(KEY.length));
 			return a ? comboLabel(keyMap(s.keys)[a.id]) : undefined;
 		}
+		if (key === "traceMinutes") return String(s.traceMinutes);
+		if (key === "traceNextStart") return s.traceNextStart;
 		if (key === "scopesWhenNew") return s.scopesWhenNew;
 		if (key === "scopeMode") return s.scopeMode;
 		if (key === "scopeAnother") return s.scopeAnother;
@@ -157,6 +160,17 @@ export class JetSettingTab extends PluginSettingTab {
 				.set(value === true)
 				.catch((e: unknown) => fail("meaning.switch", "Jet Search: search by meaning could not be switched", e))
 				.then(() => this.redraw());
+			return;
+		}
+		if (key === "traceMinutes") {
+			const n = Number(value);
+			if ((TRACE_MINUTES as readonly number[]).includes(n)) s.traceMinutes = n;
+			this.owner.save();
+			return;
+		}
+		if (key === "traceNextStart") {
+			s.traceNextStart = value === true;
+			this.owner.save();
 			return;
 		}
 		if (key === "questionShows") {
@@ -1045,6 +1059,32 @@ export class JetSettingTab extends PluginSettingTab {
 			aliases: "support info bug report debug diagnostics help problem",
 		});
 		this.button(support.row, "Preview and copy", () => this.owner.supportInfo(), "mod-cta");
+		const rec = trace.state();
+		const tr = this.card(body, {
+			icon: "activity",
+			name: "Trace",
+			desc: rec.recording
+				? `Recording until ${new Date(rec.endsAt ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. It stops by itself, or press Stop.`
+				: "Record what Jet does for a few minutes: timings and events, kept in memory, never a word of a search or a note name. It goes into the support info.",
+			aliases: "trace record log timeline events slow performance startup debug",
+		});
+		if (rec.recording) this.button(tr.row, "Stop recording", () => trace.stop("user"));
+		else {
+			this.dropdown(
+				tr.row,
+				"traceMinutes",
+				TRACE_MINUTES.map((m) => [String(m), `${m} minutes`] as const),
+			);
+			this.button(tr.row, "Record", () => trace.start(this.owner.data.settings.traceMinutes), "mod-cta");
+		}
+		this.toggle(
+			settingRow(
+				tr.opts(),
+				"Also record the next start",
+				"For a problem that happens while Obsidian starts. It records once, then turns itself off.",
+			),
+			"traceNextStart",
+		);
 		const why = this.card(body, {
 			icon: "circle-help",
 			name: "Why is a note not found?",

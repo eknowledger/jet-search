@@ -37,6 +37,8 @@ import { parseScope } from "./scopes/parse";
 import { joinNames, unionOf, type Where, whereIds } from "./scopes/where";
 import { comboLabel, type KeyAction, type KeyMap, keyMap, tapLabel } from "./keys/keymap";
 import { MODE_LABEL } from "./settings/scopes-page";
+import { TRACE_MINUTES, trace } from "./diag/trace";
+import { leftText } from "./diag/trace-ui";
 import type { Search } from "./search";
 import type { IndexStatus } from "./index-status";
 import { fail } from "./diag/diag";
@@ -683,6 +685,7 @@ export class JetHost implements ModalHost {
 			const manage = sc.createSpan({ cls: "jet-manage", text: "Manage ↗", attr: { role: "button" } });
 			manage.addEventListener("click", () => this.manageScopes?.());
 		}
+		this.traceRow(row("Trace", ""), s);
 		if (!this.index) return;
 		const card = el.createDiv({ cls: "jet-idx" });
 		const head = card.createDiv({ cls: "jet-ir" });
@@ -708,6 +711,40 @@ export class JetHost implements ModalHost {
 			state.setText("Rebuilding…");
 			void index.rebuild().then(() => index.status().then(fill));
 		});
+	}
+
+	/** The popover's trace row: how long to record, and a Record or Stop that follows the trace. */
+	private traceRow(r: HTMLElement, s: JetData["settings"]): void {
+		const desc = r.querySelector<HTMLElement>(".jet-sids");
+		const draw = (): void => {
+			r.querySelectorAll(".jet-tc").forEach((x) => x.remove());
+			const st = trace.state();
+			desc?.setText(
+				st.recording
+					? `Recording, ${leftText((st.endsAt ?? Date.now()) - Date.now())} left`
+					: "Capture debug events",
+			);
+			if (!st.recording) {
+				const sel = r.createEl("select", { cls: "dropdown jet-tc" });
+				for (const m of TRACE_MINUTES) sel.createEl("option", { text: `${m} min`, attr: { value: String(m) } });
+				sel.value = String(s.traceMinutes);
+				sel.addEventListener("change", () => {
+					s.traceMinutes = Number(sel.value);
+					this.save();
+				});
+			}
+			const go = r.createSpan({
+				cls: "jet-manage jet-tc",
+				text: st.recording ? "Stop" : "Record",
+				attr: { role: "button" },
+			});
+			go.addEventListener("click", () => {
+				if (trace.on) trace.stop("user");
+				else trace.start(s.traceMinutes);
+				draw();
+			});
+		};
+		draw();
 	}
 
 	list(

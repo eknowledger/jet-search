@@ -6,7 +6,7 @@ import { diag } from "../src/diag/diag";
 import { recorder } from "../src/diag/recorder";
 import { keepExplained } from "../src/explain/last";
 import { collect } from "../src/diag/collect";
-import { formatReport } from "../src/diag/report";
+import { formatReport, NO_OPTIONS } from "../src/diag/report";
 
 const manifest = { id: "jet-search", name: "Jet Search", version: "0.7.1" };
 
@@ -64,7 +64,7 @@ describe("the support info", () => {
 			lines: (names) => (names ? ['search "walnut kiosk"'] : ["the search", "word#1 word#2"]),
 		});
 		expect(collect(plugin).explain).toEqual(["the search", "word#1 word#2"]);
-		const named = collect(plugin, Date.now(), { scopeNames: false, pluginNames: false, explainNames: true });
+		const named = collect(plugin, Date.now(), { ...NO_OPTIONS, explainNames: true });
 		expect(named.explain).toEqual(['search "walnut kiosk"']);
 		keepExplained(null);
 		expect(collect(plugin).explain).toBeNull();
@@ -216,10 +216,26 @@ describe("the support info", () => {
 		const modal = document.querySelector(".jet-support-modal");
 		expect(modal?.querySelector(".jet-support-lead")).toBeNull();
 		const buttons = [...(modal?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-		expect(buttons).toEqual(["Copy as plain text", "Copy for GitHub"]);
+		expect(buttons).toEqual(["Record", "Copy as plain text", "Copy for GitHub"]);
 		expect(modal?.querySelector(".jet-support-side")?.textContent).toContain("Add to the report");
-		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(3);
+		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(4);
 		expect(modal?.querySelector(".jet-support-foot")?.textContent).toContain("Nothing leaves this device");
+	});
+
+	it("puts the sentence on what happened in its own card across the window, and the trace under the ticks", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		plugin.supportInfo();
+		const modal = document.querySelector(".jet-support-modal");
+		const card = modal?.querySelector(".jet-support-what-card");
+		expect(card?.textContent).toContain("What happened");
+		expect(card?.querySelector("textarea")).not.toBeNull();
+		expect(modal?.querySelector(".jet-support-side textarea")).toBeNull();
+		expect(card?.nextElementSibling?.className).toContain("jet-support-body");
+		const side = modal?.querySelector(".jet-support-side");
+		expect(side?.lastElementChild?.className).toContain("jet-trace-box");
+		expect(side?.querySelectorAll(":scope > .jet-support-tick")).toHaveLength(3);
+		expect(side?.firstElementChild?.textContent).toBe("Add to the report");
 	});
 
 	it("says what was added, and marks the explanation's lines, when it is shown after adding one", async () => {
@@ -276,7 +292,9 @@ describe("the support info", () => {
 		const text = () => [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
 		expect(text()).not.toContain("secret-sauce");
 		expect(text()).not.toContain("Nebula Payroll");
-		const [scopes, plugins] = [...document.querySelectorAll<HTMLInputElement>(".jet-support-side input")];
+		const [scopes, plugins] = [
+			...document.querySelectorAll<HTMLInputElement>(".jet-support-side input[type=checkbox]"),
+		];
 		scopes!.checked = true;
 		scopes!.dispatchEvent(new Event("change"));
 		expect(text()).toContain("Nebula Payroll");
