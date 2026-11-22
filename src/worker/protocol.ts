@@ -1,6 +1,8 @@
 import type { AnswerCandidate, AnswerResult } from "../answers/answers";
 import type { RawNote } from "../engine/fields";
+import type { WordsExplanation } from "../engine/explain";
 import type { Hit } from "../engine/jet-engine";
+import type { MeaningExplanation } from "../meaning/explain";
 
 /**
  * Messages between the main thread and the search worker. Every request carries
@@ -55,6 +57,20 @@ export type Request =
 	/** The notes nearest to a question, best first (`scope` / `allow` as for a query). */
 	| { op: "nearest"; seq: number; text: string; k: number; allow?: string[]; scope?: string | string[] }
 	/**
+	 * Why a search lists what it does, and why one note (`path`) is where it is or not there. Only asked for;
+	 * `scope` / `allow` as for a query, `limit` is what the window lists.
+	 */
+	| {
+			op: "explain";
+			mode: "words" | "meaning";
+			text: string;
+			path: string | null;
+			limit: number;
+			now: number;
+			allow?: string[];
+			scope?: string | string[];
+	  }
+	/**
 	 * Answers (experiment): where a question's answer is looked for: the first `k` notes by its content
 	 * words (notes with some of them too) and the first `k` by meaning (none while meaning is off).
 	 */
@@ -88,6 +104,8 @@ export type QueryReply = {
 	broken?: boolean;
 };
 export type NearReply = { seq: number; near: Array<{ path: string; score: number }>; ms: number; stale?: boolean };
+/** What `explain` answers: the facts of the words search or of the search by meaning. */
+export type ExplainReply = WordsExplanation | MeaningExplanation;
 export type AnswerPoolReply = { words: string[]; meaning: string[] };
 /** The notes with their lines, best first, and the order to show them in. */
 export type AnswersReply = { seq: number; ranked: AnswerResult[]; order: string[]; ms: number; stale?: boolean };
@@ -99,23 +117,25 @@ export type Reply<R extends Request> = R extends { op: "open" }
 		? QueryReply
 		: R extends { op: "nearest" }
 			? NearReply
-			: R extends { op: "answers:pool" }
-				? AnswerPoolReply
-				: R extends { op: "answers:rank" }
-					? AnswersReply
-					: R extends { op: "meaning:missing" }
-						? string[]
-						: R extends { op: "meaning:load" }
-							? { notes: number; missing: number; vectors: number }
-							: R extends { op: "mtimes" }
-								? Array<[string, number]>
-								: R extends { op: "suggest" }
-									? { text: string | null; notes: number }
-									: R extends { op: "stats" }
-										? Stats
-										: R extends { op: "mentions" }
-											? { notes: number; inside: number }
-											: { notes: number };
+			: R extends { op: "explain" }
+				? ExplainReply
+				: R extends { op: "answers:pool" }
+					? AnswerPoolReply
+					: R extends { op: "answers:rank" }
+						? AnswersReply
+						: R extends { op: "meaning:missing" }
+							? string[]
+							: R extends { op: "meaning:load" }
+								? { notes: number; missing: number; vectors: number }
+								: R extends { op: "mtimes" }
+									? Array<[string, number]>
+									: R extends { op: "suggest" }
+										? { text: string | null; notes: number }
+										: R extends { op: "stats" }
+											? Stats
+											: R extends { op: "mentions" }
+												? { notes: number; inside: number }
+												: { notes: number };
 
 export type Envelope = { id: number; req: Request };
 /**

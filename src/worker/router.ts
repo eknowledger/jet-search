@@ -4,10 +4,11 @@ import { JetEngine } from "../engine/jet-engine";
 import { parseQuery } from "../engine/query";
 import { STEM_LANGUAGES, type StemLanguage } from "../engine/stem";
 import { docText } from "../meaning/doc";
+import { explainMeaning } from "../meaning/explain";
 import { embed, type MeaningModel, unpackModel } from "../meaning/model";
 import { Vectors } from "../meaning/vectors";
 import type { RawNote } from "../engine/fields";
-import type { AnswerPoolReply, AnswersReply, NearReply, QueryReply, Request, Stats } from "./protocol";
+import type { AnswerPoolReply, AnswersReply, ExplainReply, NearReply, QueryReply, Request, Stats } from "./protocol";
 import type { Store } from "./store";
 
 /**
@@ -154,6 +155,8 @@ export class Router {
 				return this.query(req);
 			case "nearest":
 				return this.nearest(req);
+			case "explain":
+				return this.explain(req);
 			case "answers:pool":
 				return this.answerPool(req);
 			case "answers:rank":
@@ -301,6 +304,45 @@ export class Router {
 		const allow = this.allowOf(req);
 		const near = m.vectors.nearest(q, req.k, allow ? (p) => allow.has(p) : undefined);
 		return { seq: req.seq, near, ms: performance.now() - t0 };
+	}
+
+	/** Why a search lists what it does, and where one note stands in it. Only runs when asked. */
+	explain(req: Extract<Request, { op: "explain" }>): ExplainReply {
+		const allow = this.allowOf(req);
+		const keep = allow ? (p: string) => allow.has(p) : undefined;
+		if (req.mode === "words")
+			return this.engine.explain(parseQuery(req.text), req.path, { limit: req.limit, now: req.now, allow: keep });
+		const m = this.meaning;
+		const indexedMtime = req.path === null ? undefined : this.engine.mtimeOf(req.path);
+		if (!m)
+			return {
+				kind: "meaning",
+				on: false,
+				model: null,
+				vectors: { have: 0, indexed: this.engine.size },
+				understood: false,
+				list: { scored: 0, k: req.limit, best: null, cut: null },
+				note:
+					req.path === null
+						? null
+						: {
+								indexed: indexedMtime !== undefined,
+								allowed: keep ? keep(req.path) : true,
+								vector: "waiting",
+								rank: null,
+								score: null,
+							},
+			};
+		return explainMeaning({
+			vectors: m.vectors,
+			model: m.model.id,
+			query: embed(m.model, req.text, 64),
+			path: req.path,
+			k: req.limit,
+			indexed: this.engine.size,
+			indexedMtime,
+			allow: keep,
+		});
 	}
 
 	/** Answers (experiment): the notes words and meaning give a question, before the re-rank. */
