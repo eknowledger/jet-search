@@ -7,6 +7,10 @@
 import { performance } from "node:perf_hooks";
 import { diag } from "../src/diag/diag";
 import { FLAG, Recorder } from "../src/diag/recorder";
+import { KIND, trace } from "../src/diag/trace";
+
+// A trace names the page's two timer calls; this run has no page, so give it the same ones.
+(globalThis as unknown as { window: unknown }).window = { setTimeout, clearTimeout };
 
 const N = 20_000_000;
 const ROUNDS = 7;
@@ -105,6 +109,46 @@ const cases: Array<[string, (n: number) => number]> = [
 		},
 	],
 	[
+		"a trace that is off: the `trace.on` test callers make",
+		(n) => {
+			let x = 0;
+			trace.reset();
+			for (let i = 0; i < n; i++) {
+				if (trace.on) trace.add(KIND.search, 1);
+				x += i & 1;
+			}
+			return x;
+		},
+	],
+	[
+		"a trace recording: one event added (kind, four values, flags, a clock read)",
+		(n) => {
+			let x = 0;
+			trace.reset();
+			trace.start(60);
+			for (let i = 0; i < n; i++) {
+				if (trace.on) trace.add(KIND.search, 12, 1, 6, 40, 1);
+				x += i & 1;
+			}
+			trace.reset();
+			return x;
+		},
+	],
+	[
+		"the flight recorder's add, with a trace recording as well",
+		(n) => {
+			let x = 0;
+			trace.reset();
+			trace.start(60);
+			for (let i = 0; i < n; i++) {
+				rec.add(FLAG.words, 12, 2, 5, 14, 1, 6, 1, 2, 4);
+				x += i & 1;
+			}
+			trace.reset();
+			return x;
+		},
+	],
+	[
 		"a problem recorded, same one again (counts up)",
 		(n) => {
 			let x = 0;
@@ -127,6 +171,17 @@ for (const [name, fn] of cases)
 			.toFixed(2)
 			.padStart(10),
 	);
+
+// What a trace gives back when a report is asked for, never while it records.
+trace.reset();
+trace.start(60);
+for (let i = 0; i < 500; i++) trace.add(KIND.search, 12, 1, 6, 40, 1);
+const t1 = performance.now();
+for (let i = 0; i < 2_000; i++) sink += trace.list().length;
+console.log(
+	`\ntrace.list() of 500 events (only when a report is asked for): ${(((performance.now() - t1) * 1000) / 2_000).toFixed(1)} us`,
+);
+trace.reset();
 
 // Reading the recorder happens when a report is asked for, never while searching.
 for (let i = 0; i < 100; i++) rec.add(FLAG.words, 12, 2, 5, 14 + (i % 17), 1, 6, 1, 2, 4);
