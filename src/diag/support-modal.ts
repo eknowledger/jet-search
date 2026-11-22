@@ -28,6 +28,16 @@ const copyText = async (text: string): Promise<boolean> => {
 };
 
 /**
+ * Open a web page in the browser. A link that is clicked is the one way every platform opens (and
+ * Obsidian hands to the browser itself); window.open does nothing on desktop Obsidian.
+ */
+const openLink = (url: string): void => {
+	const a = activeDocument.body.createEl("a", { attr: { href: url, target: "_blank", rel: "noopener" } });
+	a.click();
+	a.remove();
+};
+
+/**
  * The support info on screen: exactly the text that a copy puts on the clipboard (labels coloured here,
  * plain in the copy), what the user may add to it, and an optional sentence on what happened. Nothing is
  * sent anywhere. It is read when the window opens and again when a tick box changes.
@@ -161,7 +171,7 @@ export class SupportModal extends Modal {
 			what: this.what.value,
 			support: formatForIssue(this.snap),
 		});
-		window.open(url, "_blank");
+		openLink(url);
 		if (filled.support) {
 			new Notice("GitHub is open with the report filled in. Press Submit when ready.");
 			return;

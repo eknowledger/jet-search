@@ -19,6 +19,15 @@ const make = (): { app: App; plugin: Mocked } => {
 	return { app, plugin };
 };
 
+/** The pages a click on a link would open (the test environment has no browser to open them in). */
+const spyOnLinks = (): string[] => {
+	const opened: string[] = [];
+	vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+		opened.push(this.href);
+	});
+	return opened;
+};
+
 describe("the support info", () => {
 	let workers = 0;
 
@@ -113,7 +122,7 @@ describe("the support info", () => {
 		await plugin.onload();
 		const written: string[] = [];
 		vi.stubGlobal("navigator", { clipboard: { writeText: (t: string) => (written.push(t), Promise.resolve()) } });
-		const open = vi.spyOn(window, "open").mockReturnValue(null);
+		const open = spyOnLinks();
 		plugin.supportInfo();
 		const what = document.querySelector<HTMLTextAreaElement>(".jet-support-what");
 		if (what) what.value = "Double Shift does nothing";
@@ -122,8 +131,8 @@ describe("the support info", () => {
 			.find((b) => b.textContent === "Open on GitHub")
 			?.click();
 		await Promise.resolve();
-		expect(open).toHaveBeenCalledTimes(1);
-		const url = new URL(String(open.mock.calls[0]?.[0]));
+		expect(open).toHaveLength(1);
+		const url = new URL(String(open[0]));
 		expect(url.origin + url.pathname).toBe("https://github.com/eknowledger/jet-search/issues/new");
 		expect(url.searchParams.get("template")).toBe("bug_report.yml");
 		expect(url.searchParams.get("what")).toBe("Double Shift does nothing");
@@ -140,7 +149,7 @@ describe("the support info", () => {
 		await plugin.onload();
 		const written: string[] = [];
 		vi.stubGlobal("navigator", { clipboard: { writeText: (t: string) => (written.push(t), Promise.resolve()) } });
-		const open = vi.spyOn(window, "open").mockReturnValue(null);
+		const open = spyOnLinks();
 		trace.start(5);
 		for (let i = 0; i < 300; i++) trace.add(KIND.search, 5 + (i % 7), 0.2, 1, 40, 1 | (4 << 8));
 		trace.stop("user");
@@ -151,7 +160,7 @@ describe("the support info", () => {
 			.find((b) => b.textContent === "Open on GitHub")
 			?.click();
 		await new Promise((r) => setTimeout(r, 0));
-		const url = new URL(String(open.mock.calls[0]?.[0]));
+		const url = new URL(String(open[0]));
 		expect(url.href.length).toBeLessThanOrEqual(6000);
 		expect(url.searchParams.get("what")).toBe("It is slow");
 		expect(url.searchParams.has("support")).toBe(false);
