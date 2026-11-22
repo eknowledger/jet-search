@@ -6,7 +6,7 @@ import { diag } from "../src/diag/diag";
 import { recorder } from "../src/diag/recorder";
 import { keepExplained } from "../src/explain/last";
 import { collect } from "../src/diag/collect";
-import { formatReport } from "../src/diag/report";
+import { formatReport, NO_OPTIONS } from "../src/diag/report";
 
 const manifest = { id: "jet-search", name: "Jet Search", version: "0.7.1" };
 
@@ -64,7 +64,7 @@ describe("the support info", () => {
 			lines: (names) => (names ? ['search "walnut kiosk"'] : ["the search", "word#1 word#2"]),
 		});
 		expect(collect(plugin).explain).toEqual(["the search", "word#1 word#2"]);
-		const named = collect(plugin, Date.now(), { scopeNames: false, pluginNames: false, explainNames: true });
+		const named = collect(plugin, Date.now(), { ...NO_OPTIONS, explainNames: true });
 		expect(named.explain).toEqual(['search "walnut kiosk"']);
 		keepExplained(null);
 		expect(collect(plugin).explain).toBeNull();
@@ -216,9 +216,9 @@ describe("the support info", () => {
 		const modal = document.querySelector(".jet-support-modal");
 		expect(modal?.querySelector(".jet-support-lead")).toBeNull();
 		const buttons = [...(modal?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-		expect(buttons).toEqual(["Copy as plain text", "Copy for GitHub"]);
+		expect(buttons).toEqual(["Record", "Copy as plain text", "Copy for GitHub"]);
 		expect(modal?.querySelector(".jet-support-side")?.textContent).toContain("Add to the report");
-		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(3);
+		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(4);
 		expect(modal?.querySelector(".jet-support-foot")?.textContent).toContain("Nothing leaves this device");
 	});
 
@@ -276,7 +276,9 @@ describe("the support info", () => {
 		const text = () => [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
 		expect(text()).not.toContain("secret-sauce");
 		expect(text()).not.toContain("Nebula Payroll");
-		const [scopes, plugins] = [...document.querySelectorAll<HTMLInputElement>(".jet-support-side input")];
+		const [, scopes, plugins] = [
+			...document.querySelectorAll<HTMLInputElement>(".jet-support-side input[type=checkbox]"),
+		];
 		scopes!.checked = true;
 		scopes!.dispatchEvent(new Event("change"));
 		expect(text()).toContain("Nebula Payroll");

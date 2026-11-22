@@ -2147,6 +2147,58 @@ table.jet-set-keys {
 	display: flex;
 	gap: 8px;
 }
+/* The trace's controls, at the top of the side column */
+.jet-trace-box {
+	margin-bottom: 14px;
+	padding: 9px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background-color: var(--background-primary);
+}
+.jet-trace-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	font-weight: 600;
+	font-size: var(--font-ui-small);
+}
+.jet-trace-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	margin-right: 6px;
+	border-radius: 50%;
+	background-color: var(--color-red);
+}
+.jet-trace-state {
+	margin: 3px 0 8px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.4;
+}
+.jet-trace-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 4px;
+}
+.jet-trace-row select {
+	flex: 1 1 90px;
+	min-width: 0;
+}
+.status-bar-item.jet-trace-status {
+	color: var(--text-normal);
+	cursor: pointer;
+}
+.status-bar-item.jet-trace-status::before {
+	content: "";
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	margin-right: 5px;
+	border-radius: 50%;
+	background-color: var(--color-red);
+}
 @media (max-width: 600px) {
 	.jet-support-body {
 		grid-template-columns: minmax(0, 1fr);
@@ -2452,6 +2504,12 @@ table.jet-set-keys {
 /* The footer's key hints (Enter, Cmd-Enter, Esc) need a keyboard and do not fit a phone's width. */
 body.is-phone .modal.jet-modal .jet-ft {
 	display: none;
+}
+
+/* The trace's controls are buttons a finger can press. */
+body.is-mobile .jet-trace-row button,
+body.is-mobile .jet-trace-row select {
+	min-height: 44px;
 }
 
 /* A finger needs 44 px. Controls keep their look; a transparent area around each reaches 44. */

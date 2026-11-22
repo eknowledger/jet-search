@@ -2,6 +2,8 @@ import { Modal, Notice, type App } from "obsidian";
 import type JetSearchPlugin from "../main";
 import { refreshStats } from "../index-status";
 import { collect } from "./collect";
+import { trace } from "./trace";
+import { TraceBox } from "./trace-ui";
 import {
 	buildReport,
 	formatForGithub,
@@ -33,6 +35,8 @@ export class SupportModal extends Modal {
 	private snap: Snapshot;
 	private pre!: HTMLElement;
 	private what!: HTMLTextAreaElement;
+	private traceBox: TraceBox | null = null;
+	private offTrace: (() => void) | null = null;
 
 	constructor(
 		app: App,
@@ -70,6 +74,19 @@ export class SupportModal extends Modal {
 			});
 
 		const side = grid.createDiv({ cls: "jet-support-side" });
+		this.traceBox = new TraceBox(side, this.plugin, {
+			get: () => this.opts.traceTimeline,
+			set: (on) => {
+				this.opts.traceTimeline = on;
+				this.again();
+			},
+		});
+		// A trace that starts or ends (by itself too) changes the box and the report.
+		this.offTrace = trace.onChange(() => {
+			if (!this.pre.isConnected) return;
+			this.traceBox?.update();
+			this.again();
+		});
 		side.createEl("h4", { text: "Add to the report" });
 		side.createDiv({
 			cls: "jet-support-hint",
@@ -96,6 +113,12 @@ export class SupportModal extends Modal {
 		buttons
 			.createEl("button", { cls: "mod-cta", text: "Copy for GitHub" })
 			.addEventListener("click", () => void this.copy(true));
+	}
+
+	/** Read the report again and draw it. */
+	private again(): void {
+		this.snap = collect(this.plugin, Date.now(), this.opts);
+		this.draw();
 	}
 
 	private tick(parent: HTMLElement, label: string, key: keyof ReportOptions): void {
@@ -146,6 +169,8 @@ export class SupportModal extends Modal {
 	}
 
 	onClose(): void {
+		this.offTrace?.();
+		this.traceBox?.stop();
 		this.contentEl.empty();
 	}
 }
