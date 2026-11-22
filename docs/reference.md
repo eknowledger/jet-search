@@ -2,7 +2,7 @@
 
 Every part of Jet's window, every setting, the ways it can be set up, and how it is used: each numbered on the picture and explained in the table under it. Recorded in the [demo vault](../demo-vault), dark theme. Keys: *Ctrl / ⌘* is Ctrl on Windows and Linux, ⌘ on a Mac; the pictures show a Mac's keys. For each feature in motion, see the [usage guide](guide.md).
 
-**Contents**: [Jet's window](#jets-window) · [Settings](#settings) · [Configurations](#configurations) · [Usage patterns](#usage-patterns)
+**Contents**: [Jet's window](#jets-window) · [Settings](#settings) · [Report and explain](#report-and-explain) · [Configurations](#configurations) · [Usage patterns](#usage-patterns)
 
 ## Jet's window
 
@@ -218,7 +218,47 @@ The options show once the model is on.
 | 1 | **Word forms** | *running* finds *run*, *meetings* finds *meeting*. |  |
 | 2 | **Languages** | The languages whose word forms meet; *Change…* picks one or more. | English |
 | 3 | **Folders to leave out** | Never searched (Obsidian's excluded files are left out too); rebuild the index after a change. | None |
-| 4 | **Version** | Jet's version and build. |  |
+| 4 | **Report issue** | *Open* shows the report window: read it, copy it, or open a GitHub issue with it filled in. |  |
+| 5 | **Trace** | Records what Jet does for a few minutes, in memory: how long (5 to 60 minutes), and *Record* or *Stop recording*. It goes into the report. | 15 minutes |
+| 6 | **Also record the next start** | For a problem that happens while Obsidian starts. It records once, then turns itself off. | Off |
+| 7 | **Why is a note not found?** | *Explain a search* opens Jet on your last search with the explanation showing. |  |
+| 8 | **Version** | Jet's version and build. |  |
+
+---
+
+## Report and explain
+
+### The Report issue window
+
+From the command *Report issue*, or Settings → Advanced → *Report issue* → *Open*. What you see is what a copy puts on the clipboard.
+
+![The Report issue window](media/ref-report.webp)
+
+| # | Part | What it does |
+|---|---|---|
+| 1 | **What happened** | A sentence of your own; it goes into the issue. |
+| 2 | **The report** | Versions, device, vault size, the index, the worker, recent searches as numbers, settings and the errors Jet caught. No note names or search text. |
+| 3 | **Scope names** | Adds the names of your scopes to the report. |
+| 4 | **Names of enabled plugins** | Lists the other plugins you have on. |
+| 5 | **Search text and note names** | Shows the real words and note names in a kept explanation, instead of tags such as `word#1`. |
+| 6 | **Trace** | Starts or stops a recording, and adds it to the report. *Also record the next start* catches a start-up problem; *Include the full timeline* appears once there is a trace. |
+| 7 | **Copy** | Puts the report on the clipboard as plain text. |
+| 8 | **Open on GitHub** | Opens a new bug report in your browser with the form filled in. Jet sends nothing: you read it and press Submit there. |
+
+### Explain a search
+
+**Ctrl / ⌘ + Shift + E** in Jet's window turns the preview into the explanation. Here for the search `half marathon shoes`, with the note *Half Marathon* selected.
+
+![Explain a search](media/ref-explain.webp)
+
+| # | Part | What it does |
+|---|---|---|
+| 1 | **Tabs** | *This note* (the selected one), *The search*, and *A note I expected*. **Tab** moves between them. With meaning on, *By words* and *By meaning* sit at the right: they explain the search as words read it, or as meaning did. |
+| 2 | **The verdict** | Where the note ranks, and whether it holds every word. |
+| 3 | **Where each word is** | For each word, whether the note has it, and where: its name, headings, other fields or body, and as which form. |
+| 4 | **What moved it** | What lifted or lowered the note: how recently it changed, how many notes link to it, and a note that holds only some of the words. |
+| 5 | **How this search was set** | Words or meaning, where, the filters, the order and how many are listed. |
+| 6 | **Report issue** | Adds this explanation to the report and opens the Report issue window, with the lines marked. |
 
 ---
 
