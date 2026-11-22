@@ -6,7 +6,7 @@ import { comboLabel, type KeyAction, type KeyMap, keyMap, systemCopy } from "../
 import { type BothLayout, layoutBoth, type MeaningMode } from "./both";
 import { Preview, type PreviewAction } from "../preview/preview";
 import type { Explained } from "../explain/explainer";
-import { hintStrip } from "./hint-strip";
+import { HintBar } from "./hint-strip";
 import { type Candidate, ExplainPane, type Mode as ExplainMode } from "./explain-pane";
 import { highlight } from "./format";
 import { closeness } from "../answers/show";
@@ -377,8 +377,8 @@ export class JetModal extends Modal {
 	private previewKey: string | null = null;
 	private previewTimer: number | null = null;
 	private resize: ResizeObserver | null = null;
-	/** Tells the hints bar that the window changed its width. */
-	private hintsUpdate: (() => void) | null = null;
+	/** The footer's key hints: built once, then only their hints change. */
+	private hints!: HintBar;
 	/** What the footer shows now, so that the same hints are not drawn again. */
 	private footSig = "";
 	// Scopes: the applied chip, what the text says, and their elements.
@@ -549,6 +549,8 @@ export class JetModal extends Modal {
 				back: () => this.closeExplain(),
 			});
 		this.footEl = this.contentEl.createDiv({ cls: "jet-ft" });
+		this.hints = new HintBar(this.footEl);
+		this.settingsButton();
 
 		this.inputEl.addEventListener("input", () => {
 			this.expanded.clear();
@@ -646,7 +648,7 @@ export class JetModal extends Modal {
 		const ro = new win.ResizeObserver(() => {
 			const was = this.modalEl.hasClass("is-narrow");
 			this.modalEl.toggleClass("is-narrow", this.modalEl.clientWidth < NARROW_PX);
-			this.hintsUpdate?.();
+			this.hints.later();
 			// Wide enough again: the preview follows the selection.
 			if (was && !this.modalEl.hasClass("is-narrow")) {
 				this.preview.path = null;
@@ -1629,19 +1631,16 @@ export class JetModal extends Modal {
 		const sig = hints.map((h) => h.join("\u0000")).join("\u0001");
 		if (sig === this.footSig) return;
 		this.footSig = sig;
-		this.footEl.empty();
-		this.hintsRow(hints, true);
+		this.showHints(hints, true);
 	}
 
-	/** The key hints on the footer's one line, then the settings button; measured last, once its room is known. */
-	private hintsRow(keys: ReadonlyArray<readonly [string, string]>, settings: boolean): void {
-		const update = hintStrip(this.footEl, keys);
-		this.hintsUpdate = update;
-		if (settings) this.settingsButton();
-		update();
+	/** Show these hints in the footer, with the settings button or without it. */
+	private showHints(keys: ReadonlyArray<readonly [string, string]>, settings: boolean): void {
+		this.footEl.toggleClass("no-settings", !settings);
+		this.hints.set(keys);
 	}
 
-	/** The footer's settings button and its popover, after the key hints. */
+	/** The footer's settings button and its popover, after the key hints (made once). */
 	private settingsButton(): void {
 		const render = this.host.renderSettings?.bind(this.host);
 		if (!render) return;
@@ -2149,14 +2148,13 @@ export class JetModal extends Modal {
 	private footerExplain(): void {
 		if (this.footSig === "explain") return;
 		this.footSig = "explain";
-		this.footEl.empty();
 		const keys: Array<[string, string]> = [
 			["↑↓", "Choose"],
 			["Tab", "Next tab"],
 			[this.lab("explain"), "Back to preview"],
 			["Esc", "Back"],
 		];
-		this.hintsRow(keys, true);
+		this.showHints(keys, true);
 	}
 
 	// ── The ⌘K panel ──────────────────────────────────
@@ -2259,13 +2257,12 @@ export class JetModal extends Modal {
 
 	private footerActions(): void {
 		this.footSig = "actions";
-		this.footEl.empty();
 		const keys: Array<[string, string]> = [
 			[this.lab("open"), "Run"],
 			["↑↓", "Choose"],
 			["Esc", "Back to results"],
 		];
-		this.hintsRow(keys, false);
+		this.showHints(keys, false);
 	}
 
 	private atStart(): boolean {

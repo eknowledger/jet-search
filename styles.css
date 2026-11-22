@@ -332,6 +332,11 @@
 	color: var(--text-on-accent);
 }
 
+.jet-ft.no-settings .jet-fsep,
+.jet-ft.no-settings .jet-fbt {
+	display: none;
+}
+
 .jet-fsep {
 	flex: none;
 	width: 1px;

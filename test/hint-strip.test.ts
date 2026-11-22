@@ -1,6 +1,6 @@
 import "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { hintStrip } from "../src/modal/hint-strip";
+import { HintBar } from "../src/modal/hint-strip";
 
 const KEYS: Array<[string, string]> = [
 	["↵", "Open"],
@@ -11,15 +11,15 @@ const KEYS: Array<[string, string]> = [
 const rig = (widths?: { scroll: number; client: number }) => {
 	const foot = document.createElement("div");
 	document.body.append(foot);
-	const update = hintStrip(foot, KEYS);
-	const strip = foot.querySelector(".jet-fstrip") as HTMLElement;
+	const bar = new HintBar(foot);
+	bar.set(KEYS);
 	const track = foot.querySelector(".jet-ftrack") as HTMLElement;
 	if (widths) {
 		Object.defineProperty(track, "scrollWidth", { value: widths.scroll, configurable: true });
 		Object.defineProperty(track, "clientWidth", { value: widths.client, configurable: true });
-		update();
+		bar.update();
 	}
-	return { foot, strip, track, update };
+	return { foot, bar, strip: bar.el, track };
 };
 
 afterEach(() => {
@@ -37,6 +37,29 @@ describe("the key hints bar", () => {
 		]);
 	});
 
+	it("changes only the hints: the bar and its edges stay", () => {
+		const { bar, foot, track } = rig();
+		const edges = [...foot.querySelectorAll(".jet-fedge")];
+		bar.set([["Esc", "Close"]]);
+		expect([...track.querySelectorAll(".jet-ht")].map((h) => h.textContent)).toEqual(["EscClose"]);
+		expect([...foot.querySelectorAll(".jet-fedge")]).toEqual(edges);
+		expect(foot.querySelectorAll(".jet-fstrip")).toHaveLength(1);
+	});
+
+	it("measures in the next frame, not in the call that changed the hints", () => {
+		const frames: Array<() => void> = [];
+		vi.spyOn(window, "requestAnimationFrame").mockImplementation((f) => frames.push(f as () => void));
+		const { bar } = rig();
+		const measure = vi.spyOn(bar, "update");
+		bar.set(KEYS);
+		bar.set(KEYS);
+		expect(measure).not.toHaveBeenCalled();
+		// Two changes in one frame ask for one measure.
+		expect(frames).toHaveLength(1);
+		frames[0]?.();
+		expect(measure).toHaveBeenCalledTimes(1);
+	});
+
 	it("shows no edge marker when everything fits", () => {
 		const { strip } = rig({ scroll: 300, client: 300 });
 		expect(strip.classList.contains("more-left")).toBe(false);
@@ -44,15 +67,15 @@ describe("the key hints bar", () => {
 	});
 
 	it("marks the right edge when more is hidden there, and the left once it has slid", () => {
-		const { strip, track, update } = rig({ scroll: 500, client: 300 });
+		const { strip, track, bar } = rig({ scroll: 500, client: 300 });
 		expect(strip.classList.contains("more-right")).toBe(true);
 		expect(strip.classList.contains("more-left")).toBe(false);
 		track.scrollLeft = 100;
-		update();
+		bar.update();
 		expect(strip.classList.contains("more-left")).toBe(true);
 		expect(strip.classList.contains("more-right")).toBe(true);
 		track.scrollLeft = 200;
-		update();
+		bar.update();
 		expect(strip.classList.contains("more-right")).toBe(false);
 	});
 
@@ -70,10 +93,11 @@ describe("the key hints bar", () => {
 		expect(window.cancelAnimationFrame).toHaveBeenCalled();
 	});
 
-	it("stops by itself when the bar is gone (rebuilt while the pointer was on an edge)", () => {
+	it("stops by itself when the bar is gone (the window closed while the pointer was on an edge)", () => {
 		const frames: Array<() => void> = [];
 		vi.spyOn(window, "requestAnimationFrame").mockImplementation((f) => frames.push(f as () => void));
 		const { foot } = rig({ scroll: 500, client: 300 });
+		frames.length = 0;
 		foot.querySelector(".jet-fedge.is-right")?.dispatchEvent(new Event("mouseenter"));
 		foot.replaceChildren();
 		frames.shift()?.();

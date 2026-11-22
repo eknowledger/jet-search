@@ -140,19 +140,20 @@ describe("explaining from the dialog", () => {
 		expect(hints().some((h) => h?.endsWith("Explain"))).toBe(true);
 	});
 
-	it("marks that the hints slide only after it knows the room the settings button leaves", () => {
+	it("marks that the hints slide once the room they have is known, in the next frame", async () => {
 		const { host } = rig([item("Pilot.md")]);
 		host.renderSettings = () => undefined;
-		// 20 px too short for the hints once the settings button is beside them, and enough before it.
 		vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
-			if (!this.classList.contains("jet-ftrack")) return 0;
-			return this.closest(".jet-ft")?.querySelector(".jet-fbt") ? 700 : 740;
+			return this.classList.contains("jet-ftrack") ? 700 : 0;
 		});
 		vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
 			return this.classList.contains("jet-ftrack") ? 720 : 0;
 		});
 		const m = open(host);
 		type(m, "walnut");
+		// Not measured in the keystroke.
+		expect($(".jet-fstrip")?.classList.contains("more-right")).toBe(false);
+		await wait(50);
 		expect($(".jet-fstrip")?.classList.contains("more-right")).toBe(true);
 		vi.restoreAllMocks();
 	});
