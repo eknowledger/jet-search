@@ -37,6 +37,8 @@ export class SupportModal extends Modal {
 	constructor(
 		app: App,
 		private readonly plugin: JetSearchPlugin,
+		/** An explanation was just added: say so, and mark its lines. */
+		private readonly added = false,
 	) {
 		super(app);
 		this.snap = collect(plugin);
@@ -47,9 +49,18 @@ export class SupportModal extends Modal {
 		this.titleEl.setText("Support info");
 		const body = this.contentEl;
 		body.empty();
+		if (this.added)
+			body.createDiv({
+				cls: "jet-support-added",
+				text: "Added: the explanation is in the report, marked below.",
+			});
 		const grid = body.createDiv({ cls: "jet-support-body" });
 		this.pre = grid.createEl("pre", { cls: "jet-support-report", attr: { tabindex: "0" } });
 		this.draw();
+		if (this.added)
+			window.requestAnimationFrame(() =>
+				this.pre.querySelector(".is-added")?.scrollIntoView?.({ block: "nearest" }),
+			);
 		// A running worker knows the index's size and age: ask, and draw again when it answers.
 		if (this.plugin.client.running)
 			void refreshStats(this.plugin).then(() => {
@@ -66,6 +77,7 @@ export class SupportModal extends Modal {
 		});
 		this.tick(side, "Scope names", "scopeNames");
 		this.tick(side, "Names of enabled plugins", "pluginNames");
+		this.tick(side, "Search text and note names (in the explanation)", "explainNames");
 		side.createEl("h4", { cls: "jet-support-what-title", text: "What happened" });
 		this.what = side.createEl("textarea", {
 			cls: "jet-support-what",
@@ -104,7 +116,9 @@ export class SupportModal extends Modal {
 		// A long line that wraps goes back under its text, not under the heading.
 		this.pre.setCssProps({ "--jet-label": `${labelWidth(sections)}ch` });
 		for (const r of layout(sections)) {
-			const line = this.pre.createDiv({ cls: "jet-support-line" });
+			const line = this.pre.createDiv({
+				cls: `jet-support-line${this.added && r.section === "Explain" ? " is-added" : ""}`,
+			});
 			if (r.first) line.createSpan({ cls: "jet-support-key", text: r.label });
 			else line.appendText(r.label);
 			if (r.warn) line.createSpan({ cls: "jet-support-warn", text: r.text });

@@ -27,6 +27,12 @@ export class Vectors {
 		return [...this.byPath.keys()];
 	}
 
+	/** A vector, none (embedded, and no word the model knows), or missing (not made yet). */
+	state(path: string): "yes" | "none" | "missing" {
+		const x = this.byPath.get(path);
+		return !x ? "missing" : x.v ? "yes" : "none";
+	}
+
 	mtimeOf(path: string): number | undefined {
 		return this.byPath.get(path)?.mtime;
 	}

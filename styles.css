@@ -1,8 +1,8 @@
 /* Jet Search. Theme variables only. */
 
 .modal.jet-modal {
-	width: 800px;
-	height: 572px;
+	width: 900px;
+	height: 620px;
 	max-width: calc(100vw - 32px);
 	max-height: calc(100vh - 64px);
 	padding: 0;
@@ -257,13 +257,96 @@
 	border-top: 1px solid var(--background-modifier-border);
 	display: flex;
 	align-items: center;
-	gap: 18px;
-	padding: 0 8px 0 16px;
+	padding: 0 8px 0 0;
 	font-size: 12px;
 	color: var(--text-muted);
 }
 
+/* The key hints: one line that slides sideways when they do not all fit. */
+.jet-fstrip {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+}
+
+.jet-ftrack {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	height: 100%;
+	padding: 0 16px;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.jet-ftrack::-webkit-scrollbar {
+	display: none;
+}
+
+.jet-fedge {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 46px;
+	display: none;
+	align-items: center;
+	color: var(--text-normal);
+	cursor: pointer;
+}
+
+.jet-fedge.is-left {
+	left: 0;
+	justify-content: flex-start;
+	padding-left: 6px;
+	background: linear-gradient(to right, var(--background-primary) 55%, transparent);
+}
+
+.jet-fedge.is-right {
+	right: 0;
+	justify-content: flex-end;
+	padding-right: 6px;
+	background: linear-gradient(to left, var(--background-primary) 55%, transparent);
+}
+
+.jet-fstrip.more-left .jet-fedge.is-left,
+.jet-fstrip.more-right .jet-fedge.is-right {
+	display: flex;
+}
+
+.jet-fchev {
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-modifier-hover);
+	font-size: 15px;
+	line-height: 1;
+}
+
+.jet-fedge:hover .jet-fchev {
+	border-color: var(--interactive-accent);
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.jet-ft.no-settings .jet-fsep,
+.jet-ft.no-settings .jet-fbt {
+	display: none;
+}
+
+.jet-fsep {
+	flex: none;
+	width: 1px;
+	height: 20px;
+	margin-right: 4px;
+	background: var(--background-modifier-border);
+}
+
 .jet-ht {
+	flex: none;
 	display: inline-flex;
 	align-items: center;
 	gap: 7px;
@@ -493,6 +576,7 @@
 
 /* Footer settings popover */
 .jet-fbt {
+	flex: none;
 	display: grid;
 	place-items: center;
 	width: 28px;
@@ -2009,6 +2093,17 @@ table.jet-set-keys {
 .jet-support-warn {
 	color: var(--text-warning, var(--color-orange));
 }
+.jet-support-added {
+	padding: 7px 14px;
+	border-bottom: 1px solid var(--color-green);
+	background: var(--background-secondary);
+	color: var(--color-green);
+	font-size: var(--font-ui-small);
+}
+.jet-support-line.is-added {
+	background-color: hsla(var(--interactive-accent-hsl), 0.14);
+	box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
 .jet-support-side {
 	padding: 12px 14px;
 	background-color: var(--background-secondary);
@@ -2060,6 +2155,295 @@ table.jet-set-keys {
 		border-right: 0;
 		border-bottom: 1px solid var(--background-modifier-border);
 	}
+}
+
+/* The explanation, in the preview's place */
+.jet-ex {
+	flex: none;
+	width: 55%;
+	min-width: 0;
+	padding: 10px 12px 12px 4px;
+	display: none;
+}
+
+.jet-modal.is-explaining .jet-pv {
+	display: none;
+}
+
+.jet-modal.is-explaining .jet-ex {
+	display: flex;
+}
+
+/* Too narrow for two panes: the explanation takes the window, and Esc goes back to the list. */
+.jet-modal.is-explaining.is-narrow .jet-list {
+	display: none;
+}
+
+.jet-modal.is-explaining.is-narrow .jet-ex {
+	width: 100%;
+	padding: 8px 10px 10px;
+}
+
+.jet-exc {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-primary);
+	overflow: hidden;
+}
+
+.jet-ex-tabs {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+	padding: 8px 10px 6px;
+}
+
+.jet-ex-tab {
+	padding: 1px 10px;
+	border: 1px solid transparent;
+	border-radius: 10px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.jet-ex-tab:hover {
+	color: var(--text-normal);
+}
+
+.jet-ex-tab.is-on {
+	border-color: var(--background-modifier-border);
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.jet-ex-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 4px 14px 12px;
+	font-size: var(--font-ui-small);
+}
+
+.jet-ex-hint,
+.jet-ex-note {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin: 6px 0;
+}
+
+.jet-ex-verdict {
+	margin: 6px 0 12px;
+	padding: 9px 11px;
+	border: 1px solid var(--color-green);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.jet-ex-verdict.is-warn {
+	border-color: var(--color-orange);
+}
+
+.jet-ex-v1 {
+	font-weight: 600;
+}
+
+.jet-ex-v2 {
+	margin-top: 2px;
+	color: var(--text-muted);
+}
+
+.jet-ex-sec {
+	margin-bottom: 12px;
+}
+
+.jet-ex-sec h4 {
+	margin: 2px 0 6px;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.jet-ex-sec table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.jet-ex-sec th {
+	text-align: left;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--text-muted);
+	padding: 3px 6px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jet-ex-sec td {
+	padding: 4px 6px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	vertical-align: top;
+}
+
+.jet-ex-pill {
+	display: inline-block;
+	padding: 0 7px;
+	border-radius: 9px;
+	font-size: var(--font-ui-smaller);
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+
+.jet-ex-pill.is-ok {
+	color: var(--color-green);
+}
+
+.jet-ex-pill.is-no {
+	color: var(--color-red);
+}
+
+.jet-ex-lab {
+	margin-bottom: 3px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jet-ex-in {
+	width: 100%;
+}
+
+.jet-ex-list {
+	margin: 4px 0 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.jet-ex-opt {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+
+.jet-ex-opt.is-on {
+	background: var(--background-modifier-hover);
+}
+
+.jet-ex-ofolder {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.jet-ex-sl {
+	margin-top: 12px;
+	padding-top: 8px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.jet-ex-sl h4 {
+	margin: 0 0 4px;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.jet-ex-dl {
+	display: grid;
+	grid-template-columns: 76px minmax(0, 1fr);
+	gap: 3px 10px;
+	margin: 0;
+	font-size: var(--font-ui-small);
+}
+
+.jet-ex-dl dt {
+	color: var(--text-muted);
+}
+
+.jet-ex-dl dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.jet-ex-up {
+	display: none;
+	flex: none;
+	padding: 8px 12px 0;
+	color: var(--text-accent);
+	cursor: pointer;
+}
+
+.jet-modal.is-explaining.is-narrow .jet-ex-up {
+	display: block;
+}
+
+/* Under the words: the one action, in a bar of its own. */
+.jet-ex-bar {
+	flex: none;
+	display: flex;
+	justify-content: flex-end;
+	padding: 9px 12px;
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+}
+
+.jet-ex-bar:empty {
+	display: none;
+}
+
+/* One card per word: the number of notes, then how the word was read. */
+.jet-ex-wc {
+	margin-bottom: 8px;
+	padding: 8px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.jet-ex-wn {
+	margin-bottom: 6px;
+	font-weight: 600;
+}
+
+.jet-ex-wn i {
+	margin-left: 6px;
+	font-style: normal;
+	font-weight: 400;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jet-ex-figs {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 8px;
+}
+
+.jet-modal.is-explaining.is-narrow .jet-ex-figs {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.jet-ex-fl {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.jet-nwhy {
+	margin-top: 4px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+}
+
+.jet-nwhy:hover {
+	color: var(--text-normal);
 }
 
 /* Phones and tablets */
@@ -2138,4 +2522,14 @@ body.is-mobile .jet-set-opts .setting-item {
 
 body.is-mobile .jet-set-opts .setting-item:first-child {
 	border-top: 0;
+}
+
+/* The explanation: a finger-sized button and "back" row. */
+body.is-mobile .jet-ex-add {
+	flex: 1;
+	min-height: 44px;
+}
+
+body.is-mobile .jet-ex-up {
+	padding: 12px 12px 4px;
 }

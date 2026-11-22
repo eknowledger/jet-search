@@ -21,6 +21,7 @@ import {
 	type OpenHow,
 	type ScopeCard,
 	type ScopeView,
+	SORTS,
 	type Sort,
 	type Typed,
 	scopeListLabel,
@@ -39,6 +40,9 @@ import { MODE_LABEL } from "./settings/scopes-page";
 import type { Search } from "./search";
 import type { IndexStatus } from "./index-status";
 import { fail } from "./diag/diag";
+import type { Explainer } from "./explain/explainer";
+import { keepExplained } from "./explain/last";
+import type { Candidate } from "./modal/explain-pane";
 
 /** The icon for a note, by its `type` property: email, project, otherwise a page. */
 export const iconOf = (app: App, file: TFile): string => {
@@ -102,7 +106,58 @@ export class JetHost implements ModalHost {
 		private readonly index?: { status: () => Promise<IndexStatus>; rebuild: () => Promise<void> },
 		private readonly scopeAccess?: HostScopes,
 		private readonly filterSets?: FilterSets,
+		private readonly explainer?: Explainer,
 	) {}
+
+	/** Why the results are what they are (⌘⇧E): asked only then. */
+	get explain(): ModalHost["explain"] {
+		const x = this.explainer;
+		if (!x) return undefined;
+		return {
+			run: (r) => {
+				const scoped = whereIds(r.scope).length > 0;
+				const sets = r.filters.filter((f) => f.kind !== "title");
+				return x.run({
+					text: r.text,
+					mode: r.mode,
+					scope: r.scope,
+					scopeNames: whereIds(r.scope).flatMap(
+						(id) => this.data().scopes.find((x) => x.id === id)?.name ?? [],
+					),
+					filters: r.filters,
+					sort: SORTS.find(([k]) => k === r.sort)?.[1] ?? "Best match",
+					byRelevance: r.sort === "best",
+					path: r.path,
+					name: r.name,
+					shown: r.shown,
+					inScope: scoped ? this.within(r.scope) : null,
+					narrowed: sets.length ? this.within(r.scope, sets) : null,
+				});
+			},
+			find: (text) => this.findNotes(text),
+			keep: (e) => keepExplained(e),
+			support: () => this.support?.(),
+		};
+	}
+
+	/** Notes whose name has every word typed, names that start with them first, then the newest. */
+	private findNotes(text: string): Candidate[] {
+		const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+		if (!words.length) return [];
+		const out: Array<{ file: TFile; start: boolean }> = [];
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const name = file.basename.toLowerCase();
+			if (words.every((w) => name.includes(w))) out.push({ file, start: name.startsWith(words[0] ?? "") });
+		}
+		return out
+			.sort((a, b) => Number(b.start) - Number(a.start) || b.file.stat.mtime - a.file.stat.mtime)
+			.slice(0, 8)
+			.map(({ file }) => ({
+				path: file.path,
+				name: file.basename,
+				folder: file.parent?.path === "/" ? "" : (file.parent?.path ?? ""),
+			}));
+	}
 
 	/** Filters for the modal. */
 	get filters(): ModalHost["filters"] {
@@ -319,6 +374,8 @@ export class JetHost implements ModalHost {
 
 	/** Search inside a note (the ⌘K panel's last action): the plugin opens its in-note search. */
 	inNote?: (file: TFile) => void;
+	/** Shows the support info (set by the plugin): the explanation was just added to it. */
+	support?: () => void;
 
 	/** The ⌘K panel's actions on a note, with their keys. */
 	actions(path: string): NoteAction[] {
@@ -351,6 +408,17 @@ export class JetHost implements ModalHost {
 			{ id: "bookmark", label: "Bookmark", icon: "bookmark", group: 2 },
 			{ id: "backlinks", label: "Show backlinks", icon: "links-coming-in", detail: String(backlinks), group: 2 },
 			{ id: "in-note", label: "Search in this note", icon: "file-search", group: 2 },
+			...(this.explainer
+				? [
+						{
+							id: "explain",
+							label: "Explain this result",
+							icon: "circle-help",
+							key: this.lab("explain"),
+							group: 2,
+						},
+					]
+				: []),
 		];
 	}
 

@@ -94,7 +94,17 @@ function apply(version, notes) {
 		else
 			execFileSync(
 				"gh",
-				["release", "create", version, "--verify-tag", "--title", version, "--notes-file", file, "--latest=false"],
+				[
+					"release",
+					"create",
+					version,
+					"--verify-tag",
+					"--title",
+					version,
+					"--notes-file",
+					file,
+					"--latest=false",
+				],
 				{ stdio: "inherit" },
 			);
 		console.log(`${version}: notes ${exists ? "rewritten" : "published"}`);

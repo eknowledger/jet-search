@@ -1,7 +1,16 @@
 import code from "worker:./jet-worker";
 import { diag } from "../diag/diag";
 import type { AnswerCandidate } from "../answers/answers";
-import type { Answer, AnswerPoolReply, AnswersReply, NearReply, QueryReply, Reply, Request } from "./protocol";
+import type {
+	Answer,
+	AnswerPoolReply,
+	AnswersReply,
+	ExplainReply,
+	NearReply,
+	QueryReply,
+	Reply,
+	Request,
+} from "./protocol";
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -76,6 +85,18 @@ export class JetClient {
 		const seq = ++this.nearSeq;
 		const r = await this.call({ op: "nearest", seq, text, k: opts.k ?? 50, allow: opts.allow, scope: opts.scope });
 		return r.stale || r.seq !== this.nearSeq ? null : r;
+	}
+
+	/** Why a search lists what it does, and where one note stands in it. Asked for only; no search calls it. */
+	explain(opts: {
+		mode: "words" | "meaning";
+		text: string;
+		path: string | null;
+		limit: number;
+		allow?: string[];
+		scope?: string | string[];
+	}): Promise<ExplainReply> {
+		return this.call({ op: "explain", now: Date.now(), ...opts });
 	}
 
 	/** Answers (experiment): where the question's answer is looked for, by its words and by meaning. */

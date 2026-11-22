@@ -1,4 +1,5 @@
 import { arabicBare, cjkChar, noTypos } from "./analyzer";
+import { type ExplainOptions, explainWords, type WordsExplanation } from "./explain";
 import type { NoteInput } from "./fields";
 import { FIELDS } from "./fields";
 import type { Query } from "./query";
@@ -533,6 +534,31 @@ export class JetEngine implements SearchEngine {
 			terms: [...terms],
 			rare: rare.every(Boolean),
 		};
+	}
+
+	/**
+	 * Why a search lists what it does, and (with a path) why that note is where it is or not there. Runs
+	 * only when asked, in its own code (`explain.ts`): `query` does not know it exists.
+	 */
+	explain(q: Query, path: string | null, opts: ExplainOptions): WordsExplanation {
+		const parts = this.parts();
+		const kit = {
+			parts,
+			size: this.size,
+			typosBelow: TYPOS_BELOW,
+			expand: (seg: Segment, word: string, isLast: boolean, typos: boolean) =>
+				expand(seg, word, isLast, this.config, typos),
+			exactTerm,
+			liveNotes: (own: Array<Array<Array<{ t: number }>>>, i: number) => this.liveNotes(parts, own, i),
+			locate: (p: string) => {
+				const at = this.ids.get(p);
+				if (at) return { p: this.segs.indexOf(at.s), d: at.d };
+				const d = this.delta?.paths.indexOf(p) ?? -1;
+				return d >= 0 ? { p: this.segs.length, d } : null;
+			},
+			query: (qq: Query, o: QueryOptions) => this.query(qq, o),
+		};
+		return explainWords(kit, q, path, opts);
 	}
 
 	/** The index as a base (one segment: merged first if needed) and a sidecar of nothing pending. */
