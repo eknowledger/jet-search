@@ -176,6 +176,37 @@ const scopes = diagram("scopes", { width: 1440, height: 660, seed: 21 }, [
 	arrow("parse", "keeper", { dashed: true, label: "which scope" }),
 ]);
 
+// Support: the report, Explain and the trace. All on demand; nothing leaves the device.
+const support = diagram("support", { width: 1400, height: 660, seed: 33 }, [
+	group("g-main", { label: "Main thread, only when asked", around: ["diag", "recorder", "trace", "kept", "collect", "window", "link", "pane", "explainer"], pad: 28 }),
+	group("g-work", { label: "Worker", around: ["router"], pad: 28 }),
+
+	box("diag", { x: 40, y: 110, w: 200, h: 84, title: "Diag", sub: ["counters, last problems"] }),
+	box("recorder", { x: 300, y: 110, w: 200, h: 84, title: "Recorder", sub: ["last 100 searches"] }),
+	box("trace", { x: 560, y: 110, w: 200, h: 84, title: "Trace", sub: ["ring of 500 events"], accent: true }),
+
+	box("kept", { x: 40, y: 300, w: 200, h: 84, title: "Kept explanation", sub: ["one, in memory"] }),
+	box("collect", { x: 300, y: 300, w: 200, h: 84, title: "collect", sub: ["one snapshot"], accent: true }),
+	box("window", { x: 560, y: 300, w: 200, h: 84, title: "Report issue", sub: ["read, tick, Copy"] }),
+	box("link", { x: 820, y: 300, w: 200, h: 84, title: "Open on GitHub", sub: ["a link click"] }),
+	box("github", { x: 1120, y: 300, w: 200, h: 84, title: "Browser", sub: ["you press Submit"], rounded: true }),
+
+	box("pane", { x: 40, y: 480, w: 200, h: 84, title: "Explain pane", sub: ["three tabs"] }),
+	box("explainer", { x: 300, y: 480, w: 200, h: 84, title: "Explainer", sub: ["ensure, then ask"] }),
+	box("router", { x: 1120, y: 480, w: 200, h: 84, title: "Router.explain", sub: ["the real query, once"], accent: true }),
+
+	arrow("diag", "collect", { elbow: true, fromSide: "b", toSide: "t", toAt: 0.2, bendY: 245 }),
+	arrow("recorder", "collect", { fromSide: "b", toSide: "t", fromAt: 0.5, toAt: 0.5 }),
+	arrow("trace", "collect", { elbow: true, fromSide: "b", toSide: "t", toAt: 0.8, bendY: 245 }),
+	arrow("kept", "collect"),
+	arrow("collect", "window"),
+	arrow("window", "link"),
+	arrow("link", "github", { dashed: true, label: "opens" }),
+	arrow("pane", "kept", { fromSide: "t", toSide: "b", label: "Report issue" }),
+	arrow("pane", "explainer", { label: "ask" }),
+	arrow("explainer", "router", { label: "explain" }),
+]);
+
 // From source to the three files Obsidian installs.
 const build = diagram("build", { width: 1180, height: 480, seed: 8 }, [
 	group("g-esb", { label: "esbuild.config.mjs", around: ["main", "esbuild", "worker", "plugin"], pad: 28 }),
@@ -200,4 +231,4 @@ const build = diagram("build", { width: 1180, height: 480, seed: 8 }, [
 	note("legend", { x: 40, y: 450, text: "Obsidian installs exactly three files, so the worker travels inside main.js." }),
 ]);
 
-export const diagrams = [system, keystroke, engine, indexing, meaning, scopes, build];
+export const diagrams = [system, keystroke, engine, indexing, meaning, scopes, support, build];

@@ -71,10 +71,14 @@ Skip this if the words are familiar.
 | **Sequence number (`seq`)** | A counter on every query. An answer for an older number is dropped, so a slow reply never replaces a newer list. |
 | **Catch-up** | At start, comparing every note's modified time with the saved index and sending only the difference. |
 | **Coalesce** | Collapsing several events for one note into one update. |
+| **Report, support info** | The "Report issue" window: what Jet knows about itself as plain lines, to read, copy or take to a bug report. It holds counts, timings and codes, and no note name or search text unless you tick a box (6.15). |
+| **Flight recorder** | The last 100 searches kept as numbers (how long, where the time went, how many hits), for the report. |
+| **Trace** | A recording of what Jet did over a few minutes: events with a time and a few numbers, never a word of a search or a note name. Off until you start it (6.15). |
+| **Explanation** | The facts behind a list: how each typed word was read, and where one note stands in the search or why it is left out. Asked for with ⌘⇧E (6.15). |
 
 ## 3. System overview
 
-Three places, and the boundary between them is the thing to hold onto: **Obsidian owns the files and the page; the main thread decides and draws; the worker holds the index.** Nothing crosses from the worker to the page except a reply to a request, and nothing in the worker can see Obsidian.
+Three places, and the boundary between them is the thing to hold onto: **Obsidian owns the files and the page; the main thread decides and draws; the worker holds the index.** Nothing crosses from the worker to the page except a reply to a request and, rarely, an event that says what the worker caught and carried on from (6.15), and nothing in the worker can see Obsidian.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/arch-system-dark.png">
@@ -121,7 +125,7 @@ jet-search/
 ├── manifest.json, versions.json    what Obsidian reads; the version and the minimum Obsidian
 ├── main.js                         the build output (not tracked); styles.css is hand written
 ├── src/
-│   ├── main.ts                     the plugin: onload, commands, events, the worker's sleep timer
+│   ├── main.ts                     the plugin: onload, commands, events, the worker's sleep timer, the trace's light
 │   ├── host.ts                     what the modal asks the plugin for (lists, hints, open, create)
 │   ├── search.ts                   Search: asks both tiers, composeHits merges them
 │   ├── rank.ts                     quoted-phrase confirmation, and the boost for words in order
@@ -137,6 +141,7 @@ jet-search/
 │   │   ├── jet-engine.ts           segments, the query, scoring, boosts, merge
 │   │   ├── segment.ts              the byte layout of a segment
 │   │   ├── analyzer.ts             text to terms, one set of rules for notes and queries
+│   │   ├── explain.ts              the facts behind a words search, asked for only (pure)
 │   │   ├── fields.ts               a note's fields and their weights
 │   │   ├── typos.ts                the typo walk over the sorted terms
 │   │   ├── query.ts, varint.ts     query parsing, number coding
@@ -158,14 +163,32 @@ jet-search/
 │   ├── modal/                      the window
 │   │   ├── jet-modal.ts            the view, the keys, the state
 │   │   ├── both.ts, format.ts      the "both" layouts, row text
+│   │   ├── explain-pane.ts         the explanation, drawn in the preview's place
+│   │   ├── hint-strip.ts           the footer's key hints on one line that slides
 │   │   └── theme-mark.ts           the highlight colours measured from the theme
 │   ├── types/worker.d.ts           the type of the inlined worker import
 │   ├── excerpt/, preview/          the line under a hit, and the preview pane
 │   ├── keys/keymap.ts              every key binding, in one place
 │   ├── filters/                    typed pieces, chips, completion
 │   ├── scopes/                     rules, the generator, the keeper, the watcher
-│   ├── meaning/                    the model, its install, vectors, the question rule
+│   ├── meaning/                    the model, its install, vectors, the question rule, explain.ts
 │   ├── answers/                    the best line for a question
+│   ├── diag/                       the report, the recorder and the trace (6.15)
+│   │   ├── diag.ts                 counters and the last 20 problems; fail, warned, noted
+│   │   ├── error-facts.ts          an error's class and place, never its message (pure, the worker uses it too)
+│   │   ├── recorder.ts             the last 100 searches as numbers
+│   │   ├── trace.ts                the trace: a ring of 500 events, the kinds, the lengths
+│   │   ├── trace-report.ts         the Trace and Timeline lines of the report
+│   │   ├── trace-ui.ts             the status bar light, the notices, the box in the window
+│   │   ├── collect.ts              reads the state into a Snapshot, when a report is asked for
+│   │   ├── report.ts               Snapshot to lines and text (pure)
+│   │   ├── format.ts               numbers and durations as the report writes them
+│   │   ├── issue.ts                the link that opens the bug report form, and its length budget
+│   │   └── support-modal.ts        the Report issue window
+│   ├── explain/                    why a note is found or not (6.15)
+│   │   ├── explainer.ts            asks the worker once, adds what only the main thread knows
+│   │   ├── view.ts                 facts to sentences and small tables (pure)
+│   │   └── last.ts                 the explanation kept for the report
 │   └── settings/                   settings sub-pages and their parts
 ├── test/                           unit, router-driven, mock-Obsidian UI and regression tests
 ├── bench/                          engine benchmarks, fixture vaults, and compare/ (the in-Obsidian harness)
@@ -230,11 +253,11 @@ Ranges are always into the text as the user wrote it, not into the folded form, 
 
 ### 5.4 The worker's messages
 
-Every message is a request from the main thread, answered by a reply with the same id. The worker never speaks first. There are 23 requests; 6.3 lists them with their fields and the moment each is sent.
+Every message is a request from the main thread, answered by a reply with the same id. The worker speaks first in one case only: an event that names an error it caught and carried on from (a code, the error's class and where it was thrown, never its text), which the main thread keeps for the report (6.15). There are 24 requests; 6.3 lists them with their fields and the moment each is sent.
 
 ### 5.5 The window's host
 
-`JetModal` knows nothing about the vault, the metadata cache or the worker. It talks to its surroundings through one type, `ModalHost`, and turns a feature off when the matching member is absent. `JetHost` is the real implementation; `InNoteHost` (search in this note) is a second one; tests use a small fake. That one boundary is why a 2,300-line view can be tested with no Obsidian (6.7).
+`JetModal` knows nothing about the vault, the metadata cache or the worker. It talks to its surroundings through one type, `ModalHost`, and turns a feature off when the matching member is absent. `JetHost` is the real implementation; `InNoteHost` (search in this note) is a second one; tests use a small fake. That one boundary is why a 2,500-line view can be tested with no Obsidian (6.7).
 
 ### 5.6 What is stored where
 
@@ -244,6 +267,7 @@ Every message is a request from the main thread, answered by a reply with the sa
 | Note vectors | the same database, key `vectors` | the worker, with the index | the model changes |
 | Settings, scopes, frecency, recent searches | `data.json` in the plugin folder | `main.ts`, debounced 1 s (the model switch saves at once) | never (it syncs with the vault) |
 | The packed meaning model | `meaning-potion-base-8M.bin` in the plugin folder | the install flow | the user removes it |
+| Counters, the last 20 problems, the last 100 searches, the trace, the kept explanation | memory only | `diag`, `recorder`, `trace`, `keepExplained` | Obsidian quits or Jet is turned off (only the two trace settings are saved) |
 
 `data.json` syncs between devices; the index and model do not, so each device builds its own.
 
@@ -267,6 +291,7 @@ The parts, in the order a keystroke meets them, then the optional features. Each
 | 6.12 Scopes | `src/scopes/` | Named sets of notes, generated from the vault. |
 | 6.13 Query syntax and filters | `src/filters/`, `src/engine/query.ts` | Typed pieces, chips. |
 | 6.14 Settings and saved data | `src/data.ts`, `src/settings*` | What is saved and how it is read back. |
+| 6.15 Support: the report, Explain and the trace | `src/diag/`, `src/explain/`, `src/engine/explain.ts`, `src/meaning/explain.ts`, `src/modal/explain-pane.ts` | What Jet can say about itself, and why a note is found or not. |
 
 ### 6.1 The engine: how a note becomes terms, and how a query is scored
 
@@ -578,7 +603,7 @@ The sidecar is small unless many notes are pending. It carries the engine's chan
 
 | File | Owns | Does not touch |
 |---|---|---|
-| `src/worker/jet-worker.ts` | the `self` of the Worker, the request queue, the latest-wins skip, posting replies | the engine, storage, timers except the router's |
+| `src/worker/jet-worker.ts` | the `self` of the Worker, the request queue, the latest-wins skip, posting replies, and `tell` (the events that say what the worker caught) | the engine, storage, timers except the router's |
 | `src/worker/router.ts` | the engine, the store, the idle merge and save, the scope sets, the meaning vectors; `handle(req)` returns the reply | the Worker, `self`, `postMessage` |
 | `src/worker/jet-client.ts` | the main thread's end: starting, ids, sequence numbers, pending calls, stopping | the engine |
 
@@ -588,7 +613,7 @@ The worker code is bundled on its own by the `worker:` plugin in `esbuild.config
 
 #### Request and response
 
-Every call is `{ id, req }` from the client; the worker answers `{ id, result }` or `{ id, error }` (the error's stack). The worker never posts anything on its own: every message out answers a request. The client keeps a `pending` map from `id` to its promise; an answer for an unknown id is ignored; `error` rejects the promise. `meaning:load` transfers its `ArrayBuffer`; every other request is structured-cloned, which is why the feeder sends batches of 100 notes and not the vault at once.
+Every call is `{ id, req }` from the client; the worker answers `{ id, result }` or `{ id, error, name, where }` (the error's stack, its class and the place it was thrown). Every reply answers a request. The one message the worker sends unasked is `{ event: { code, level, error, where } }`, posted by `tell` when the router or the store catches an error and carries on (6.15); the client hands it to `diag.workerEvent` and it answers nothing. The client keeps a `pending` map from `id` to its promise; an answer for an unknown id is ignored; `error` rejects the promise, with the class and place kept on the `Error`. `meaning:load` transfers its `ArrayBuffer`; every other request is structured-cloned, which is why the feeder sends batches of 100 notes and not the vault at once.
 
 `Reply<R>` in `protocol.ts` maps each request to its reply type. Requests without an entry there fall to the last branch, `{ notes: number }`, the size of the index.
 
@@ -633,7 +658,7 @@ All messages are requests from the main thread; the reply goes back with the sam
 
 | `op` | Fields | Reply | Sent when |
 |---|---|---|---|
-| `open` | `vaultId`, `stemming` | `{ loaded, notes }` | `Feeder.open`, on every `ensure()` after a start, a sleep, a crash or a reset |
+| `open` | `vaultId`, `stemming` | `OpenReply` (`loaded`, `notes`, and for the report `how`, `found`, `version`, `store`, `ms`) | `Feeder.open`, on every `ensure()` after a start, a sleep, a crash or a reset |
 | `configure` | `stemming` | `{ notes }` | the word-form languages change in settings and the worker is running |
 | `batch` | `notes: RawNote[]`, `last` | `{ notes }` | `Feeder.building_`, 100 notes at a time, newest first; `last` merges and saves |
 | `upsert` | `notes` | `{ notes }` | `Feeder.flush` (coalesced changes), the catch-up, and the open note after typing pauses |
@@ -656,8 +681,9 @@ All messages are requests from the main thread; the reply goes back with the sam
 | `nearest` | `seq`, `text`, `k`, `allow?`, `scope?` | `NearReply` | a question, for search by meaning |
 | `answers:pool` | `text`, `k`, `allow?`, `scope?` | `{ words, meaning }` | the first step of an answer |
 | `answers:rank` | `seq`, `text`, `notes`, `meaning` | `AnswersReply` | the re-rank by best line; may return `stale` when a newer search waits |
+| `explain` | `mode`, `text`, `path`, `limit`, `now`, `allow?`, `scope?` | `ExplainReply` (`WordsExplanation` or `MeaningExplanation`) | `Explainer.run`, when the explanation pane is open and its 120 ms rest has passed; never by a search |
 
-The last seven rows belong to search by meaning and answers; they are listed because they share the queue and the stale rule. `scope` filters by the sets the worker holds; a scope id the worker does not know allows nothing (never everything).
+The seven rows from `meaning:load` to `answers:rank` belong to search by meaning and answers; they are listed because they share the queue and the stale rule. `explain` has no stale rule and no counter of its own: the pane drops an answer that arrives after a newer question (6.15). `scope` filters by the sets the worker holds; a scope id the worker does not know allows nothing (never everything).
 
 ### 6.4 Getting notes in
 
@@ -971,11 +997,11 @@ Three objects sit between Obsidian and the pixels:
 
 `JetModal` extends Obsidian's `Modal`, but draws its own list and does not use `SuggestModal`. The reason in the source: rows are reused across keystrokes, results are never stale, and the selection stays put, none of which a `SuggestModal` list gives. The modal talks to its surroundings only through the `ModalHost` type (declared in the same file). `JetHost` is the real implementation; `InNoteHost` (`src/innote.ts`) is a second one, for searching inside the open note. Tests drive the modal with a small fake host (`test/modal.test.ts`), which is why the boundary is a type and not a class.
 
-The modal never touches the vault, the metadata cache or the worker. The host does not touch the DOM. `ModalHost` carries optional members (`scopes`, `filters`, `meaning`, `actions`, `act`, `create`, `insertLink`, `copyLink`, `renderSettings`, `restore`, `keys`, `sortable`), and the modal turns a feature off when its member is absent. `InNoteHost` leaves out `create`, `insertLink` and `copyLink`, and the matching keys do nothing and leave the window open.
+The modal never touches the vault, the metadata cache or the worker. The host does not touch the DOM. `ModalHost` carries optional members (`scopes`, `filters`, `meaning`, `actions`, `act`, `create`, `insertLink`, `copyLink`, `renderSettings`, `restore`, `keys`, `sortable`, `explain`), and the modal turns a feature off when its member is absent. `InNoteHost` leaves out `create`, `insertLink` and `copyLink`, and the matching keys do nothing and leave the window open. It also has no `explain`: the in-note window has no explanation pane, no key hint for it and no "Why?" link (6.15).
 
 #### A map of jet-modal.ts, by area
 
-The file is about 2,300 lines. It is one class, plus the entry types and the row renderer. The areas, in file order:
+The file is about 2,500 lines. It is one class, plus the entry types and the row renderer. The areas, in file order:
 
 | Area | What it holds | Main members |
 |---|---|---|
@@ -991,6 +1017,7 @@ The file is about 2,300 lines. It is one class, plus the entry types and the row
 | Scopes | The chip, the kept chips, Auto, the banner, the hover card, widening | `applyChip`, `removeKept`, `removeChip`, `cycle`, `widen`, `drawScope`, `drawKept`, `drawBanner`, `showCard` |
 | Meaning | Words, meaning, both | `meaningState`, `toggleMeaning`, `setMeaningMode` |
 | Footer | The hint bar | `footer`, `hintState`, `lab` |
+| Explain | The explanation pane in the preview's place (6.15) | `explainMode`, `sectionOf`, `explainSelect`, `explainNow`, `toggleExplain`, `closeExplain`, `footerExplain`; the pane itself is `ExplainPane` in `explain-pane.ts` |
 | Selection | Move, choose | `select`, `move`, `choose`, `selectable`, `keyOf` |
 | Keys | Every key binding | `keys()`: Escape, then `reg(action, fn)` for each mapped action, then fixed keys (arrows, Backspace, PageUp/PageDown, Ctrl-N/P, Alt-arrows) |
 | The action panel | Command-K panel | `openActions`, `closeActions`, `filterActions`, `runAction`, `drawActions` |
@@ -1012,6 +1039,8 @@ Other host duties:
 | The Command-K actions and their keys | `actions(path)`, `act(id, path)` (open, copy link, URL, path, reveal, move, bookmark, backlinks, search in this note) |
 | Completion lists for filters and scopes | the `filters` getter, `complete()` |
 | Remember on close | `closed(text, opened, scope, filters, also)`: bumps scope usage, stores the last scope and filters when Persist filters is on, remembers the search (with its scopes and filters in the form that applies them again), calls `Search.idle()`, saves |
+| Explain a search | the `explain` getter (`run`, `find`, `keep`, `support`): `run` adds the scope names and the path sets the scope and the filters keep, then calls `Explainer.run`; `find` is `findNotes`, which lists up to 8 notes whose name has every word typed. The ⌘K list gains "Explain this result" only when an explainer exists |
+| The trace in the settings popover | `traceRow`: how long to record, and a Record or Stop button that follows the trace |
 
 #### Rows and the result list
 
@@ -1105,7 +1134,7 @@ Why a child component per render. `MarkdownRenderer.render` takes a `Component` 
 
 #### One source for every key
 
-`src/keys/keymap.ts` is pure (it only imports a type from Obsidian). `KEY_ACTIONS` is a list of `{ id, what, key }`: 17 actions, each with a default combination. `keyMap(custom)` overlays the user's saved combinations on the defaults, and returns a complete `KeyMap`. Three consumers read it and nothing else decides a key:
+`src/keys/keymap.ts` is pure (it only imports a type from Obsidian). `KEY_ACTIONS` is a list of `{ id, what, key }`: 18 actions, each with a default combination. `keyMap(custom)` overlays the user's saved combinations on the defaults, and returns a complete `KeyMap`. Three consumers read it and nothing else decides a key:
 
 | Consumer | How it uses the map |
 |---|---|
@@ -1433,6 +1462,8 @@ A typed string is read in three passes, each by a different file.
 | `settings.answers` | boolean | true | Answers re-rank |
 | `settings.persistFilters` | boolean | false | Reopen with the last scope and filters |
 | `settings.fixKeys` | boolean | true | Offer the key a misspelt one is close to |
+| `settings.traceMinutes` | one of `TRACE_MINUTES` (5, 10, 15, 30, 60) | 15 | How long a trace runs: for the Record button, the command and the next start |
+| `settings.traceNextStart` | boolean | false | Record a trace from the next Obsidian start. `onload` clears it and saves at once, so it records once |
 | `opened` | path to `[score, at]` | `{}` | Frecency: score decays with a 30-day half-life; at most `MAX_OPENED` (2000) paths kept |
 | `searches` | string[] | `[]` | Recent searches, newest first, `MAX_SEARCHES` (10) |
 | `indexedAt` | number or null | null | When this vault's index was first built. Null makes the first build start on its own |
@@ -1465,7 +1496,7 @@ Saves: `main.ts` has `save`, a debounce of one second that restarts on each call
 | Scopes | "every scope" mode, "when new ones appear", Generate, the list with Edit |
 | Search by meaning | Toggle, question shows, both layout, long searches, answers, Notes (Rebuild), Model (Remove) |
 | Index | State, notes, size, Rebuild, Clear |
-| Advanced | Word-form languages, folders to leave out, version and build id |
+| Advanced | Word-form languages, folders to leave out, Report issue (button Open), Trace (length, Record or Stop recording, "Also record the next start"), "Why is a note not found?" (button "Explain a search"), version and build id |
 
 The search box filters cards by name first, then rows, and by description only if no name matches anywhere. The Index card is drawn from what is known now (`statusNow`) and never changes afterwards: a late text change made Obsidian 1.13 and later redraw a tab forever.
 
@@ -1486,6 +1517,201 @@ Every access goes through one typed object with optional fields and `?.`, so a m
 | `app.setting.open`, `openTabById`, `modalEl`, `activeTab` | Open Jet's tab at a page, walk navigable rows to a scope, filter Obsidian's Hotkeys tab | A missing member stops the walk where it is |
 | `app.hotkeyManager.printHotkeyForCommand` | Show the key Obsidian gave a command | Wrapped in `try`; returns null |
 
+### 6.15 Support: the report, Explain and the trace
+
+Three things let a person, and a maintainer reading their bug report, see what Jet did without Jet sending anything anywhere: the **report** (the "Report issue" window), the **explanation** (why a note is, or is not, in a list) and the **trace** (a timed recording of what Jet did). They share one rule: they keep numbers, codes and counts, and a note name or a word of a search appears only when the person ticks a box.
+
+#### What it is, and what it keeps
+
+| Part | What it is | Does nothing until |
+|---|---|---|
+| The report | A window that shows, and copies, what Jet knows about itself as plain lines | the window is opened |
+| The memory | Worker counters, the last 20 problems, the last 100 searches as numbers | something rare happens (a worker starts, an error is caught) or a search shows results |
+| The trace | A ring of the last 500 events over a length of time the person chose | the person starts it |
+| Explain | The facts behind a list, for the search and for one note | the explanation pane is opened |
+
+All of it is in memory. Nothing here is written to disk except two settings (`traceMinutes`, `traceNextStart`), and all of it starts empty at each launch.
+
+| Rule | Held by |
+|---|---|
+| An error is kept as a code, its class name and a place (`function:line:column` of Jet's own code), never its message, because a message can hold a note's path | `errorName` and `errorWhere` in `src/diag/error-facts.ts`; `test/diag.test.ts` ("keeps a problem as a code and an error name, never the message") |
+| A search is kept as durations, counts and flags, never its words | `Recorder.add`; `test/diag-report.test.ts` ("holds numbers and names of stages only: never a word of a search") |
+| A trace event is a kind, a time, four numbers, flags and a label that is a code of Jet's own | `Trace.add`; `test/trace-proof.test.ts` |
+| The report names no note, folder, scope or plugin unless the person ticks it | `collect` reads names only behind `ReportOptions`; `test/diag-collect.test.ts` ("names no note, folder or scope, and no text from an error", "adds scope and plugin names only after their box is ticked, and takes them out again") |
+| An explanation shows `word#1`, `note#1` and `scope#1` in the report unless "Search text and note names" is ticked | `tagNames` in `src/explain/view.ts`; `test/explain-view.test.ts` ("what a report may hold"), `test/explainer.test.ts` |
+| Jet sends nothing. The one way out is a link the browser opens | `openLink` in `src/diag/support-modal.ts`; no `fetch`, `requestUrl` or `window.open` in `src/diag/` (by reading); `test/diag-collect.test.ts` ("opens a bug report on GitHub with the sentence and the report filled in, and waits for the person to submit") |
+
+Rule 5 (no network) still holds. "Open on GitHub" makes a link and clicks it, and Obsidian hands the address to the browser. Jet makes no request, and the person reads the form and presses Submit.
+
+#### The files
+
+| File | Owns |
+|---|---|
+| `src/diag/diag.ts` | `diag`: worker counters, the problems list, how the saved index opened; `fail`, `warned` and `noted`, the three ways an error is recorded |
+| `src/diag/error-facts.ts` | `errorName`, `errorWhere`. Pure, so the worker uses them too |
+| `src/diag/recorder.ts` | `recorder` (the last 100 searches), `FLAG`, `SEARCH_CHARS`, `wordCount` |
+| `src/diag/trace.ts` | `trace` (the ring, `start`, `stop`, `list`, `onChange`), `KIND`, `OPENED`, `TRACE_MINUTES` |
+| `src/diag/trace-report.ts` | `summarize`, `traceLines`, `timelineLines`: the Trace and Timeline lines of the report |
+| `src/diag/trace-ui.ts` | `TraceIndicator` (the status bar line), `TraceBox` (the box in the window), `tell` (the notices) |
+| `src/diag/collect.ts` | `collect(plugin, now, opts)`: reads the state Jet holds into a `Snapshot` |
+| `src/diag/report.ts` | `Snapshot`, `ReportOptions`, `buildReport`, `layout`, `formatReport`, `formatForIssue`, `formatForGithub`. Pure |
+| `src/diag/format.ts` | `num`, `plural`, `msText` |
+| `src/diag/issue.ts` | `issueLink`, `issueFacts`, `URL_BUDGET`, `REPO_URL` |
+| `src/diag/support-modal.ts` | `SupportModal`: the window, Copy and Open on GitHub |
+| `src/explain/explainer.ts` | `Explainer.run`: asks the worker once and adds what only the main thread knows |
+| `src/explain/view.ts` | `searchView`, `noteView`, `viewLines`, `Namer`, `tagNames`. Pure |
+| `src/explain/last.ts` | `keepExplained`, `keptExplained`: the explanation held for the report |
+| `src/engine/explain.ts` | `explainWords`, `Kit` and the fact types. Pure, no Obsidian |
+| `src/meaning/explain.ts` | `explainMeaning` |
+| `src/modal/explain-pane.ts` | `ExplainPane`: the tabs and the drawing |
+
+`JetEngine.explain` (in `jet-engine.ts`) builds a `Kit` of the engine's own lookups and calls `explainWords`, so the explanation reads the index the way a query does. The two are kept apart: `query` does not know `explain` exists.
+
+#### The report window
+
+`SupportModal` (titled "Report issue") shows one text, the report, and what the person may add to it. Its pieces:
+
+| Piece | What it does |
+|---|---|
+| "What happened" card | An optional sentence for the issue |
+| The report | The text, with the labels coloured. A copy puts exactly this text on the clipboard, in plain form (`formatReport`) |
+| "Add to the report" ticks | "Scope names", "Names of enabled plugins", "Search text and note names (in the explanation)". All off. A ticked item appears in the text at once |
+| The trace box | Length, Record or Stop, "Also record the next start", and (once a trace has run) "Include the full timeline", which is on by default in the window |
+| Buttons | Copy, and Open on GitHub |
+
+The report is built in three steps, each in its own file. `collect` reads facts into a `Snapshot` (numbers, flags, codes, and names only behind a tick). `buildReport` turns it into sections of short lines, some marked as warnings. `layout` aligns a label column. The window and the copy both come from `layout`, so they cannot differ. The sections, in order: Jet Search, Obsidian, Device, Vault, Plugins, Appearance, Index, Worker, Searches, Explain (only when an explanation was kept), Trace and Timeline (only after a trace has run), Meaning, Scopes, Settings, Open Jet, Compatibility (only when an Obsidian feature Jet uses is missing) and Problems (only when something was caught).
+
+`collect` looks at state Jet already holds. It does not wake the worker, read a note or send anything. The index's size and age come from the worker's last answer to `stats`; when the window opens with a running worker it asks once more (`refreshStats`) and draws again, and a sleeping worker is left asleep (the report then says "size and age not known yet"). Each tick, and each start or end of a trace while the window is open, collects again and redraws.
+
+When the window is opened from the explanation pane (`added`), a line says the explanation is in the report, and the Explain lines are marked and scrolled into view.
+
+#### The issue link and its budget
+
+"Open on GitHub" builds a link to the repository's bug report form and opens it in the browser, with the form filled in. `issueLink` (`src/diag/issue.ts`) builds it with `URLSearchParams`: `template=bug_report.yml`, then the fields `versions` and `size` (short, from the report), then `what` (the person's sentence), then `support` (the report). `what` goes in first, and each of `what` and `support` goes in only while the whole link stays within `URL_BUDGET` (6,000 characters). GitHub answers a link up to 6,500 characters with a redirect and one from 7,000 with an error, so the budget keeps a margin.
+
+The link is a real `<a href target="_blank">` that is clicked and removed (`openLink`), because `window.open` does nothing on desktop Obsidian and a clicked link is what Obsidian hands to the browser. For the link, the report goes in as `formatForIssue`: the text in a `text` code block, with the trace's timeline folded under a `<details>` block so the issue stays short.
+
+| Outcome | What Jet does |
+|---|---|
+| The report fits | The link carries it. Notice: "GitHub is open with the report filled in. Press Submit when ready." |
+| It does not fit | The link carries what fits. The rest (`formatForGithub`) is copied, with the sentence only if the link did not hold it, and a notice says to paste it into the Support info box |
+| The clipboard is refused | The report is selected in the window and a notice says to press Ctrl/Cmd+C |
+
+Jet posts nothing. The person reads the page and presses Submit. GitHub reads an issue form from the repository's default branch, so a change to `.github/ISSUE_TEMPLATE/bug_report.yml` reaches the link only once it is merged there. The form's ids are `what` (required), `support`, `versions`, `size` and `console`; the link fills the first four and `type: Bug` sets the issue type.
+
+#### What Jet remembers: diag and the recorder
+
+`diag` (`src/diag/diag.ts`) holds counters (`workerStarts`, `workerCrashes`, `sleeps`, `workerSince`), how the saved index opened last (`opened`: `loaded`, `none`, `format-changed` or `error`, with the format found, where it is kept and how long the open took), and `problems`. It is written only when something rare happens, never per keystroke.
+
+A problem is a code, a level (`error` or `warn`), the error's class name, a place and a count. The same problem again in a row only raises the count, and only the last 20 are kept (`MAX_PROBLEMS`). Three functions record one: `fail` (prints as before and records an error), `warned` (prints a warning and records it) and `noted` (records a warning and prints nothing: an error passed over on purpose). Each call site names its own code (`search.words`, `index.open`, `note.open`, `explain.run`, and so on), and a check reads the source to make sure a call sits in a catch or a rejection handler.
+
+The worker cannot reach `diag`, so it tells the main thread. `tell` in `jet-worker.ts` posts `{ event: { code, level, error, where } }`, with the place prefixed `worker:`, and `JetClient` hands it to `diag.workerEvent`. The codes the worker raises are `index.read`, `index.save`, `index.damaged`, `index.clear`, `vectors.read` and `registry.update`. The main thread adds `worker.error` when the Worker itself fails (the message is cut to its class, `TypeError` and the like, and a line and column in the worker).
+
+`recorder` (`src/diag/recorder.ts`) is the flight recorder. One search is a row of seven floats (total, index wait, worker, transit, prepare, excerpts, hits) and three small integers (flags, characters, words), in two typed arrays made on the first search and wrapping at 100 rows. `FLAG` has the bits: words, meaning, scoped, cold (the worker had to start), building, broken, rare and phrase. Only searches that show results are recorded, by the full-text and the meaning paths in `search.ts`; a title-only search never reaches the worker and is not recorded. A search a newer one replaced is only counted (`superseded`). `summary()` makes the median, the 95th percentile, the slowest search, the median of each stage, the counts by kind and flag and the last ten totals, when a report is asked for and never while searching.
+
+#### The trace: the ring and its events
+
+`trace` (`src/diag/trace.ts`) is off until `start(minutes)`. Starting makes the storage: a `Float64Array` of times, a `Uint8Array` of kinds, a `Uint16Array` of flags, a `Float32Array` of four numbers per event and an array of labels, all of 500 slots (`KEEP`). The next event overwrites the oldest (`n % KEEP`); `n` keeps counting, so the report can say that events were dropped. A boolean, `trace.on`, is true while recording, and every caller tests it before it makes the numbers of an event: `if (trace.on) trace.add(...)`. `add` tests it again, so a stray call is harmless.
+
+| Kind | What the numbers hold | Made by |
+|---|---|---|
+| `start` | a: minutes asked | `Trace.start` |
+| `stop` | a: 0 by the person, 1 time up, 2 Jet turned off | `Trace.stop` |
+| `workerStart`, `workerStop`, `workerCrash`, `workerSleep` | none | `diag` (called by `JetClient` and `main.ts`) |
+| `indexOpen` | a: ms; flags: how it opened (`OPENED`) | `Feeder.open` |
+| `buildStart`, `buildEnd` | start: a notes; end: a ms, b notes | `Feeder.building_` |
+| `changes` | a: ms, b: notes added or changed, c: notes removed; flags 1: the catch-up | `Feeder.catchUp` and `Feeder.flush` |
+| `search` | a: total ms, b: index wait, c: worker, d: hits; flags: the recorder's flags, with the query's length in the high byte | `Recorder.add` |
+| `problem` | flags 1: a warning; label: the code | `Diag.record` |
+| `mark` | label: a step of start-up ("plugin loaded", "layout ready") | `main.ts` |
+
+The length of a query is packed in the high byte of a search's flags (`SEARCH_CHARS`, 255 at most), so the timeline can show one row per keystroke as such. It is a number; no word of the query is kept. A label is always a code of Jet's own. Events are made where the numbers already exist, behind the `trace.on` test, so a trace that is off computes nothing.
+
+`trace.ts` declares a local `window` type for `setTimeout` and `clearTimeout`, because the Node benchmark build has no DOM types. Its one timer is made in `start()`; nothing else in the file runs at load.
+
+#### The trace: starting, stopping and being seen
+
+| Way to start | What it does |
+|---|---|
+| Command "Start recording a trace" | `checkCallback`, offered only while no trace runs |
+| Record in Settings, Advanced, Trace | Uses `traceMinutes` (the dropdown beside it sets it) |
+| Record in the Trace box of the report window | The same, with its own length list |
+| The Trace row in the search window's settings popover (`JetHost.traceRow`) | The same; it turns into Stop and says how long is left |
+| "Also record the next start" (`traceNextStart`) | `onload` clears the flag, saves at once, starts the trace and adds a `plugin loaded` mark; `listen` adds `layout ready`. It records once |
+
+The lengths are `TRACE_MINUTES` (5, 10, 15, 30 and 60 minutes), 15 by default. A trace ends by "Stop recording" (command, settings or box), when its time is up (the timer made in `start`) or when Jet is turned off (`trace.stop("unload")` in `onunload`). What it recorded stays until the next `start`, which forgets it.
+
+While a trace runs, `main.ts` (through a listener it registers with `trace.onChange`) shows a status bar line, `TraceIndicator`: "Jet trace 12 min", with a blinking red dot, redrawn every 15 seconds. A click opens Report issue. A phone has no status bar, so the line is made on desktop only (`Platform.isMobile`); the trace itself runs anywhere. `tell` shows a notice when a trace starts and when it ends (not when Jet is turned off). The settings tab redraws. The dot holds still when the system asks for reduced motion.
+
+#### The trace: what the report says
+
+`summarize` and `traceLines` turn the events still held into the Trace section: whether it is recording or how it ended, how many events (and "the last 500 kept" when the ring wrapped), the searches (count, median, 95th percentile), the three slowest with where the time went, the worker's starts, sleeps and crashes, how the index opened, builds, the catch-up, the changes sent, and the latest ten problems by code and time. The counts are of the events still held, so after the ring wraps they cover those only.
+
+Searches run as you type, so one query makes a search per keystroke. `placeSearches` counts searches less than 2 seconds apart (`QUERY_GAP_MS`) as one query, by time only, and the summary says so: "queries about N, searches less than 2 s apart counted as one".
+
+`timelineLines` writes the Timeline: one line per event, newest 300 (`MAX_TIMELINE`), each with the time in the trace as `m:ss.mmm` (`h:mm:ss.mmm` past an hour), and each search with its query ("query 3 (2 of 5)") and its length in characters. The window shows it by default once a trace has run; "Include the full timeline" turns it off.
+
+#### Explain: asking, and what answers
+
+The pane is opened with ⌘⇧E (`toggleExplain`, key action `explain`), from "Explain this result" in the ⌘K list, from "Why?" on the red nothing-found notice, by the command "Explain why a note is found" (`main.explainSearch()` opens the newest remembered search, then calls `explainNow()`), or by the button "Explain a search" in Settings, Advanced, "Why is a note not found?". With nothing typed and no filter there is nothing to explain, and nothing opens. The in-note window has none of this.
+
+`ExplainPane` takes the place of the preview. It waits 120 ms after the last change in the list or the selection (`REST_MS`; no wait when it opens, a tab or the mode changes, or a note is picked), then asks `io.explain(note, mode)`. The window adds the search as it ran (`ranText`, `ranScope`, the filters, the sort, the note and the heading it is listed under), `JetHost.explain.run` adds the scope names and the sets of paths the scope and the filters keep, and `Explainer.run` does the rest:
+
+1. `await ensure()`: the index is open (it opens it if the worker slept).
+2. `client.explain({ mode, text, path, limit: 50, allow | scope })`. The worker op `explain` goes to `Router.explain`: in words mode to `JetEngine.explain`, which calls `explainWords`; in meaning mode to `explainMeaning`.
+3. Back on the main thread, the facts only it knows are added: an exclude rule from the settings (`excluder`), whether the note is in the scope, whether the filters keep it, whether it holds a quoted phrase (`filterPhrases` over one `cachedRead`), and the heading the window lists it under.
+4. `searchView` and `noteView` make the views.
+
+An answer that arrives after a newer question is dropped (a token in the pane). A failure draws "Jet could not explain this search" and is recorded with `noted("explain.run")`.
+
+| Tab | Shows |
+|---|---|
+| This note | The selected row. Absent when no row is selected |
+| The search | The search alone: how each word was read, and the rule that decided what is listed |
+| A note I expected | A box that suggests notes by name as you type (`JetHost.findNotes`: names with every word typed, names that start with the first word first, then the newest; up to 8 asked for, 6 drawn). Arrows and Enter pick one; Esc clears the typed name first, then leaves the pane |
+
+When the window shows both words and meaning, the pane has a "By words / By meaning" switch and follows the selected row's kind.
+
+A `View` is `{ tone, head, detail, tables, notes, setup }`: a verdict in a sentence, the figures under it, and "How this search was set" (what, where, filters, order). A note that is not listed gets the first true reason, in this order: an exclude rule, not indexed yet (with how far the build is), outside the scope, dropped by the filters, a word the search excludes, listed under another heading (for example Titles), missing the quoted phrase, below the cut, none of the words, some of the words while other notes hold them all. The last answer, "not one of Jet's rules", points to Report issue. `view.ts` is pure and holds all the wording, which is English.
+
+#### Explain: the facts
+
+For words, `explainWords` (`src/engine/explain.ts`) does two things. For each typed word it counts the live notes that each kind of match reaches (`exact`, `prefix` for the last word, `form` and `typo`), whether typos were tried (the word is in fewer notes than `TYPOS_BELOW`) and whether the word is rare. For the asked-about note it says where each word is (name, other fields, body, and how many times in the body). Then it runs the real `kit.query` once, uncut (`limit` the size of the index), so the note's rank and score are the ones a search gives, and it computes the note's multipliers: the name rule (exact, starts with, every word), recency, inbound links, and the share of words when no note had them all. These are written out again in `explain.ts` with the values the query uses (x2, x1.5, x1.4, `0.2` over 45 days, `0.08`), and a test that reads both files fails when they differ.
+
+For meaning, `explainMeaning` (`src/meaning/explain.ts`) scores every note in the allowed set against the question's vector and reports the model, how many notes have a vector, whether the model knew any word of the question, the best and the last listed score and, for the note, whether its vector is there (`yes`), has no word the model knows (`none`) or is not made yet or older than the note (`waiting`), with its rank and closeness. With no model in the worker, `Router.explain` answers `{ kind: "meaning", on: false }` and the pane says meaning is not ready.
+
+#### Explain: keeping it for the report
+
+The pane's "Report issue" button calls `io.keep(result)`, which is `keepExplained` in `src/explain/last.ts`: a module-level variable holding the `Explained`, and nothing else. Then `io.support()` opens the report window with `added` true. `collect` reads `keptExplained()?.lines(opts.explainNames)`: the lines come out with tags (`word#1`, `note#1`, `scope#1`, a filter by its kind) unless the person ticked "Search text and note names". The explanation stays kept, and goes into any later report, until a newer one replaces it or Jet is turned off (`keepExplained(null)` in `onunload`).
+
+#### What each costs
+
+Nothing runs at Obsidian's start, and each part is held out of the hot paths by tests that read the source.
+
+| Part | When off | When used |
+|---|---|---|
+| The memory (`diag`, `recorder`) | Nothing at load: no timer, no listener, no work. The recorder's arrays are made on the first search | A counter or a problem is written where something rare happens. The recorder adds one row per search that shows results, after the results are drawn |
+| The trace | One boolean test, `trace.on`, at each call site | One event is a handful of typed-array writes and a clock read. The one timer is made in `start()` |
+| The report | Nothing: `collect` runs when the window opens or a box is ticked | One pass over state held in memory, and a vault file count |
+| Explain | Nothing asks the worker until the pane is opened. The pane's frame is made with the window and drawn only when the pane opens. The only change on the typing path is `explainPane?.refresh()`, which tests one boolean | One question to the worker per settled change while the pane is open: the real query once, uncut, plus lookups for the words |
+
+Measured in paired A/B runs of the old and the new build: with the trace off, the new build equals the old one within noise; with a trace on, it adds no measurable cost. Per call, a check of `trace.on` costs about 0.9 ns, and one event about 30 ns; recording adds about 0.08 MB to the heap. `npm run bench:diag` measures the per-call costs, and `npm run bench:explain -- <vault dir>` times explaining beside the search it explains.
+
+#### How it is tested
+
+| What | Files |
+|---|---|
+| Counters, problems, the worker's events, how the index opened | `test/diag.test.ts`, `test/diag-events.test.ts` |
+| The report: text, layout, what it says and leaves out | `test/diag-report.test.ts`, `test/diag-collect.test.ts` |
+| The issue link and the form it fills | `test/issue-link.test.ts` (reads `bug_report.yml`) |
+| The trace: ring, timer, events, feeding, summary, timeline | `test/trace.test.ts`, `test/trace-feed.test.ts`, `test/trace-report.test.ts` |
+| The trace holds no name or search | `test/trace-proof.test.ts` (invented secrets in note names, scopes, plugins, errors and searches; none may appear) |
+| The trace's commands, light, next start and boxes | `test/trace-ui.test.ts`, `test/host-trace.test.ts` |
+| The explanation: facts, worker, explainer, views, pane, window | `test/explain-engine.test.ts`, `test/explain-worker.test.ts`, `test/explainer.test.ts`, `test/explain-view.test.ts`, `test/explain-pane.test.ts`, `test/modal-explain.test.ts` |
+| Cost, by reading the source | `test/diag-cost.test.ts`, `test/explain-cost.test.ts`, and the second group of `test/trace-feed.test.ts` |
+
+The cost tests are checks on the code, not timings: a timing check is noise on a busy machine. They fail when the search, the ranking or the names tier name the explanation; when the engine or the worker import the report's memory (apart from `error-facts`); when the search, the ranking, the names tier or the window call `diag.` or name the trace; or when an event is made without a `trace.on` in the line or the two before it.
+
 ## 7. Control flow
 
 The important events, followed through the parts of section 6. The failure paths are in 7.6.
@@ -1505,7 +1731,7 @@ sequenceDiagram
     O->>P: onload
     P->>P: loadData, normalizeData
     P->>P: make Feeder, Search, ScopeKeeper, Meaning, host (no reads)
-    P->>O: addCommand x2, addSettingTab
+    P->>O: addCommand x6, addSettingTab
     P->>O: onLayoutReady(listen)
     Note over O,P: nothing else has run: no worker, no vault read, no listener
     O-->>P: layout ready
@@ -1538,7 +1764,7 @@ The sequence shows start-up from `onload` to "ready" in both cases. What the use
 
 | Step | What is visible |
 |---|---|
-| `onload` finished | Two commands in the palette (Search notes, Search in this note) and Jet's settings tab. Nothing else. `test/main.test.ts` asserts zero note reads, zero vault listeners, zero workers |
+| `onload` finished | Six commands in the palette (Search notes, Search in this note, Report issue, Explain why a note is found, and the two trace commands, which are offered only when they can be used) and Jet's settings tab. Nothing else, unless "Also record the next start" is on: then a trace has begun (6.15). `test/main.test.ts` asserts zero note reads, zero vault listeners, zero workers |
 | Layout ready | Shift-Shift works. Opening Jet shows recents and names at once (Tier 0 is built one tick after the modal paints, from Obsidian's file list) |
 | First run, during the 3 s wait | Names, aliases and paths already match |
 | Build running | The modal's status line says "Indexing 300 of 1500...". Names match as you type; headings, tags and properties match too (`MetaIndex`, while `indexNotReady`); the worker answers over the batches it already holds, so recent notes are searchable first. The settings Index card says "Building: x of y notes" |
@@ -1768,8 +1994,77 @@ What can go wrong, what the user sees, and what the code does. Most of these are
 | Jet is turned off while `onload` waits for data | No leftover timers or listeners | `unloaded` and `built` flags; every timer is registered for cleanup | `main.ts` |
 | A quoted phrase search reads many notes | The list appears when the reads are done | After the awaits, `list()` checks the box still holds the same text | `Search.list` |
 | A very large note or heading | It is indexed up to a limit | The body is cut at `MAX_BODY_CHARS`, a heading at `MAX_HEADING_CHARS` | `fields.ts` |
+| The worker catches an error and carries on (a save, a read of the saved index, a vector read) | Nothing at the time; the report lists it under Problems | `tell` posts an event with a code, the error's class and its place; `JetClient` hands it to `diag.workerEvent` | `jet-worker.ts`, `Router.caught`, `jet-client.ts` |
+| An error is caught on the main thread | The same as before; the report lists it | `fail`, `warned` or `noted` print or not, and keep a code, the class and the place, never the message | `src/diag/diag.ts` |
+| The explanation cannot be made | "Jet could not explain this search. Try again, or use Report issue to report it." | The answer is dropped, the problem is recorded as `explain.run` | `ExplainPane.ask` |
+| The clipboard is refused | The report is selected in the window and a notice says to press Ctrl/Cmd+C | `selectReport` | `SupportModal.copy`, `reportOnGithub` |
+| The report is too long for the GitHub link | The browser opens the form with the sentence (if it fits) and the report is on the clipboard, with a notice to paste it | `issueLink` leaves out what does not fit within `URL_BUDGET` | `src/diag/issue.ts`, `SupportModal.reportOnGithub` |
+| More than 500 events happen in one trace | The report says "the last 500 kept" | The ring overwrites the oldest events | `Trace.add`, `traceLines` |
 
 Two failures are visible by design: a word the index has no match for shows the recovery screen (a spelling suggestion, widening the scope, creating the note), and a broken saved index shows the build status again.
+
+### 7.7 A report and a trace
+
+The two are separate but share a window: a trace is started and stopped there, and its numbers end up in the report. The parts are in 6.15.
+
+**Recording a trace**
+
+1. **Start.** The command "Start recording a trace" (offered only while no trace runs), Record in Settings, Advanced, Trace, in the report window, or in the search window's settings popover. Each calls `trace.start(settings.traceMinutes)`. With "Also record the next start" on, `onload` does it once, right after `normalizeData`: it clears `traceNextStart`, saves at once, and adds a `plugin loaded` mark.
+2. **The ring.** `trace.start` makes the typed arrays (500 events), adds a `start` event, makes its one timer for the chosen minutes, sets `trace.on` and tells its listeners.
+3. **What follows.** `main.ts`, through the listener it registered with `trace.onChange`, adds the status bar line (desktop only), shows a notice ("Jet is recording a trace. It stops by itself in 15 minutes. Open Report issue to stop it or copy the report.") and redraws the settings tab.
+4. **While it runs.** Callers that already hold the numbers add events behind `if (trace.on)`: `diag` for the worker's starts, stops, crashes and sleeps and for each problem, `Recorder.add` for each search that shows results, `Feeder` for the index opening, a build, the catch-up and each batch of changes, and `main.ts` for the start-up marks.
+5. **The end.** "Stop recording", the timer, or `onunload`. `trace.stop` adds a `stop` event (by the person, time up, or Jet turned off), clears the timer and tells its listeners. `main.ts` removes the status line and, unless Jet is being turned off, shows "Jet stopped recording. The trace is in the report, with N events." The events stay until the next start.
+
+**Making and sending a report**
+
+6. **Open.** The command "Report issue", the Open button in Settings, Advanced, a click on the status bar line, or the button in the explanation pane. `JetSearchPlugin.supportInfo(added)` makes a `SupportModal`, and its constructor calls `collect` once.
+7. **Collect.** `collect` reads the plugin's own state: the manifest, `Platform`, the settings, the vault's file counts, `diag`, `recorder.summary()`, `trace.state()` and `trace.list()` through `summarize`, and the kept explanation. It does not wake the worker, read a note or send anything.
+8. **Draw.** `onOpen` draws the report. If the worker is running, it asks it for `stats` and draws again when the answer comes.
+9. **Tick.** Each box (scope names, plugin names, search text and note names in the explanation, the full timeline) changes `ReportOptions`, and the report is collected and drawn again. A trace that starts or ends while the window is open does the same, and redraws the trace box.
+10. **Copy.** `formatReport` goes on the clipboard, the same text as on screen. If the clipboard is refused, the text is selected.
+11. **Open on GitHub.** `issueLink` builds the link from the sentence in "What happened" and `formatForIssue` (6.15). `openLink` clicks it. If the report fit, a notice says to press Submit. If not, `formatForGithub` is copied and a notice says to paste it into the Support info box.
+12. **Submit.** The person reads the form in the browser and presses Submit. Jet has no part in it and does not know whether it was sent.
+13. **Close.** `onClose` removes the window's trace listener and the box's timer. A running trace carries on.
+
+### 7.8 Explain a search
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as JetModal
+    participant P as ExplainPane
+    participant X as Explainer
+    participant C as JetClient
+    participant R as Router
+    participant E as JetEngine
+
+    M->>P: open(selected row, mode)
+    P->>P: rest 120 ms (none on opening)
+    P->>X: explain(note, mode) through the host
+    X->>C: ensure, then explain {mode, text, path, limit 50, allow or scope}
+    C->>R: handle explain
+    R->>E: explain(query, path, allow)
+    E->>E: lookups per word, the real query once, uncut
+    E-->>R: WordsExplanation
+    R-->>C: reply
+    C-->>X: reply
+    X->>X: add exclude rule, scope, filters, phrase, then build the views
+    X-->>P: Explained
+    P->>P: draw, if no newer question was asked
+```
+
+The diagram follows one question from the pane to the drawn answer. Nothing before step 1 touches the worker, and the search itself is not involved.
+
+1. **Open.** ⌘⇧E (`toggleExplain`), "Explain this result" in the ⌘K list, "Why?" on the nothing-found notice, the command "Explain why a note is found" (it opens Jet with the newest remembered search and calls `explainNow`), or "Explain a search" in Settings. With nothing typed and no filter, nothing opens.
+2. **Choose the mode.** `explainMode` says words or meaning. When both lists are shown it says "meaning" for a selected meaning row, and the pane gets a By words / By meaning switch. The modal gets the class `is-explaining`, and the footer hints change.
+3. **Rest, then ask.** `ExplainPane.open` draws the tabs and calls `ask(0)`. Later changes (a different row, a new list, a typed name) go through `ask()`, which restarts a 120 ms timer and a token. Each paint of the list calls `refresh()`, which does nothing unless the pane is open.
+4. **Gather.** The modal's callback passes the search as it ran (`ranText`, `ranScope`, the filters, the sort), the note and the heading it is listed under. `JetHost.explain.run` adds the scope names and the sets of paths that the scope, and the scope with the filters, keep.
+5. **Ask the worker.** `Explainer.run` awaits `ensure()`, then `client.explain` with the scope or the narrowed paths. `Router.explain` answers a words search through `JetEngine.explain` and a meaning search through `explainMeaning`. It changes nothing in the index.
+6. **Add the main thread's facts.** The exclude rule, scope and filter membership, the quoted phrase (one `cachedRead` of the note), and the heading. `searchView` and `noteView` make the sentences and tables.
+7. **Draw or drop.** If the pane's token is still the latest, it draws; an older answer is dropped. A failure draws a short message and records `explain.run`.
+8. **Follow.** An arrow key moves the selection, `explainSelect` tells the pane, and the pane asks again once it rests. A tab switch, or a note picked under "A note I expected", asks at once.
+9. **Add to the report.** "Report issue" in the pane keeps the result (`keepExplained`) and opens the report window with `added`. The explanation shows as the Explain section, marked.
+10. **Close.** ⌘⇧E again, Esc (a typed note name first), "‹ Results", or closing the window. `ExplainPane.close` raises the token and clears the timer, so an answer still on its way is dropped.
 
 ## 8. Invariants, and where they are enforced
 
@@ -1796,6 +2091,8 @@ A rule is only a rule if something fails when it is broken. Each row names the c
 | An older run of a build or catch-up stops when the index is reset | A cleared index must not be refilled by the run that started before | `Feeder.gen`, `alive`, `Cancelled`; `test/qa2-index.test.ts` ("Rebuild while the worker is asleep") |
 | A note deleted while its change is being read stays deleted | A late read must not bring it back | `Feeder.flush` re-checks `dirty`; `test/qa2-index.test.ts` ("a note deleted while its change is being read") |
 | A client answer older than the latest query is dropped | A slow answer must never overwrite a newer list | `JetClient.query` (`r.seq !== this.seq`); `test/qa-search.test.ts` |
+| The engine and the worker keep no support state: they import only `diag/error-facts`, and the worker reports what it caught as an event | The index and its thread must not depend on the report, and an error's text must not leave the worker | `jet-worker.ts` `tell`, `JetClient` `diag.workerEvent`; `test/diag-cost.test.ts` ("the engine and the worker do not use its memory ...", "the engine does not even tell the worker's router about errors ..."), `test/diag-events.test.ts` ("an event from the worker is kept as a problem, and is no answer to any request") |
+| `JetEngine.query` does not know `explain` exists, and the explanation reads the index the way a query does | Explaining must never change a search | `JetEngine.explain` builds a `Kit` from the query's own lookups; `test/explain-engine.test.ts` ("the query code never mentions it", "reads the same index as a search: nothing it does changes the next search"), `test/explain-worker.test.ts` ("changes nothing: the next search is the same") |
 
 ### 8.2 The keystroke and the screen
 
@@ -1818,14 +2115,21 @@ A rule is only a rule if something fails when it is broken. Each row names the c
 | Hit loops step over whole characters | A step of one code unit inside a surrogate pair matched the same character again for ever | `nextChar` in `excerpt.ts`; `test/qa2-text.test.ts` |
 | A match is never cut inside a character | An emoji cut in half shows as a replacement character | `clusterStart`, `clusterEnd`; `test/excerpt.test.ts` ("never split a surrogate pair..."), `test/qa-search.test.ts` (in-note rows) |
 | The double tap needs two clean taps of one key | Typing a capital must not open the window | `DoubleTap`; `test/shift.test.ts` |
+| A trace costs one boolean test when it is off | The trace must not slow a keystroke or a start | Every `trace.add(` sits behind `if (trace.on)`; the engine, the worker, the search, the ranking, the names tier and the window never name the trace; `test/trace-feed.test.ts` ("every event is made behind a test of `trace.on` ...", "the engine, the worker, the search, the ranking, the names and the window never name it", "makes nothing while it is off"), `test/trace.test.ts` ("is off, empty and allocates nothing until it is started") |
+| The search, the ranking and the names tier never name `explain`, and nothing asks the worker to explain until the pane is open | Explaining is an extra; a search must not pay for it | `test/explain-cost.test.ts` ("the search, the ranking and the names do not know it", "the engine's query and the worker's query and nearest do not call it", "making the explainer, as Obsidian's start does, asks the worker for nothing", "the window's own change on the typing path is a test of one boolean"); `test/explain-pane.test.ts` ("asks for nothing until it is opened, and no more once closed") |
+| The support info stays out of the hot paths: no `diag.` call in the search, the ranking, the names tier or the window; the recorder is touched only by the full-text and meaning searches, outside loops and callbacks; an error is recorded only where it is already caught | The report must cost a search nothing | `test/diag-cost.test.ts` |
 
 ### 8.3 Features, saved data and the plugin's life
 
 | Rule | Why | Enforced by |
 |---|---|---|
 | Nothing at Obsidian start: `onload` reads no note, starts no worker, adds no vault listener (on the very first run it also looks for another plugin's saved settings to import) | Plugin load time is paid by every user, every launch | `main.test.ts` ("reads no files, starts no worker..."); `listen()` waits for `onLayoutReady`; the worker starts on the first `JetClient.call` |
+| The report, the trace and Explain start nothing at load: no timer, no listener, no worker, no element (one opt-in exception: with "Also record the next start" on, `onload` starts a trace) | The same rule as above, for the newest features | `diag.ts`, `error-facts.ts` and `recorder.ts` hold no timer or listener, the trace makes its one timer in `start()`, and `main.ts` builds the report window in one place only, `supportInfo`; `test/diag-cost.test.ts` ("the memory of it starts nothing ...", "the report is built only on request ..."), `test/trace-feed.test.ts` ("a trace that has not been asked for does nothing when the file loads ..."), `test/trace-ui.test.ts` ("starts nothing at Obsidian's start, and makes no status item", "records from Obsidian's next start once ..."), `test/explain-cost.test.ts` ("nothing of it starts anything ...") |
+| The report holds no search text and no note, folder, scope or plugin name unless the person ticks it, and shows `word#1`, `note#1`, `scope#1` for the explanation | A bug report must be safe to paste | `collect` reads names only behind `ReportOptions`; `tagNames` in `explain/view.ts`; `test/diag-collect.test.ts` ("names no note, folder or scope, and no text from an error", "adds scope and plugin names only after their box is ticked, and takes them out again", "adds the explanation the user kept, with tags unless the names are allowed"), `test/explain-view.test.ts` ("shows tags instead of the words and the note's name") |
+| A trace keeps numbers and codes only, never a word of a search or a name | A recording left on for ten minutes must hold nothing private | `Trace.add` takes numbers and a label that is a code; `recorder` packs a query's length, not its text; `test/trace-proof.test.ts` ("keeps only codes and numbers, over names, searches and errors that are all invented secrets"), `test/trace-feed.test.ts` ("hears of a caught error by its code only, never its message", "keeps only how long a search was (255 at most), never its text") |
+| The GitHub link stays within `URL_BUDGET`, and Jet posts nothing: it opens a link and the person presses Submit | A link that is too long fails on GitHub's side, and the report must not leave the device by Jet's own call | `issueLink` fills `what`, then `support`, each only while the link fits; `openLink` clicks an `<a>`; no `fetch`, `requestUrl` or `window.open` in `src/diag/` (by reading, no test forbids it); `test/issue-link.test.ts` ("never goes over the budget, whatever the text", "keeps the report out of the link when it would make the link too long, and says so"), `test/diag-collect.test.ts` ("opens a bug report on GitHub ... and waits for the person to submit") |
 | The first build is delayed and happens once | A burst of work at the first frame slows the start | `FIRST_BUILD_DELAY_MS`, the `indexedAt === null` check; `qa-lifecycle.test.ts` ("the first build's timer goes with the plugin") |
-| No network except the model download, and only after you confirm | Notes stay on the device; trust | `MeaningConfirm` before `install`; only `install.ts` calls `requestUrl`; the model URL is built from `MODEL.revision` |
+| No network except the model download, and only after you confirm | Notes stay on the device; trust | `MeaningConfirm` before `install`; only `install.ts` calls `requestUrl`; the model URL is built from `MODEL.revision`. "Open on GitHub" is not a request from Jet: it clicks a link and Obsidian hands the address to the browser (6.15) |
 | A downloaded model is the pinned one | A changed or substituted file would feed wrong vectors or unknown bytes into a parser | SHA-256 in `install.checks` before `packModel`; pinned revision in `fileUrl` (no test covers the rejection path) |
 | The index and vectors stay outside the vault | Never synced, never in a backup of notes | `idbStore` in `worker/store.ts`; the model is in the plugin folder, not the vault |
 | Settings migrations never lose data: a bad or old value falls back, it does not throw or erase | A hand-edited or synced `data.json` must not break start | `normalizeData` field by field; `test/data.test.ts`, `qa-data.test.ts`, `keys.test.ts` |
@@ -1851,9 +2155,9 @@ What is made when, and what releases it. The plugin never keeps a timer, a liste
 **`onload`** (async, `main.ts`), in order:
 
 1. `loadData()`; if the plugin was already unloaded while it waited, return and make nothing.
-2. `normalizeData`; `setMac(Platform.isMacOS)` for key hints.
-3. Make `Feeder`, `ScopeKeeper`, `Search`, `ScopeWatcher`, `JetHost`, `Meaning` and wire their callbacks (`onReady`, `client.onCrash`, `feeder.onChanged`, `host.meaning`). The `JetClient` exists but has no worker yet.
-4. `addCommand` twice, `addSettingTab`, the throttled settings-progress callback (its timer is cleared by a `register`).
+2. `normalizeData`; `register` the listener that follows the trace (`trace.onChange`); if `traceNextStart` is set, clear it, save at once and start the trace (the one opt-in exception to "nothing at start"); `setMac(Platform.isMacOS)` for key hints.
+3. Make `Feeder`, `ScopeKeeper`, `Search`, `ScopeWatcher`, `JetHost` (with an `Explainer`, which only holds its dependencies), `Meaning` and wire their callbacks (`onReady`, `client.onCrash`, `feeder.onChanged`, `host.meaning`, `host.support`). The `JetClient` exists but has no worker yet.
+4. `addCommand` six times (Search notes, Search in this note, Report issue, Explain why a note is found, Start recording a trace, Stop recording a trace), `addSettingTab`, the throttled settings-progress callback (its timer is cleared by a `register`).
 5. `built = true`, then `onLayoutReady(listen)`.
 
 **`listen`** (after the layout is ready; returns at once if `unloaded`):
@@ -1865,15 +2169,19 @@ What is made when, and what releases it. The plugin never keeps a timer, a liste
 | 9 events: `layout-change`, `css-change`, `file-open`, vault `create`, `modify`, `rename`, `delete`, metadata `changed`, `editor-change` | `registerEvent` | Obsidian cleanup |
 | First-build timer (only when `indexedAt` is null) | `register(clearTimeout)` | Obsidian cleanup |
 
-**`onunload`**, in order (`unloaded = true` first; a half-built plugin returns after that):
+**`onunload`**, in order (`unloaded = true` first; a half-built plugin returns after step 4):
 
-1. `save.run()`: a pending debounced save is written now.
-2. Remove the stand-in commands, but only those that still hold Jet's own command object (another plugin turned on since keeps its own).
-3. Close the modal.
-4. `feeder.stop()`: clears the flush and typing timers.
-5. `watcher.stop()`: clears the scope watcher's timer.
-6. Clear `sleepTimer`.
-7. `client.stop()`: terminate the worker, revoke the blob URL, reject every pending call with "the worker stopped".
+1. `trace.stop("unload")`: a running trace ends, its timer is cleared and its listeners are told (no notice is shown for this ending).
+2. `traceIndicator.hide()`: the status bar line and its 15 second timer go.
+3. `keepExplained(null)`: the explanation kept for the report is let go.
+4. Tell Jade Jet is off (`jet-search:off`).
+5. `save.run()`: a pending debounced save is written now.
+6. Remove the stand-in commands, but only those that still hold Jet's own command object (another plugin turned on since keeps its own).
+7. Close the modal.
+8. `feeder.stop()`: clears the flush and typing timers.
+9. `watcher.stop()`: clears the scope watcher's timer.
+10. Clear `sleepTimer`.
+11. `client.stop()`: terminate the worker, revoke the blob URL, reject every pending call with "the worker stopped".
 
 Obsidian then runs the `register` and `registerEvent` cleanups and removes the commands and the settings tab. The test mock runs cleanups first, then `onunload`; Jet's `onunload` reads nothing those cleanups release.
 
@@ -1887,6 +2195,12 @@ Obsidian then runs the `register` and `registerEvent` cleanups and removes the c
 | Meaning model and vectors in memory | `meaning:load` | worker end or `meaning:off`. Vectors persist in IndexedDB; the model file stays in the plugin folder |
 | Scope sets (main thread and worker) | first `ensure()` | `reset()`; the worker's copy is rebuilt by `resend()` when it reopens |
 | Sleep timer | every search (`wake`) | rearmed by the next search; cleared at unload |
+| Trace storage (five arrays of 500) and its one timer | `trace.start` (never at load, except "Also record the next start") | `trace.stop` clears the timer; the arrays stay until the next `start`, and go with the plugin |
+| Trace status bar line and its 15 s interval | `TraceIndicator.show`, when a trace starts (desktop only) | `hide()` when it ends, and in `onunload` |
+| Trace listener in `main.ts` | `onload`, with `register` | Obsidian's cleanup at unload |
+| Flight recorder arrays (100 rows) and `diag` | the first search (the arrays); `diag` is a module-level object | nothing releases them; they hold numbers and codes only, and start empty at each launch |
+| The kept explanation | the pane's "Report issue" button (`keepExplained`) | replaced by the next one; `keepExplained(null)` in `onunload` |
+| The report window | `JetSearchPlugin.supportInfo` | `onClose`: its trace listener and the trace box's 30 s interval are removed |
 
 ### 9.2 The worker and the index
 
@@ -1919,6 +2233,7 @@ On unload, `main.ts` writes pending settings, stops the feeder's timers and term
 | `ResizeObserver` on `modalEl` (the modal's own window, so pop-outs work) | `onOpen` | `resize.disconnect()` in `onClose` |
 | `previewTimer` (80 ms rest) | `schedulePreview` | `clearTimeout` in `onClose`; each new selection replaces it |
 | `cardTimer` (hover card) | `cardSoon` | `clearTimeout` in `onClose` |
+| The explanation pane and its 120 ms timer | the pane's frame is made in the constructor; the timer by `ExplainPane.ask` while the pane is open | `ExplainPane.close()` in `onClose`: `shown` false, the token raised (an answer on its way is dropped), the timer cleared |
 | The preview and its `Component` | `Preview` | `preview.destroy()`: `clear()` increments `token` (so a render in flight is dropped), calls `unload()` on the component, empties the pane and removes the element |
 | The row pool, entries, view state | The modal | Garbage collected with the modal. After 300 opens, Jet's own allocations still alive were 0 KB (commit 4e876b7) |
 
@@ -1941,6 +2256,7 @@ Recipes for the changes people make most. Each says which files to touch, which 
 3. Run the groups that guard ranking: "Jet engine ranking", "a word the vault has in only a few notes", "a word typed with a typo, still being typed", and the typo gate.
 4. Run the generated-search check on a seed you did not use to find the bug (`docs/benchmarks.md` explains why).
 5. A change to how a field is scored, to the analyzer or to the layout needs a version bump (10.5).
+6. A change to a multiplier in `JetEngine.query` (the name rule, recency, inbound links) needs the same change in its copy in `src/engine/explain.ts`. `test/explain-engine.test.ts` ("the multipliers it reports are the ones the query applies") fails when the two disagree.
 
 ### 10.1 Add a stemmer language
 
@@ -2027,6 +2343,16 @@ Recipes for the changes people make most. Each says which files to touch, which 
 - Test first: run the new command on a tree where it should fail, and see it fail.
 - The trap: `release.yml` does not run `check`, so a check that matters for a release must be a step there too. Keep CI on Node 22 (the supported minimum in `CONTRIBUTING.md`).
 
+### 10.16 Add a trace event
+- Files: `KIND` in `src/diag/trace.ts` (a new number, with a comment that says what `a` to `d` and the flags hold); the one place that makes it, written `if (trace.on) trace.add(KIND.x, ...)`; `summarize`, `TraceSummary` and `traceLines` in `src/diag/trace-report.ts` for the summary, and `eventText` there for the timeline line.
+- Test first: `test/trace-feed.test.ts` (the event reaches the trace with its numbers, and nothing is made while the trace is off), then `test/trace-report.test.ts` (the summary line and the timeline line). If the event carries anything that comes from the vault or from a search, add an invented secret to `test/trace-proof.test.ts`.
+- The trap: an event is numbers and a code. A `label` must be a code of Jet's own (the proof test checks it against `/^[a-z][a-z0-9.-]*$/`), never a path, a name or an error message. Keep `trace.on` in the line or the two before the call (`test/trace-feed.test.ts` greps for it), and keep the call out of the engine, the worker, the search, the ranking, the names tier and the window, which may not name the trace. The four numbers are in a `Float32Array` (exact to about 16 million), the flags in a `Uint16Array` and the kind in a `Uint8Array`, so a larger value is rounded or wraps. The ring keeps 500 events, so an event that fires per keystroke or per note fills it fast: make it per search or per batch.
+
+### 10.17 Add a line to the report
+- Files: `Snapshot` and `buildReport` in `src/diag/report.ts` (the line is a `Line`, with `warn` set when the reader should look first); `collect` in `src/diag/collect.ts`, the one place that reads the state; for a name the person may add, a field in `ReportOptions` and `NO_OPTIONS`, and a tick in `SupportModal.onOpen`; `diag.ts` or `recorder.ts` if it needs a new counter.
+- Test first: `test/diag-report.test.ts` (give `buildReport` a snapshot and read the line; the test "never prints undefined or NaN" is the model), then `test/diag-collect.test.ts` (the plugin gives that snapshot, wakes nothing and reads no note).
+- The trap: a snapshot holds numbers, flags and codes. A name goes in only behind a tick, and the check is a secret: see "names no note, folder or scope, and no text from an error" in `test/diag-collect.test.ts`. A new counter is written where something rare already happens: `test/diag-cost.test.ts` forbids `diag.` calls in the search, the ranking, the names tier and the window, and requires `fail`, `warned` and `noted` to sit in a catch. The report is copied and sent through a link of at most `URL_BUDGET` characters (a report of about 3,000 characters fits); every line makes the "too long, copied instead" case more likely, so keep a line short. The text of the form (`.github/ISSUE_TEMPLATE/bug_report.yml`) says what the report holds: keep it true. A sentence for the explanation lives in `src/explain/view.ts` and is tested in `test/explain-view.test.ts`, which also checks that no wording uses a dash as punctuation.
+
 ## 11. Build pipeline
 
 <picture>
@@ -2049,6 +2375,7 @@ Recipes for the changes people make most. Each says which files to touch, which 
 | `test:watch` | `vitest` |
 | `check` | `format:check`, `lint`, `typecheck`, `test`, in that order |
 | `bench:engine`, `bench:mem` | `scripts/bench.mjs run` or `mem`: bundles `bench/run.spec.ts` or `bench/mem.spec.ts` to `bench/.out` (untracked) and runs it with `--expose-gc` |
+| `bench:diag`, `bench:explain` | The same script with `diag` or `explain`: what the report's counters, the recorder and a trace cost per call (`bench/diag.spec.ts`), and what explaining costs next to the search it explains on a vault you name (`bench/explain.spec.ts`, `npm run bench:explain -- <vault dir>`) |
 
 ### 11.2 esbuild and the inline worker
 
@@ -2091,7 +2418,7 @@ The release job does not run `npm run check`: it builds, which type-checks, but 
 
 ## 12. Testing strategy
 
-Counts from one run of `npm test` while writing this document: 73 test files and 741 tests. The default pass ran 67 files and 560 tests in about 4 s. The serial timed pass ran 6 files and 181 tests in about 6 s. All passed.
+Counts from one run of `npm test` while writing this document: 104 test files and 1,064 tests. The default pass ran 98 files and 882 tests in about 4 s. The serial timed pass ran 6 files and 182 tests in about 6 s. All passed.
 
 | Kind | Files (examples) | How it runs |
 |---|---|---|
@@ -2101,6 +2428,8 @@ Counts from one run of `npm test` while writing this document: 73 test files and
 | Regression suites | `qa-*.test.ts`, `qa2-*.test.ts` | One test per found bug, written to fail on the code as it was. They use fake workers (`FakeWorker` in `qa-lifecycle` and `qa-search`) and fake timers |
 | Fixture vaults | `fixture-vaults`, `scopes-generate` | `bench/fixtures/make-vaults.mjs` builds eight vault shapes (para, flat, deep, tags-only, properties-only, johnny-decimal, zettelkasten, non-english) with an `expected.json`, in a temp folder, seeded so two builds are byte-identical. `non-english` has French, German, Japanese and Arabic names. `scopes-generate` compares the generator's ticked proposals with `expected.json`. `fixture-vaults` guards the helper |
 | Timed | `names`, `qa2-generate`, `excerpt`, `qa-search`, `stem`, `fixture-vaults` | Assert a time bound. Serial |
+| Support and Explain | `diag*`, `trace*`, `host-trace`, `issue-link`, `explain*`, `modal-explain` | Pure parts (the report, the views, `explainWords`) take plain values; the worker side runs through `Router` and `memoryStore()`; the window, the status bar line and the commands run against the Obsidian mock. `trace-proof` plants invented secrets in names, scopes, plugins, errors and searches and checks that none reaches a trace or a report |
+| Source checks | `diag-cost`, `explain-cost`, the second group of `trace-feed` | Read files under `src/` as text and fail on a name, an import, a timer or a call in the wrong place. They guard cost without a stopwatch, and they check wording, not behaviour |
 | Model reference | `meaning`, `meaning-tokenizer` | Compare vectors and tokens with Hugging Face's own on `test/fixtures/potion-base-8M.json`. **They return early and pass when the model files are not on the machine** (`JET_MODEL`, `JET_TOKENIZER`, or the default models folder) |
 
 **Why the timed tests run serially.** A time bound measured while 60 other files share the CPU fails at random. The six files with bounds run in a second pass with `--no-file-parallelism`. The excerpt tests also use the fastest quarter (p25), not the median, for the same reason, and the fixture build bound has room for a loaded machine (3 s against 0.3 s alone).
@@ -2116,7 +2445,7 @@ Counts from one run of `npm test` while writing this document: 73 test files and
 3. Fix the code. Run the file, then `npm run check`.
 4. If the fix could change speed, run the timed pass and a bench (`npm run bench:engine -- demo-vault`).
 
-**Gaps worth knowing.** `meaning/install.ts` (`checks`, `install`, `download`) has no unit test: the checksum rejection and the HTTP error path are covered only by reading. The listener budget in `listen()` (9 workspace and vault events) is a comment, not an assertion.
+**Gaps worth knowing.** `meaning/install.ts` (`checks`, `install`, `download`) has no unit test: the checksum rejection and the HTTP error path are covered only by reading. The listener budget in `listen()` (9 workspace and vault events) is a comment, not an assertion. No test forbids a network call in `src/diag/`; that Jet posts nothing from the report holds by reading. The cost of the trace and of explaining is measured by hand (6.15), not asserted.
 
 ## 13. Performance budget
 
@@ -2145,6 +2474,9 @@ Numbers marked "bench" come from `docs/benchmarks.md` (Apple M3 Pro, Obsidian 1.
 | Memory, engine | none asserted | 10 MB at 1,000 notes, 23 MB at 10,000, about 89 MB at 50,000 (an upper bound) | bench: `npm run bench:mem` |
 | Memory, page heap | none asserted | 29 MB at 1,000 notes, 157 MB at 10,000 (the worker's heap could not be read) | bench |
 | Cost at Obsidian start | no vault read, no worker, no vault listener at `onload` | | test: `main.test.ts` |
+| Trace, off | one boolean test per call site | equal to the old build within noise in paired A/B runs; about 0.9 ns for the test | `npm run bench:diag`; not asserted |
+| Trace, on | none asserted | no measurable cost in paired A/B runs; about 30 ns per event; heap about +0.08 MB | same |
+| Explaining | none asserted; only when asked | one real query, uncut, plus lookups per word, per press of the key | `npm run bench:explain -- <vault dir>` |
 | Worker idle | stops after 10 minutes without a search | | `SLEEP_AFTER_MS`; test: `qa-lifecycle.test.ts` |
 
 ## 14. Defect register
@@ -2253,7 +2585,7 @@ What Jet does not do, and what is not yet verified. Where a number is known, it 
 - **Excerpts are for 24 rows.** Rows below that have none. The scan stops at 256 KB, and the preview renders 8000 characters, marks 50 hits per text node and 300 in all.
 - **Search in this note** has no phrase check, no fuzzy matching and shows 100 lines.
 - **Accessibility is partial.** The roles and `aria-activedescendant` are in place, but there is no live region to announce results, `aria-expanded` is always `true`, and the code has no reduced-motion handling for the sliding scopes row. Not tested with a screen reader.
-- **The modal is one 2,300-line class** with its state in separate booleans. A change to scopes, filters or meaning touches several handlers. There is no state machine and no test of the combinations beyond the named scenarios.
+- **The modal is one 2,500-line class** with its state in separate booleans. A change to scopes, filters or meaning touches several handlers. There is no state machine and no test of the combinations beyond the named scenarios.
 - **Fixed size.** The window is 800 by 572 px (CSS), with a narrow mode below 760 px that hides the preview. On phones and tablets a separate block at the end of `styles.css` (every selector under `body.is-mobile` or `body.is-phone`, enforced by `test/mobile-css.test.ts`) hides the footer of key hints on a phone and gives the small controls a 44 px touch area. The layout has been checked on an emulated phone.
 - **Marks follow the theme only after a `css-change`.** A snippet that changes the highlight without that event is measured at the next theme change.
 - **Some source comments name an older default.** The comment on `ModalHost.copyLink` and one in `main.ts` say Command-L; the default is Command-C (`KEY_ACTIONS`).
@@ -2274,6 +2606,15 @@ What Jet does not do, and what is not yet verified. Where a number is known, it 
 - **Settings search.** Jet draws its own tab, so Obsidian's settings search does not list Jet's settings (two accepted lint warnings). The tab uses `display`, deprecated since 1.13.
 - **Private APIs.** Settings pages, stand-in command ids, opening tabs and the Hotkeys filter depend on Obsidian internals that can change; each falls back, but the fallback is a dialog or nothing.
 - **The release job runs no tests.** It builds (and type-checks) only.
+- **The report is a snapshot, in memory.** Counters, problems, the last 100 searches and the trace start empty at each launch, so a problem from before a restart is not in the report. The index's size and age are known only when the worker is awake or has answered once this session; a sleeping worker is not woken for them. A title-only search is not recorded, because it never reaches the worker.
+- **The trace ring drops the oldest events past 500.** The summary is made from the events still held, so after the ring wraps its counts (searches, medians, the worker's starts) cover those only. The first line says "the last 500 kept". The timeline lists the newest 300 events. A trace is in memory: it is lost when Obsidian quits, and a new one forgets the last. The status bar line exists on desktop only; on a phone the trace runs and stops by itself with no light.
+- **"Queries" in the trace are a guess from time.** Searches less than 2 seconds apart (`QUERY_GAP_MS`) count as one query, with no look at the text, so two quick unrelated searches are one, and a slow typist's one query is several. The summary says "about".
+- **The GitHub link has a budget, and the form comes from the default branch.** A report over `URL_BUDGET` (6,000 characters) goes to the clipboard and the person pastes it, which is what a report with a long timeline does. GitHub reads the issue form from the repository's default branch, so a changed form reaches the link only after it is merged there. Jet cannot tell whether the person pressed Submit.
+- **Explain runs the real query again.** It costs one query, uncut (every matching note is scored and listed, not the top 50), plus lookups for each word, each time the pane asks. It is asked once per settled change while the pane is open, not per keystroke, and its cost on a large vault is measured by `npm run bench:explain` and not asserted by a test.
+- **Explain shows the figures of a text search even when the window did not run one.** With Title only on, the window asks no worker, but the pane still asks the text index, adds a note that only names are searched, and gives ranks of a search the window did not make. A note the window lists by its name, and the text search does not list, is told it is "listed under Titles", with no figures for the names tier.
+- **Explain does not cover every list.** The in-note window has none. The Answers list has no explanation of its own: a note the text search does not list but the window shows under another heading is told it is "listed under" that heading, "not by the text". The wording of the explanation is English only.
+- **Explaining by meaning after the worker slept can say "not ready".** `Explainer.run` opens the index (`ensure()`) but does not load the model (`ensureMeaning()`), and a fresh worker has none, so the reply is "Meaning is off, or its model is not installed" until a search by meaning loads it again. By reading the code; no test covers it.
+- **A report window open at unload stays open.** `onunload` closes Jet's search window but does not keep or close the report window; its trace listener is released only when that window is closed.
 
 ## 16. Contributing
 
@@ -2403,6 +2744,7 @@ Defaults in `KEY_ACTIONS` (`Mod` is Command on macOS, Ctrl elsewhere). The setti
 | `meaning` | Words, meaning, both | Cmd+J | Ctrl+J |
 | `filters` | The filters bar | Cmd+F | Ctrl+F |
 | `sort` | Next sort order | Cmd+Shift+S | Ctrl+Shift+S |
+| `explain` | Explain why the results are what they are | Cmd+Shift+E | Ctrl+Shift+E |
 | `nextHit` | Next hit in the preview | Cmd+G | Ctrl+G |
 | `prevHit` | Previous hit in the preview | Cmd+Shift+G | Ctrl+Shift+G |
 | `accept` | Take the suggestion (scope, value, fix), or the next scope | Tab | Tab |
@@ -2455,6 +2797,8 @@ What `normalizeData` accepts, and the value used when it does not.
 | `settings.questionShows` | `both`, `meaning`, `words`; else from `meaningQuestions` | `both` |
 | `settings.bothLayout` | `first`, `ranked`, else `groups` | `groups` |
 | `settings.answers`, `fixKeys` | `!== false` | true |
+| `settings.traceMinutes` | a number in `TRACE_MINUTES` (5, 10, 15, 30, 60) | 15 |
+| `settings.traceNextStart` | `=== true` | false |
 | `opened` | path to `[score >= 0, finite time]` | `{}` |
 | `searches` | array of strings, first 10 | `[]` |
 | `indexedAt` | number | null |
@@ -2482,7 +2826,29 @@ Nested shapes: `Scope {id, name, aliases, kind, rules, combine, mode, source, or
 
 `app.commands.commands`, `app.commands.addCommand`, `app.commands.removeCommand`; `app.plugins.plugins`, `app.plugins.enabledPlugins`; `app.appId`; `app.setting.openPage`, `closePage`, `open`, `openTabById`, `modalEl`, `activeTab`; `app.hotkeyManager.printHotkeyForCommand`. Public but newer than the minimum version: `SettingPage` (Obsidian 1.13), read from the module object at call time. The manifest's minimum is 1.8.0.
 
-### 17.4 Where to find more
+### 17.4 Support, trace and Explain numbers
+
+| Name | Value | File | Meaning |
+|---|---|---|---|
+| `KEEP` (trace) | 500 | `src/diag/trace.ts` | events held; the oldest are overwritten |
+| `TRACE_MINUTES` | 5, 10, 15, 30, 60 | same | lengths a trace may be asked to run |
+| `DEFAULT_TRACE_MINUTES` | 15 | same | the length when none is chosen or a saved one is not in the list |
+| `SEARCH_CHARS` | 8 | `src/diag/recorder.ts` | the shift that puts a query's length in the high byte of a search event's flags (255 at most) |
+| `KEEP` (recorder) | 100 | same | searches held; rows of 7 floats and 3 integers |
+| `MAX_PROBLEMS` (diag) | 20 | `src/diag/diag.ts` | problems held, oldest dropped |
+| `MAX_PROBLEMS` (trace report) | 10 | `src/diag/trace-report.ts` | the newest problems the Trace section lists |
+| `QUERY_GAP_MS` | 2,000 ms | same | searches less apart than this count as one query |
+| `MAX_SLOW` | 3 | same | slowest searches the Trace section names |
+| `MAX_TIMELINE` | 300 | same | the newest events the Timeline lists |
+| `URL_BUDGET` | 6,000 characters | `src/diag/issue.ts` | the longest GitHub link Jet makes (GitHub answers a redirect up to 6,500 and an error from 7,000) |
+| status line redraw | 15,000 ms | `src/diag/trace-ui.ts` | `TraceIndicator`'s interval |
+| trace box redraw | 30,000 ms | same | `TraceBox`'s interval while recording and the window is open |
+| `LIMIT` | 50 | `src/explain/explainer.ts` | what the window lists, and so how far the explanation reads "the cut" (also `k` for meaning) |
+| `REST_MS` | 120 ms | `src/modal/explain-pane.ts` | rest after the last change before the worker is asked |
+| `SUGGESTIONS` | 6 | same | notes drawn under "A note I expected" |
+| candidates asked | 8 | `JetHost.findNotes` in `src/host.ts` (a literal `slice(0, 8)`) | notes whose name has the words typed |
+
+### 17.5 Where to find more
 
 | For | Read |
 |---|---|
@@ -2490,4 +2856,5 @@ Nested shapes: `Scope {id, name, aliases, kind, rules, combine, mode, source, or
 | Every setting, key and syntax | [reference.md](reference.md) |
 | How the numbers were measured | [benchmarks.md](benchmarks.md) |
 | The messages between the main thread and the worker | 6.3 |
+| The report, the trace and Explain | 6.15, 7.7 and 7.8 |
 | Changes, version by version | [CHANGELOG.md](../CHANGELOG.md) |

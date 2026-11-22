@@ -24,7 +24,7 @@
 ![Offline](https://img.shields.io/badge/works-offline-brightgreen)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-8b7cf8)](https://github.com/eknowledger/jet-search/blob/main/CONTRIBUTING.md)
 
-[Install](#install) · [Tour](#a-quick-tour) · [Speed](#how-fast) · [Demo vault](#try-it-on-the-demo-vault) · [Privacy](#privacy-network-use-and-storage) · [FAQ](#faq) · [Docs](#documentation)
+[Install](#install) · [Tour](#a-quick-tour) · [Support](#when-something-is-wrong) · [Speed](#how-fast) · [Demo vault](#try-it-on-the-demo-vault) · [Privacy](#privacy-network-use-and-storage) · [FAQ](#faq) · [Docs](#documentation)
 
 </div>
 
@@ -99,6 +99,28 @@ Ask for a price, a name, a date or a reason, and Jet lists the notes by the line
 ![Several languages](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/languages.webp)
 
 ![Arabic, right to left](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/rtl-ar.webp)
+
+## When something is wrong
+
+Jet can say why a note is or is not found, and it makes a report you can send in two clicks. All of it is on demand, and Jet sends nothing: you read the report and press Submit yourself.
+
+### Why is a note not found?
+
+**Ctrl / ⌘ + Shift + E** in Jet's window turns the preview into an explanation: how each word was read, where the selected note holds it, why a note you expected is missing. [More](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md#explain-a-search).
+
+![Explaining a search, then sending the explanation with Report issue](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/explain.webp)
+
+### Report an issue
+
+Run *Report issue* from the command palette. Jet shows the report: versions, vault size, timings, and no note names or search text unless you tick them. **Open on GitHub** opens a new bug report with the form already filled in. [More](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md#report-an-issue).
+
+![Report issue from the command palette, then Open on GitHub](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/report-issue.webp)
+
+### Record a trace
+
+For a problem that comes and goes, record a few minutes of what Jet does: timings and events, in memory, never a word of a search or a note name. The trace goes into the report, with a timeline to the millisecond. [More](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md#record-a-trace).
+
+![Recording a trace, then reading its timeline in the report](https://raw.githubusercontent.com/eknowledger/jet-search/main/docs/media/readme/trace.webp)
 
 ## Install
 
@@ -199,6 +221,7 @@ Names match on a separate, smaller index: 0.03 ms at 1,000 notes, 0.26 ms at 10,
 
 - **No telemetry, no ads, no accounts, no payments.** Jet is free and open source.
 - **Network.** Jet works fully offline. It makes one kind of network request, and only when you ask for it: turning on **Search by meaning** asks first, then downloads its model (about 31 MB, once) from Hugging Face (`minishlab/potion-base-8M`, a pinned revision, each file checked against a SHA-256 in Jet's code). To avoid the network completely, choose **Use files...** in the settings and give Jet the two model files yourself. Your notes are never sent anywhere.
+- **Reporting.** Jet makes no request when you report a problem. *Open on GitHub* only opens your browser at a new issue page with the form filled in, and you press Submit. The report holds no note names or search text unless you tick them.
 - **Files outside your vault.** Jet reads none. **Use files...** reads only the two model files you pick.
 - **Storage.** The index and the note vectors live in your browser's IndexedDB on your device, one database per vault, outside the vault. The packed model (about 8 MB) is kept in Jet's plugin folder. You can clear the index or remove the model from Jet's settings.
 
@@ -247,6 +270,8 @@ npm run build   # main.js, manifest.json and styles.css
 ## Status
 
 Jet Search is under active development, by one maintainer. Please open an [issue](https://github.com/eknowledger/jet-search/issues) for bugs, ideas and questions.
+
+**Something wrong?** Run *Report issue* in the command palette. [How it works](https://github.com/eknowledger/jet-search/blob/main/docs/guide.md#report-an-issue).
 
 ## Licence
 

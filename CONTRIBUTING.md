@@ -4,7 +4,7 @@ Thanks for wanting to help. Jet Search is a small project with a few firm rules,
 
 ## Before you start
 
-- **Bugs and ideas:** open an issue first for anything bigger than a small fix, so we can agree on the shape before you write code.
+- **Bugs and ideas:** open an issue first for anything bigger than a small fix, so we can agree on the shape before you write code. For a bug, use *Jet Search: Report issue* in the command palette. It opens a new bug report with your versions and settings already filled in, so you only add what happened.
 - **Read [docs/architecture.md](docs/architecture.md)** (about 30 minutes). The six rules in section 2 (nothing at start, the main thread only draws, no stale results, the index outside the vault, no network) are not negotiable without a very good reason. When you need the detail behind a part, the [architecture reference](docs/architecture-reference.md) has it.
 
 ## Set up
