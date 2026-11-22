@@ -1,6 +1,32 @@
 import type { Snapshot } from "../src/diag/report";
+import type { Summary } from "../src/diag/recorder";
 
 export const NOW = new Date(2026, 10, 21, 18, 30).getTime();
+
+export const searches = (over: Partial<Summary> = {}): Summary => ({
+	kept: 100,
+	total: 340,
+	median: 14.2,
+	p95: 41.4,
+	max: {
+		total: 96.3,
+		ready: 3,
+		worker: 71,
+		transit: 2.4,
+		prepare: 15,
+		excerpts: 5,
+		hits: 50,
+		flags: 1 | 8,
+		chars: 18,
+		words: 4,
+	},
+	stages: { ready: 0, worker: 4.1, transit: 1.2, prepare: 7, excerpts: 2 },
+	kinds: { words: 94, meaning: 6 },
+	flags: { scoped: 12, cold: 1, building: 0, broken: 0, rare: 3, phrase: 4 },
+	superseded: 31,
+	last: [10, 12, 14, 9, 11, 13, 15, 12, 10, 96],
+	...over,
+});
 
 export const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 	now: NOW,
@@ -36,6 +62,7 @@ export const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 		windowsWatched: 1,
 		windowsOpen: 1,
 	},
+	searches: searches(),
 	meaning: { on: true, model: { id: "minilm", bytes: 31_000_000 } },
 	scopes: { count: 4, sizes: [120, 2300, 48, 410], names: null },
 	settings: {

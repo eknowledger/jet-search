@@ -45,7 +45,7 @@ describe("the support info stays out of the hot paths", () => {
 	});
 
 	it("the memory of it starts nothing: no timer, no listener, no work when it is loaded", () => {
-		const src = read("src/diag/diag.ts") + read("src/diag/error-facts.ts");
+		const src = read("src/diag/diag.ts") + read("src/diag/error-facts.ts") + read("src/diag/recorder.ts");
 		expect(src).not.toMatch(
 			/setTimeout|setInterval|requestAnimationFrame|addEventListener|\.on\(|registerEvent|new Worker/,
 		);
@@ -57,5 +57,33 @@ describe("the support info stays out of the hot paths", () => {
 		const mentions = main.split("\n").filter((l) => /SupportModal|collect\(/.test(l) && !l.startsWith("import"));
 		expect(mentions.length).toBe(1);
 		expect(mentions[0]).toMatch(/new SupportModal/);
+	});
+
+	it("the recorder is touched only by the full-text and meaning searches, outside loops and callbacks", () => {
+		for (const f of files("src")) {
+			if (f.includes("/diag/") || f.endsWith("src/search.ts")) continue;
+			expect(read(f), f).not.toMatch(/\brecorder\b/);
+		}
+		const lines = read("src/search.ts").split("\n");
+		const indent = (l: string): number => /^\t*/.exec(l)?.[0].length ?? 0;
+		let seen = 0;
+		lines.forEach((line, i) => {
+			if (!/\brecorder\./.test(line)) return;
+			seen++;
+			// Every block this line sits in, from the inside out: none may be a loop or a callback, except the
+			// async function each search runs in.
+			let depth = indent(line);
+			for (let k = i - 1; k >= 0 && depth > 0; k--) {
+				const l = lines[k] as string;
+				if (!l.trim() || indent(l) >= depth) continue;
+				depth = indent(l);
+				const opener = l.trim();
+				if (/^void \(async \(\) => \{$/.test(opener)) continue;
+				expect(opener, `search.ts:${i + 1} sits inside ${opener}`).not.toMatch(
+					/\b(for|while)\b|=>|\.(map|filter|forEach|some|every|sort|reduce|then|catch)\(|\bfunction\b/,
+				);
+			}
+		});
+		expect(seen).toBeGreaterThan(4);
 	});
 });

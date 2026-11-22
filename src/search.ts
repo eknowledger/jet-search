@@ -44,6 +44,7 @@ import { joinNames, unionOf, type Where, whereIds, wireWhere } from "./scopes/wh
 import type { JetClient } from "./worker/jet-client";
 import type { QueryReply } from "./worker/protocol";
 import { fail, noted, warned } from "./diag/diag";
+import { FLAG, recorder, wordCount } from "./diag/recorder";
 
 type Item = Extract<Entry, { type: "item" }>;
 
@@ -258,6 +259,11 @@ export class Search {
 		);
 		if (titleOnly) return;
 		void (async () => {
+			// Clock reads for the flight recorder: when this starts (after the names are drawn, so it holds nothing
+			// back), once the index is ready, once the worker answered, and as each draw is done.
+			const t0 = performance.now();
+			const cold = !this.client.running;
+			const building = this.feeder.progress !== null;
 			try {
 				await this.feeder.ensure();
 			} catch (e) {
@@ -267,6 +273,7 @@ export class Search {
 				out(this.compose(tier0, null, now, new Map(), meta), "Full text unavailable (see console)");
 				return;
 			}
+			const t1 = performance.now();
 			// Quoted phrases: more candidates from the worker, kept if their text has the phrase.
 			const phrases = quotedPhrases(text);
 			let reply = await this.client.query(text, {
@@ -274,16 +281,26 @@ export class Search {
 				scope: narrowed ? undefined : wireWhere(scope),
 				allow: narrowed ? [...narrowed] : undefined,
 			});
-			if (!reply) return;
+			if (!reply) {
+				recorder.superseded();
+				return;
+			}
+			const t2 = performance.now();
 			if (reply.broken) void this.feeder.recover();
 			if (phrases.length) {
 				const hits = await filterPhrases(reply.hits, phrases, (p) => this.read(p));
-				if (this.current?.text !== text) return;
+				if (this.current?.text !== text) {
+					recorder.superseded();
+					return;
+				}
 				reply = { ...reply, hits };
 			} else {
 				// Several words typed without quotes: notes that have them in that order go first.
 				const hits = await boostSequences(reply.hits, text, (p) => this.read(p));
-				if (this.current?.text !== text) return;
+				if (this.current?.text !== text) {
+					recorder.superseded();
+					return;
+				}
 				reply = { ...reply, hits };
 			}
 			const offer = (e: Entry[]): Entry[] => (meaning?.offered ? this.offerMeaning(e) : e);
@@ -293,8 +310,23 @@ export class Search {
 				return;
 			}
 			out(offer(first), this.status());
+			const t3 = performance.now();
+			const flags =
+				FLAG.words |
+				(scope !== undefined || narrowed ? FLAG.scoped : 0) |
+				(cold ? FLAG.cold : 0) |
+				(building ? FLAG.building : 0) |
+				(reply.broken ? FLAG.broken : 0) |
+				(reply.rare ? FLAG.rare : 0) |
+				(phrases.length ? FLAG.phrase : 0);
+			const chars = text.length;
+			const words = wordCount(text);
+			const hits = reply.hits.length;
 			// Excerpts for the rows people see, cut from Obsidian's cached text, unless turned off.
-			if (!this.data().settings.excerpts) return;
+			if (!this.data().settings.excerpts) {
+				recorder.add(flags, chars, words, hits, t3 - t0, t1 - t0, reply.ms, t2 - t1 - reply.ms, t3 - t2, 0);
+				return;
+			}
 			const typed = typedWords(text);
 			const excerpts = await this.excerpts(
 				first,
@@ -303,6 +335,8 @@ export class Search {
 				/\s$/u.test(text) ? undefined : typed.at(-1),
 			);
 			if (excerpts.size) out(offer(this.compose(tier0, reply, now, excerpts, meta)), this.status());
+			const t4 = performance.now();
+			recorder.add(flags, chars, words, hits, t4 - t0, t1 - t0, reply.ms, t2 - t1 - reply.ms, t3 - t2, t4 - t3);
 		})().catch((e: unknown) => fail("search.words", "Jet Search: search failed", e));
 	}
 
@@ -354,6 +388,9 @@ export class Search {
 		const head = (n: number): Entry => ({ type: "header", label: "By meaning", count: n, mode: "meaning" });
 		paint([head(0)], this.status() || "Searching by meaning…");
 		void (async () => {
+			const t0 = performance.now();
+			const cold = !this.client.running;
+			const building = this.feeder.progress !== null;
 			try {
 				await this.feeder.ensure();
 			} catch (e) {
@@ -362,13 +399,21 @@ export class Search {
 			}
 			// The first question of the session loads the model; vectors follow in the background.
 			await this.feeder.ensureMeaning?.();
-			if (this.current?.text !== text) return;
+			if (this.current?.text !== text) {
+				recorder.superseded();
+				return;
+			}
+			const t1 = performance.now();
 			const r = await this.client.nearest(text, {
 				k: 50,
 				scope: narrowed ? undefined : wireWhere(scope),
 				allow: narrowed ? [...narrowed] : undefined,
 			});
-			if (!r || this.current?.text !== text) return;
+			if (!r || this.current?.text !== text) {
+				recorder.superseded();
+				return;
+			}
+			const t2 = performance.now();
 			const rows = (excerpts: Map<string, Shown>): Entry[] => {
 				const items: Item[] = [];
 				for (const n of r.near) {
@@ -391,7 +436,19 @@ export class Search {
 			};
 			const first = rows(new Map());
 			paint(first, this.status());
-			if (!this.data().settings.excerpts) return;
+			const t3 = performance.now();
+			const flags =
+				FLAG.meaning |
+				(scope !== undefined || narrowed ? FLAG.scoped : 0) |
+				(cold ? FLAG.cold : 0) |
+				(building ? FLAG.building : 0);
+			const chars = text.length;
+			const nWords = wordCount(text);
+			const hits = r.near.length;
+			if (!this.data().settings.excerpts) {
+				recorder.add(flags, chars, nWords, hits, t3 - t0, t1 - t0, r.ms, t2 - t1 - r.ms, t3 - t2, 0);
+				return;
+			}
 			const words = contentWords(text);
 			const ex = new Map<string, Shown>();
 			await Promise.all(
@@ -411,6 +468,8 @@ export class Search {
 					}),
 			);
 			if (this.current?.text === text) paint(rows(ex), this.status());
+			const t4 = performance.now();
+			recorder.add(flags, chars, nWords, hits, t4 - t0, t1 - t0, r.ms, t2 - t1 - r.ms, t3 - t2, t4 - t3);
 		})().catch((e: unknown) => fail("search.meaning", "Jet Search: search by meaning failed", e));
 	}
 

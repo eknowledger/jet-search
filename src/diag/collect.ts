@@ -4,6 +4,7 @@ import { BUILD_ID } from "../build-id";
 import { knownStats } from "../index-status";
 import { appearanceFacts, enabledPluginIds, hotkeyLabel, internalsFound, tapOwnerElsewhere } from "../internals";
 import { diag } from "./diag";
+import { recorder } from "./recorder";
 import { NO_OPTIONS, type Phase, type ReportOptions, type Snapshot } from "./report";
 
 /** The theme variables Jet's own styles lean on. A missing one means a theme or Obsidian version Jet draws badly in. */
@@ -152,6 +153,7 @@ export const collect = (plugin: JetSearchPlugin, now = Date.now(), opts: ReportO
 			recentSearches: plugin.data.searches.length,
 			openedNotes: Object.keys(plugin.data.opened).length,
 		},
+		searches: recorder.summary(),
 		internals,
 		problems: diag.problems.map((p) => ({ ...p })),
 	};
