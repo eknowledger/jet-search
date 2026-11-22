@@ -379,6 +379,8 @@ export class JetModal extends Modal {
 	private resize: ResizeObserver | null = null;
 	/** Tells the hints bar that the window changed its width. */
 	private hintsUpdate: (() => void) | null = null;
+	/** What the footer shows now, so that the same hints are not drawn again. */
+	private footSig = "";
 	// Scopes: the applied chip, what the text says, and their elements.
 	/** The last scope applied: ⌫ selects it, ⇥ cycles its name, its card opens on hover. */
 	private chip: ScopeView | null = null;
@@ -1601,7 +1603,6 @@ export class JetModal extends Modal {
 			this.footerExplain();
 			return;
 		}
-		this.footEl.empty();
 		const hints: Array<[string, string]> = this.ac
 			? [
 					["↑↓", "Choose value"],
@@ -1624,6 +1625,11 @@ export class JetModal extends Modal {
 		// ⌘⇧E, whenever there is a search to explain.
 		if (!this.ac && this.host.explain && (text.trim() || this.filters.length))
 			hints.splice(Math.min(4, hints.length), 0, [this.lab("explain"), "Explain"]);
+		// The same hints as already shown: nothing to draw again (and a bar that was slid stays where it is).
+		const sig = hints.map((h) => h.join("\u0000")).join("\u0001");
+		if (sig === this.footSig) return;
+		this.footSig = sig;
+		this.footEl.empty();
 		this.hintsRow(hints, true);
 	}
 
@@ -2141,6 +2147,8 @@ export class JetModal extends Modal {
 	}
 
 	private footerExplain(): void {
+		if (this.footSig === "explain") return;
+		this.footSig = "explain";
 		this.footEl.empty();
 		const keys: Array<[string, string]> = [
 			["↑↓", "Choose"],
@@ -2250,6 +2258,7 @@ export class JetModal extends Modal {
 	}
 
 	private footerActions(): void {
+		this.footSig = "actions";
 		this.footEl.empty();
 		const keys: Array<[string, string]> = [
 			[this.lab("open"), "Run"],

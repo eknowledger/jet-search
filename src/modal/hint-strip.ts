@@ -1,5 +1,3 @@
-import { setIcon } from "obsidian";
-
 /** How far one frame of hovering an edge slides the hints, in pixels. */
 const STEP = 5;
 /** How far a click on an edge jumps. */
@@ -26,8 +24,9 @@ export const hintStrip = (parent: HTMLElement, keys: ReadonlyArray<readonly [str
 		h.createEl("kbd", { text: key });
 		h.appendText(label);
 	}
-	setIcon(left.createSpan({ cls: "jet-fchev" }), "chevron-left");
-	setIcon(right.createSpan({ cls: "jet-fchev" }), "chevron-right");
+	// Plain characters: nothing to parse on each keystroke.
+	left.createSpan({ cls: "jet-fchev", text: "‹" });
+	right.createSpan({ cls: "jet-fchev", text: "›" });
 
 	const update = (): void => {
 		strip.toggleClass("more-left", track.scrollLeft > 2);

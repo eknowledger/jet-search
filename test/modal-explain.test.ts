@@ -129,6 +129,17 @@ describe("explaining from the dialog", () => {
 		expect($(".jet-ftrack .jet-fbt")).toBeNull();
 	});
 
+	it("does not draw the same hints again on each keystroke, and a bar that was slid stays where it is", () => {
+		const { host } = rig([item("Pilot.md")]);
+		const m = open(host);
+		type(m, "walnut");
+		const strip = $(".jet-fstrip");
+		type(m, "walnut k");
+		type(m, "walnut ki");
+		expect($(".jet-fstrip")).toBe(strip);
+		expect(hints().some((h) => h?.endsWith("Explain"))).toBe(true);
+	});
+
 	it("marks that the hints slide only after it knows the room the settings button leaves", () => {
 		const { host } = rig([item("Pilot.md")]);
 		host.renderSettings = () => undefined;

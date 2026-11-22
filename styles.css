@@ -322,11 +322,8 @@
 	border-radius: 10px;
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-modifier-hover);
-}
-
-.jet-fchev svg {
-	width: 13px;
-	height: 13px;
+	font-size: 15px;
+	line-height: 1;
 }
 
 .jet-fedge:hover .jet-fchev {
