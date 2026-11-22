@@ -17,7 +17,7 @@ const item = (path: string, over: Partial<Extract<Entry, { type: "item" }>> = {}
 const view = (head: string): View => ({ tone: "ok", head, detail: null, chips: ["By words"], tables: [], notes: [] });
 const wait = (ms = 30): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-type Asked = { text: string; mode: string; path: string | null; name: string };
+type Asked = { text: string; mode: string; path: string | null; name: string; shown: string | null };
 const rig = (entries: Entry[], over: Partial<ModalHost> = {}) => {
 	const asked: Asked[] = [];
 	const kept: Explained[] = [];
@@ -31,7 +31,7 @@ const rig = (entries: Entry[], over: Partial<ModalHost> = {}) => {
 		setPreviewOn: () => {},
 		explain: {
 			run: (r) => {
-				asked.push({ text: r.text, mode: r.mode, path: r.path, name: r.name });
+				asked.push({ text: r.text, mode: r.mode, path: r.path, name: r.name, shown: r.shown });
 				return Promise.resolve({
 					search: view("2 notes hold every word."),
 					note: r.path ? view(`Ranked 1 of 2 (${r.name}).`) : null,
@@ -83,7 +83,9 @@ describe("explaining from the dialog", () => {
 		await wait();
 		expect($(".jet-modal")?.classList.contains("is-explaining")).toBe(true);
 		expect($(".jet-ex-tab.is-on")?.textContent).toBe("This note");
-		expect(asked).toEqual([{ text: "walnut kiosk", mode: "words", path: "Pilot.md", name: "Pilot" }]);
+		expect(asked).toEqual([
+			{ text: "walnut kiosk", mode: "words", path: "Pilot.md", name: "Pilot", shown: "In text" },
+		]);
 		expect($(".jet-ex-v1")?.textContent).toBe("Ranked 1 of 2 (Pilot).");
 	});
 
@@ -164,6 +166,25 @@ describe("explaining from the dialog", () => {
 		await wait();
 		expect($(".jet-modal")?.classList.contains("is-explaining")).toBe(true);
 		expect(asked[0]?.path).toBe("Pilot.md");
+	});
+
+	it("leaves the arrows and Enter to the box that finds a note, so Enter does not open the selected row", async () => {
+		const opened: string[] = [];
+		const { host } = rig([item("Pilot.md")], { open: (p) => opened.push(p) });
+		const m = open(host);
+		type(m, "walnut");
+		press(m, "e", ["Mod", "Shift"]);
+		await wait();
+		(document.querySelector(".jet-ex-tab:last-child") as HTMLElement).click();
+		const box = $(".jet-ex-in") as HTMLElement;
+		const pressIn = (k: string) =>
+			(m.scope as unknown as { press(k: string, m: unknown[], t: unknown): boolean }).press(k, [], box);
+		expect(pressIn("Enter")).toBe(false);
+		expect(pressIn("ArrowDown")).toBe(false);
+		expect(opened).toEqual([]);
+		// In the search box, Enter still opens.
+		press(m, "Enter");
+		expect(opened).toEqual(["Pilot.md"]);
 	});
 
 	it("explains a search by meaning as meaning, and offers both when both are shown", async () => {

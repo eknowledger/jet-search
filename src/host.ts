@@ -126,6 +126,7 @@ export class JetHost implements ModalHost {
 					byRelevance: r.sort === "best",
 					path: r.path,
 					name: r.name,
+					shown: r.shown,
 					inScope: scoped ? this.within(r.scope) : null,
 					narrowed: sets.length ? this.within(r.scope, sets) : null,
 				});

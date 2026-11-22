@@ -2103,6 +2103,7 @@ table.jet-set-keys {
 .jet-ex-tabs {
 	flex: none;
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 4px;
 	padding: 8px 10px 6px;
@@ -2114,6 +2115,7 @@ table.jet-set-keys {
 	border-radius: 10px;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	white-space: nowrap;
 	cursor: pointer;
 }
 

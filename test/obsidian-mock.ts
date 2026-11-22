@@ -110,11 +110,11 @@ export class Scope {
 	}
 
 	/** Test helper: press a key with modifiers. */
-	press(key: string, modifiers: Modifier[] = []): boolean {
+	press(key: string, modifiers: Modifier[] = [], target?: unknown): boolean {
 		const want = [...modifiers].sort().join(",");
 		for (const k of this.keys)
 			if (k.key === key && [...k.modifiers].sort().join(",") === want)
-				if (k.func({ key, isComposing: false } as KeyboardEvent) === false) return true;
+				if (k.func({ key, isComposing: false, target } as unknown as KeyboardEvent) === false) return true;
 		return false;
 	}
 }

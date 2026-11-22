@@ -60,6 +60,7 @@ const req = (over: Partial<ExplainRequest> = {}): ExplainRequest => ({
 	byRelevance: true,
 	path: null,
 	name: "",
+	shown: null,
 	inScope: null,
 	narrowed: null,
 	...over,

@@ -33,6 +33,8 @@ export type ExplainRequest = {
 	path: string | null;
 	/** The note's name as shown. */
 	name: string;
+	/** The heading the window lists the note under now (null: it is not listed). */
+	shown: string | null;
 	/** The notes the scope keeps and the notes the filters keep, with the scope's already applied (null: none). */
 	inScope: ReadonlySet<string> | null;
 	narrowed: ReadonlySet<string> | null;
@@ -94,6 +96,7 @@ export class Explainer {
 						inScope: req.inScope ? req.inScope.has(req.path) : null,
 						passesFilters: req.narrowed ? req.narrowed.has(req.path) : null,
 						phrase: await this.phrase(req.mode, req.text, req.path, reply),
+						shown: req.mode === "words" ? req.shown : null,
 					};
 		const build = (n: Namer): { search: View; note: View | null } => ({
 			search: searchView(ctx, reply, n),

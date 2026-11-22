@@ -50,6 +50,8 @@ export type NoteContext = {
 	passesFilters: boolean | null;
 	/** Holds the quoted phrases of the search (null: none were quoted). */
 	phrase: boolean | null;
+	/** The window lists it, under this heading (a name match comes before the text matches); null: not listed. */
+	shown: string | null;
 };
 
 export type Cell = { text: string; pill?: "ok" | "no" };
@@ -254,6 +256,13 @@ export const noteView = (
 	if (note.holdsExcluded.length) {
 		out.head = `Left out: it has ${list(note.holdsExcluded.map((w) => quoted(n, w)))}, which the search excludes.`;
 		out.detail = "A note with an excluded word is dropped, whatever else it holds.";
+	} else if (note.rank === null && nc.shown) {
+		out.tone = "ok";
+		out.head = `Listed under "${nc.shown}", not by the text.`;
+		out.detail =
+			nc.shown === "Titles"
+				? "Notes whose name matches the words are listed first, before the notes whose text holds them."
+				: "That part of the list is made another way than by the words of the search, for example by the answers to a question.";
 	} else if (note.rank !== null && nc.phrase === false) {
 		out.head = "Left out: it does not hold the quoted phrase.";
 		out.detail = "Jet lists notes that hold the phrase exactly, once the words are found.";

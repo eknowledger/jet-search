@@ -281,6 +281,8 @@ export type ModalHost = {
 			sort: Sort;
 			path: string | null;
 			name: string;
+			/** The heading the window lists the note under, when it does. */
+			shown: string | null;
 		}): Promise<Explained>;
 		find(text: string): Candidate[];
 		keep(e: Explained): void;
@@ -534,6 +536,7 @@ export class JetModal extends Modal {
 							sort: this.sort,
 							path: note?.path ?? null,
 							name: note?.name ?? "",
+							shown: note ? this.sectionOf(note.path) : null,
 						}),
 					find: (text) => ex.find(text),
 					keep: (e) => ex.keep(e),
@@ -1904,7 +1907,7 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register([], "ArrowDown", (e) => {
-			if (e.isComposing) return;
+			if (e.isComposing || this.findingNote(e)) return;
 			if (this.actPanel) {
 				this.moveAction(1);
 				return false;
@@ -1916,7 +1919,7 @@ export class JetModal extends Modal {
 			return false;
 		});
 		this.scope.register([], "ArrowUp", (e) => {
-			if (e.isComposing) return;
+			if (e.isComposing || this.findingNote(e)) return;
 			if (this.actPanel) {
 				this.moveAction(-1);
 				return false;
@@ -1948,6 +1951,7 @@ export class JetModal extends Modal {
 		this.scope.register([], "PageUp", () => page(-1));
 		reg("open", (e) => {
 			if (e.isComposing) return false;
+			if (this.findingNote(e)) return;
 			if (this.actPanel) this.runAction();
 			else if (this.ac) this.acceptAC();
 			else this.choose("default");
@@ -2065,6 +2069,21 @@ export class JetModal extends Modal {
 		if (m.mode === "meaning") return { mode: "meaning", both: false };
 		const e = this.entries[this.selected];
 		return { mode: e?.type === "item" && e.meaning ? "meaning" : "words", both: true };
+	}
+
+	/** The heading a note is listed under now, or null when it is not in the list. */
+	private sectionOf(path: string): string | null {
+		let label: string | null = null;
+		for (const e of this.entries) {
+			if (e.type === "header") label = e.label;
+			else if (e.type === "item" && e.path === path) return e.dim ? null : label;
+		}
+		return null;
+	}
+
+	/** The arrows and Enter typed in the pane's note box are its own, not the list's. */
+	private findingNote(e: KeyboardEvent): boolean {
+		return !!this.explainPane?.shown && (e.target as HTMLElement | null)?.classList?.contains("jet-ex-in") === true;
 	}
 
 	/** The selected row, for the pane (it follows the arrows). */

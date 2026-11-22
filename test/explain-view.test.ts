@@ -52,6 +52,7 @@ const nc = (over: Partial<NoteContext> = {}): NoteContext => ({
 	inScope: null,
 	passesFilters: null,
 	phrase: null,
+	shown: null,
 	...over,
 });
 const words = (text: string, path: string | null, allow?: (p: string) => boolean) =>
@@ -153,6 +154,17 @@ describe("explaining a note", () => {
 		const v = noteView(ctx({ sort: "Last edited: newest first", byRelevance: false }), r, nc());
 		expect(v.notes.join(" ")).toContain("not its place in the list");
 		expect(noteView(ctx(), r, nc()).notes.join(" ")).not.toContain("not its place");
+	});
+
+	it("says a note listed by its name, which the text search does not list, is listed by its name", () => {
+		const r = words("walnut kiosk", "Projects/Kiosk rollout.md");
+		const v = noteView(ctx(), r, nc({ shown: "Titles" }));
+		expect(v.tone).toBe("ok");
+		expect(v.head).toBe('Listed under "Titles", not by the text.');
+		expect(noteView(ctx(), r, nc({ shown: "Answers" })).detail).toMatch(/another way/);
+		// A note the text search does list is explained by its rank, wherever it is shown.
+		const x = noteView(ctx(), words("walnut kiosk", "Projects/Walnut kiosk pilot.md"), nc({ shown: "Titles" }));
+		expect(x.head).toMatch(/^Ranked 1 of/);
 	});
 
 	it("says a note below the cut is below it", () => {
