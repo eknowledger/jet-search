@@ -5,6 +5,8 @@ import { joinNames, listNames, type Where } from "../scopes/where";
 import { comboLabel, type KeyAction, type KeyMap, keyMap, systemCopy } from "../keys/keymap";
 import { type BothLayout, layoutBoth, type MeaningMode } from "./both";
 import { Preview, type PreviewAction } from "../preview/preview";
+import type { Explained } from "../explain/explainer";
+import { type Candidate, ExplainPane, type Mode as ExplainMode } from "./explain-pane";
 import { highlight } from "./format";
 import { closeness } from "../answers/show";
 import { themeMark } from "./theme-mark";
@@ -267,6 +269,23 @@ export type ModalHost = {
 	/** The footer's settings popover, if this host has one. */
 	renderSettings?(el: HTMLElement): void;
 	/**
+	 * Why the results are what they are (⌘⇧E): asked only then. `find` suggests notes by name; `keep` holds the
+	 * explanation for the support info. Absent (search in this note): no explanation.
+	 */
+	explain?: {
+		run(req: {
+			text: string;
+			mode: ExplainMode;
+			scope?: Where;
+			filters: readonly Filter[];
+			sort: Sort;
+			path: string | null;
+			name: string;
+		}): Promise<Explained>;
+		find(text: string): Candidate[];
+		keep(e: Explained): void;
+	};
+	/**
 	 * Your keys in the window, and the double tap as the hints write it (null: off).
 	 * Absent: the defaults, and ⇧⇧.
 	 */
@@ -345,6 +364,11 @@ export class JetModal extends Modal {
 	private readonly pool: HTMLElement[] = [];
 	private opened = false;
 	private readonly preview: Preview;
+	/** The explanation, in the preview's place (⌘⇧E); null when the host has none. */
+	private readonly explainPane: ExplainPane | null = null;
+	/** The text and scope the last list was asked for: what an explanation explains. */
+	private ranText = "";
+	private ranScope: Where | undefined;
 	private previewKey: string | null = null;
 	private previewTimer: number | null = null;
 	private resize: ResizeObserver | null = null;
@@ -496,6 +520,26 @@ export class JetModal extends Modal {
 			open: this.lab("open"),
 		});
 		this.modalEl.toggleClass("is-preview-off", !host.previewOn());
+		const ex = host.explain;
+		if (ex)
+			this.explainPane = new ExplainPane(
+				body,
+				{
+					explain: (note, mode) =>
+						ex.run({
+							text: this.ranText,
+							mode,
+							scope: this.ranScope,
+							filters: [...this.filters],
+							sort: this.sort,
+							path: note?.path ?? null,
+							name: note?.name ?? "",
+						}),
+					find: (text) => ex.find(text),
+					keep: (e) => ex.keep(e),
+				},
+				{ toggle: this.lab("explain") },
+			);
 		this.footEl = this.contentEl.createDiv({ cls: "jet-ft" });
 
 		this.inputEl.addEventListener("input", () => {
@@ -534,6 +578,11 @@ export class JetModal extends Modal {
 			if (s) {
 				e.stopPropagation();
 				this.sortMenu(s);
+				return;
+			}
+			if ((e.target as HTMLElement).closest(".jet-nwhy")) {
+				e.stopPropagation();
+				this.toggleExplain();
 				return;
 			}
 			const seg = (e.target as HTMLElement).closest<HTMLElement>(".jet-seg [data-mode]");
@@ -604,6 +653,7 @@ export class JetModal extends Modal {
 		this.resize?.disconnect();
 		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
 		this.preview.destroy();
+		this.explainPane?.close();
 		if (this.cardTimer !== null) window.clearTimeout(this.cardTimer);
 		const [first, ...also] = this.where();
 		this.host.closed(this.inputEl.value, this.opened, first, this.filters, also);
@@ -667,6 +717,7 @@ export class JetModal extends Modal {
 	paint(entries: Entry[], status = ""): void {
 		// An answer that arrives after Jet closed draws nothing (and loads no preview).
 		if (!this.shown) return;
+		this.explainPane?.refresh();
 		this.lastEntries = entries;
 		// The first header says where the search runs (inside the chip's scope, or everywhere while one
 		// is suggested) and how many filters narrow it.
@@ -835,6 +886,8 @@ export class JetModal extends Modal {
 		const seq = ++this.listSeq;
 		// A new list starts at its top: the selected first row is in view.
 		this.listEl.scrollTop = 0;
+		this.ranText = text;
+		this.ranScope = scope;
 		this.host.list(
 			text,
 			(entries, status) => {
@@ -1537,6 +1590,10 @@ export class JetModal extends Modal {
 	}
 
 	private footer(text: string): void {
+		if (this.explainPane?.shown && !this.ac && !this.actPanel) {
+			this.footerExplain();
+			return;
+		}
 		this.footEl.empty();
 		const hints: Array<[string, string]> = this.ac
 			? [
@@ -1557,6 +1614,9 @@ export class JetModal extends Modal {
 				this.lab("meaning"),
 				{ words: "By meaning", meaning: "Both", both: "By words" }[this.meaningNow.mode],
 			]);
+		// ⌘⇧E, whenever there is a search to explain.
+		if (!this.ac && this.host.explain && (text.trim() || this.filters.length))
+			hints.splice(Math.min(4, hints.length), 0, [this.lab("explain"), "Explain"]);
 		for (const [key, label] of hints) {
 			const h = this.footEl.createSpan({ cls: "jet-ht" });
 			h.createEl("kbd", { text: key });
@@ -1591,6 +1651,7 @@ export class JetModal extends Modal {
 			accept: this.lab("accept"),
 			meaning: this.lab("meaning"),
 			sort: this.lab("sort"),
+			explain: this.host.explain ? this.lab("explain") : "",
 		};
 	}
 
@@ -1629,10 +1690,12 @@ export class JetModal extends Modal {
 			this.inputEl.removeAttribute("aria-activedescendant");
 			// No note selected: the preview lets go of the last one.
 			this.schedulePreview();
+			this.explainSelect();
 			return;
 		}
 		this.selectedKey = keyOf(e);
 		this.schedulePreview();
+		this.explainSelect();
 		el.addClass("is-selected");
 		el.setAttr("aria-selected", "true");
 		this.inputEl.setAttr("aria-activedescendant", el.id);
@@ -1709,6 +1772,10 @@ export class JetModal extends Modal {
 				this.closeActions();
 				return false;
 			}
+			if (this.explainPane?.shown) {
+				if (!this.explainPane.escape()) this.closeExplain();
+				return false;
+			}
 			if (this.ac) {
 				this.acClosedFor = this.inputEl.value.slice(this.ac.from, this.ac.to);
 				this.closeAC();
@@ -1738,6 +1805,10 @@ export class JetModal extends Modal {
 		// Tab accepts the suggestion, or the name alone with nothing typed yet.
 		reg("back", (e) => {
 			if (e.isComposing) return;
+			if (this.explainPane?.shown && !this.ac) {
+				this.explainPane.cycle(-1);
+				return false;
+			}
 			// A scope offered while one is on: the other choice than ⇥'s.
 			const s = this.typing.suggest;
 			if (this.chip && s && !s.others.length) {
@@ -1752,6 +1823,10 @@ export class JetModal extends Modal {
 			if (e.isComposing) return;
 			if (this.ac) {
 				this.acceptAC();
+				return false;
+			}
+			if (this.explainPane?.shown) {
+				this.explainPane.cycle(1);
 				return false;
 			}
 			if (this.fix && !this.typing.suggest) {
@@ -1945,6 +2020,10 @@ export class JetModal extends Modal {
 			this.preview.scroll(-1);
 			return false;
 		});
+		reg("explain", () => {
+			this.toggleExplain();
+			return false;
+		});
 		reg("preview", () => {
 			this.host.setPreviewOn(!this.host.previewOn());
 			// As the host has it now: a host with no preview (search in this note) stays without.
@@ -1975,6 +2054,74 @@ export class JetModal extends Modal {
 			this.close();
 			return false;
 		});
+	}
+
+	// ── Explain (⌘⇧E) ────────────────────────────────
+
+	/** Which search the pane explains: by words, by meaning, or (both shown) the selected row's. */
+	private explainMode(): { mode: ExplainMode; both: boolean } {
+		const m = this.meaningNow;
+		if (!m.on) return { mode: "words", both: false };
+		if (m.mode === "meaning") return { mode: "meaning", both: false };
+		const e = this.entries[this.selected];
+		return { mode: e?.type === "item" && e.meaning ? "meaning" : "words", both: true };
+	}
+
+	/** The selected row, for the pane (it follows the arrows). */
+	private explainSelect(): void {
+		const pane = this.explainPane;
+		if (!pane?.shown) return;
+		const e = this.entries[this.selected];
+		pane.select(
+			e?.type === "item" ? { path: e.path, name: e.title } : null,
+			e?.type === "item" && e.meaning ? "meaning" : "words",
+		);
+	}
+
+	/** The explanation, opened from outside the window (the command, the Support card). */
+	explainNow(): void {
+		if (!this.explainPane?.shown) this.toggleExplain();
+	}
+
+	private toggleExplain(): void {
+		const pane = this.explainPane;
+		if (!pane) return;
+		if (pane.shown) {
+			this.closeExplain();
+			return;
+		}
+		// Nothing searched, nothing to explain.
+		if (!this.inputEl.value.trim() && !this.filters.length) return;
+		const e = this.entries[this.selected];
+		const { mode, both } = this.explainMode();
+		this.modalEl.addClass("is-explaining");
+		pane.open(e?.type === "item" ? { path: e.path, name: e.title } : null, mode, both);
+		this.footer(this.inputEl.value);
+	}
+
+	private closeExplain(): void {
+		this.explainPane?.close();
+		this.modalEl.removeClass("is-explaining");
+		// The preview comes back on the selected row.
+		this.preview.path = null;
+		this.schedulePreview();
+		this.inputEl.focus();
+		this.footer(this.inputEl.value);
+	}
+
+	private footerExplain(): void {
+		this.footEl.empty();
+		const keys: Array<[string, string]> = [
+			["↑↓", "Choose"],
+			["Tab", "Next tab"],
+			[this.lab("explain"), "Back to preview"],
+			["Esc", "Back"],
+		];
+		for (const [key, label] of keys) {
+			const h = this.footEl.createSpan({ cls: "jet-ht" });
+			h.createEl("kbd", { text: key });
+			h.appendText(label);
+		}
 	}
 
 	// ── The ⌘K panel ──────────────────────────────────
@@ -2032,6 +2179,11 @@ export class JetModal extends Modal {
 		const a = this.actPanel;
 		const x = a?.shown[a.i];
 		if (!a || !x) return;
+		if (x.id === "explain") {
+			this.closeActions();
+			if (!this.explainPane?.shown) this.toggleExplain();
+			return;
+		}
 		const close = this.host.act?.(x.id, a.path) ?? false;
 		this.closeActions();
 		if (close) {
@@ -2090,7 +2242,7 @@ export class JetModal extends Modal {
 }
 
 /** The keys a row shows, as you set them. */
-type RowKeys = { open: string; create: string; accept: string; meaning: string; sort: string };
+type RowKeys = { open: string; create: string; accept: string; meaning: string; sort: string; explain: string };
 
 /** A scope in a list: "Cobalt · [Projects] (34)". */
 export const scopeListLabel = (v: ScopeView): string =>
@@ -2240,6 +2392,12 @@ const fillRow = (el: HTMLElement, e: Entry, i: number, keys: RowKeys): void => {
 		const b = el.createDiv({ cls: "jet-rb" });
 		b.createDiv({ cls: "jet-nt", text: e.title });
 		if (e.detail) b.createDiv({ cls: "jet-nd", text: e.detail });
+		// Nothing found is where people are most puzzled: the explanation is one key away.
+		if (!e.info && keys.explain) {
+			const why = b.createDiv({ cls: "jet-nwhy", attr: { role: "button" } });
+			why.appendText("Why? ");
+			why.createEl("kbd", { text: keys.explain });
+		}
 		return;
 	}
 	el.setAttr("role", "option");

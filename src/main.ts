@@ -28,6 +28,8 @@ import { setMac, tapLabel } from "./keys/keymap";
 import { JetClient } from "./worker/jet-client";
 import { diag, fail, noted } from "./diag/diag";
 import { SupportModal } from "./diag/support-modal";
+import { Explainer } from "./explain/explainer";
+import { keepExplained } from "./explain/last";
 
 /** The first build starts this long after the layout is ready, the first time (within 5 s). */
 const FIRST_BUILD_DELAY_MS = 3000;
@@ -181,6 +183,13 @@ export default class JetSearchPlugin extends Plugin {
 				measure: (id) => void this.measure(id),
 			},
 			this.filterSets,
+			new Explainer({
+				app: this.app,
+				client: this.client,
+				ensure: () => this.feeder.ensure(),
+				progress: () => this.feeder.progress,
+				excluded: () => this.data.settings.exclude,
+			}),
 		);
 		this.host.inNote = () => this.openInNote("");
 		this.meaning = new Meaning(
@@ -206,6 +215,7 @@ export default class JetSearchPlugin extends Plugin {
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
 		this.addCommand({ id: "support-info", name: "Copy support info", callback: () => this.supportInfo() });
+		this.addCommand({ id: "explain", name: "Explain why a note is found", callback: () => this.explainSearch() });
 		this.settingTab = new JetSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
 		// Search by meaning's progress in its settings, while they are on screen (at most twice a second).
@@ -247,6 +257,7 @@ export default class JetSearchPlugin extends Plugin {
 
 	onunload(): void {
 		this.unloaded = true;
+		keepExplained(null);
 		this.app.workspace.trigger("jet-search:off");
 		if (!this.built) return;
 		// A change still waiting is written now, not a second later from a plugin that is gone.
@@ -260,6 +271,12 @@ export default class JetSearchPlugin extends Plugin {
 		this.jade?.stop();
 		if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
 		this.client.stop();
+	}
+
+	/** Jet's window with the last search, and the explanation open on it. */
+	explainSearch(): void {
+		this.open(this.data.searches[0] ?? "");
+		this.modal?.explainNow();
 	}
 
 	/** The support info window: what Jet knows about itself, to read and copy. */

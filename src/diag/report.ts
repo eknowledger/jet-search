@@ -6,9 +6,9 @@ import { FLAG } from "./recorder";
 export type Phase = "never-built" | "building" | "live" | "asleep";
 
 /** What the user chose to add to the report (all off by default; names are never read otherwise). */
-export type ReportOptions = { scopeNames: boolean; pluginNames: boolean };
+export type ReportOptions = { scopeNames: boolean; pluginNames: boolean; explainNames: boolean };
 
-export const NO_OPTIONS: ReportOptions = { scopeNames: false, pluginNames: false };
+export const NO_OPTIONS: ReportOptions = { scopeNames: false, pluginNames: false, explainNames: false };
 
 /** Everything the report says, as plain facts (numbers, flags, codes). Gathering it is in `collect.ts`. */
 export type Snapshot = {
@@ -55,6 +55,8 @@ export type Snapshot = {
 	};
 	/** The last searches as the flight recorder keeps them (null: none yet this session). */
 	searches: Summary | null;
+	/** The explanation the user added (lines, with tags for names unless they allowed them), if any. */
+	explain: string[] | null;
 	meaning: { on: boolean; model: { id: string; bytes: number } | null };
 	scopes: { count: number; sizes: number[] | null; names: string[] | null };
 	settings: {
@@ -266,6 +268,7 @@ export const buildReport = (s: Snapshot): Section[] => {
 	);
 
 	add("Searches", ...(s.searches ? searchLines(s.searches) : [ln("none yet this session")]));
+	if (s.explain?.length) add("Explain", ...s.explain.map((t) => ln(t)));
 
 	const m = s.meaning;
 	add(

@@ -2062,6 +2062,227 @@ table.jet-set-keys {
 	}
 }
 
+/* The explanation, in the preview's place */
+.jet-ex {
+	flex: none;
+	width: 45%;
+	min-width: 0;
+	padding: 10px 12px 12px 4px;
+	display: none;
+}
+
+.jet-modal.is-explaining .jet-pv {
+	display: none;
+}
+
+.jet-modal.is-explaining .jet-ex {
+	display: flex;
+}
+
+/* Too narrow for two panes: the explanation takes the window, and Esc goes back to the list. */
+.jet-modal.is-explaining.is-narrow .jet-list {
+	display: none;
+}
+
+.jet-modal.is-explaining.is-narrow .jet-ex {
+	width: 100%;
+	padding: 8px 10px 10px;
+}
+
+.jet-exc {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-primary);
+	overflow: hidden;
+}
+
+.jet-ex-tabs {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 8px 10px 6px;
+}
+
+.jet-ex-tab {
+	padding: 1px 10px;
+	border: 1px solid transparent;
+	border-radius: 10px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.jet-ex-tab:hover {
+	color: var(--text-normal);
+}
+
+.jet-ex-tab.is-on {
+	border-color: var(--background-modifier-border);
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.jet-ex-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 4px 14px 12px;
+	font-size: var(--font-ui-small);
+}
+
+.jet-ex-hint,
+.jet-ex-note {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin: 6px 0;
+}
+
+.jet-ex-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+
+.jet-ex-chip {
+	padding: 0 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 9px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jet-ex-verdict {
+	margin: 6px 0 12px;
+	padding: 9px 11px;
+	border: 1px solid var(--color-green);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.jet-ex-verdict.is-warn {
+	border-color: var(--color-orange);
+}
+
+.jet-ex-v1 {
+	font-weight: 600;
+}
+
+.jet-ex-v2 {
+	margin-top: 2px;
+	color: var(--text-muted);
+}
+
+.jet-ex-sec {
+	margin-bottom: 12px;
+}
+
+.jet-ex-sec h4 {
+	margin: 2px 0 6px;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.jet-ex-sec table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.jet-ex-sec th {
+	text-align: left;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--text-muted);
+	padding: 3px 6px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jet-ex-sec td {
+	padding: 4px 6px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	vertical-align: top;
+}
+
+.jet-ex-pill {
+	display: inline-block;
+	padding: 0 7px;
+	border-radius: 9px;
+	font-size: var(--font-ui-smaller);
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+
+.jet-ex-pill.is-ok {
+	color: var(--color-green);
+}
+
+.jet-ex-pill.is-no {
+	color: var(--color-red);
+}
+
+.jet-ex-lab {
+	margin-bottom: 3px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jet-ex-in {
+	width: 100%;
+}
+
+.jet-ex-list {
+	margin: 4px 0 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.jet-ex-opt {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+
+.jet-ex-opt.is-on {
+	background: var(--background-modifier-hover);
+}
+
+.jet-ex-ofolder {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.jet-ex-keep {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 10px;
+}
+
+.jet-ex-back {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.jet-nwhy {
+	margin-top: 4px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+}
+
+.jet-nwhy:hover {
+	color: var(--text-normal);
+}
+
 /* Phones and tablets */
 /* Everything below applies on a phone or tablet only: every selector starts with a body class Obsidian sets there. */
 

@@ -349,3 +349,16 @@ describe("the searches in the report", () => {
 		expect(searched).not.toMatch(/"|query|text/i);
 	});
 });
+
+describe("the explanation in the report", () => {
+	it("is a section of its own when the user added one, and absent otherwise", () => {
+		expect(formatReport(snapshot())).not.toMatch(/^Explain:/m);
+		const text = formatReport(
+			snapshot({
+				explain: ["the search", "2 notes hold every word.", 'Left out: it has "word#2" but not "word#1".'],
+			}),
+		);
+		expect(text).toMatch(/Explain: +the search/);
+		expect(text).toContain('Left out: it has "word#2" but not "word#1".');
+	});
+});

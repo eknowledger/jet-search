@@ -63,6 +63,7 @@ export const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 		windowsOpen: 1,
 	},
 	searches: searches(),
+	explain: null,
 	meaning: { on: true, model: { id: "minilm", bytes: 31_000_000 } },
 	scopes: { count: 4, sizes: [120, 2300, 48, 410], names: null },
 	settings: {

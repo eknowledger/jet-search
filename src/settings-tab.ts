@@ -1045,6 +1045,13 @@ export class JetSettingTab extends PluginSettingTab {
 			aliases: "support info bug report debug diagnostics help problem",
 		});
 		this.button(support.row, "Preview and copy", () => this.owner.supportInfo(), "mod-cta");
+		const why = this.card(body, {
+			icon: "circle-help",
+			name: "Why is a note not found?",
+			desc: "Jet opens with your last search and says how it read the words, why the results are what they are, and where a note you expected stands. In Jet's window the same is one key away.",
+			aliases: "explain why not found missing note results ranking debug",
+		});
+		this.button(why.row, "Explain a search", () => this.owner.explainSearch());
 		this.card(body, {
 			icon: "info",
 			name: "Version",

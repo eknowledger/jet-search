@@ -19,6 +19,7 @@ export type KeyAction =
 	| "meaning"
 	| "filters"
 	| "sort"
+	| "explain"
 	| "nextHit"
 	| "prevHit"
 	| "accept"
@@ -50,6 +51,7 @@ export const KEY_ACTIONS: ReadonlyArray<{ id: KeyAction; what: string; key: Comb
 	{ id: "meaning", what: "Words or meaning", key: { mods: ["Mod"], key: "j" } },
 	{ id: "filters", what: "The filters bar", key: { mods: ["Mod"], key: "f" } },
 	{ id: "sort", what: "Next sort order", key: { mods: ["Mod", "Shift"], key: "s" } },
+	{ id: "explain", what: "Explain why the results are what they are", key: { mods: ["Mod", "Shift"], key: "e" } },
 	{ id: "nextHit", what: "Next hit in the preview", key: { mods: ["Mod"], key: "g" } },
 	{ id: "prevHit", what: "Previous hit in the preview", key: { mods: ["Mod", "Shift"], key: "g" } },
 	{

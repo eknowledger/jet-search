@@ -66,6 +66,7 @@ export class SupportModal extends Modal {
 		});
 		this.tick(side, "Scope names", "scopeNames");
 		this.tick(side, "Names of enabled plugins", "pluginNames");
+		this.tick(side, "Search text and note names (in the explanation)", "explainNames");
 		side.createEl("h4", { cls: "jet-support-what-title", text: "What happened" });
 		this.what = side.createEl("textarea", {
 			cls: "jet-support-what",

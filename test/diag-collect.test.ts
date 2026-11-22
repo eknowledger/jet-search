@@ -4,6 +4,7 @@ import { buttonNamed, goTo, tabOf } from "./settings-ui";
 import JetSearchPlugin from "../src/main";
 import { diag } from "../src/diag/diag";
 import { recorder } from "../src/diag/recorder";
+import { keepExplained } from "../src/explain/last";
 import { collect } from "../src/diag/collect";
 import { formatReport } from "../src/diag/report";
 
@@ -23,6 +24,7 @@ describe("the support info", () => {
 	beforeEach(() => {
 		diag.reset();
 		recorder.reset();
+		keepExplained(null);
 		workers = 0;
 		vi.stubGlobal(
 			"Worker",
@@ -50,6 +52,22 @@ describe("the support info", () => {
 		expect(m.max.total).toBe(20);
 		expect(formatReport(collect(plugin))).toContain("1 search: median 20 ms");
 		expect(workers).toBe(0);
+	});
+
+	it("adds the explanation the user kept, with tags unless the names are allowed", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		expect(collect(plugin).explain).toBeNull();
+		keepExplained({
+			search: { tone: "ok", head: "", detail: null, chips: [], tables: [], notes: [] },
+			note: null,
+			lines: (names) => (names ? ['search "walnut kiosk"'] : ["the search", "word#1 word#2"]),
+		});
+		expect(collect(plugin).explain).toEqual(["the search", "word#1 word#2"]);
+		const named = collect(plugin, Date.now(), { scopeNames: false, pluginNames: false, explainNames: true });
+		expect(named.explain).toEqual(['search "walnut kiosk"']);
+		keepExplained(null);
+		expect(collect(plugin).explain).toBeNull();
 	});
 
 	it("has a command that opens the window with the report", async () => {
@@ -200,7 +218,7 @@ describe("the support info", () => {
 		const buttons = [...(modal?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
 		expect(buttons).toEqual(["Copy as plain text", "Copy for GitHub"]);
 		expect(modal?.querySelector(".jet-support-side")?.textContent).toContain("Add to the report");
-		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(2);
+		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(3);
 		expect(modal?.querySelector(".jet-support-foot")?.textContent).toContain("Nothing leaves this device");
 	});
 
