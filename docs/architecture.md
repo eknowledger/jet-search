@@ -18,10 +18,11 @@ How Jet Search is put together, in one sitting. It covers the parts, how a keyst
 8. [Putting the answers together](#8-putting-the-answers-together)
 9. [The window](#9-the-window)
 10. [The optional layers: meaning and scopes](#10-the-optional-layers-meaning-and-scopes)
-11. [Build, tests and speed](#11-build-tests-and-speed)
-12. [Rules that must not break](#12-rules-that-must-not-break)
-13. [Where it is weak](#13-where-it-is-weak)
-14. [Where to go next](#14-where-to-go-next)
+11. [Support: the report, Explain and the trace](#11-support-the-report-explain-and-the-trace)
+12. [Build, tests and speed](#12-build-tests-and-speed)
+13. [Rules that must not break](#13-rules-that-must-not-break)
+14. [Where it is weak](#14-where-it-is-weak)
+15. [Where to go next](#15-where-to-go-next)
 
 ---
 
@@ -34,7 +35,7 @@ Jet Search does four things:
 3. **Narrows a search** to a scope (a named set of notes defined by rules) or by filters (a tag, a property, a date).
 4. **Optionally understands a question.** A small on-device model finds notes that say the same thing in other words, and an answer step shows the line that answers.
 
-It does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download). It runs on mobile, but mobile is not officially supported yet.
+It does not edit notes, sync anything, read PDFs or images, call a server (apart from one opt-in model download). When something looks wrong it can explain a search and make a report that you send yourself (section 11). It runs on mobile, but mobile is not officially supported yet.
 
 Four words you will see everywhere:
 
@@ -49,7 +50,7 @@ The reference has a full [terminology table](architecture-reference.md#2-termino
 
 ## 2. The six rules
 
-These hold everywhere in the code. A change that breaks one needs a very good reason. Section 12 says where each is enforced.
+These hold everywhere in the code. A change that breaks one needs a very good reason. Section 13 says where each is enforced.
 
 | # | Rule | Why |
 |---|---|---|
@@ -57,7 +58,7 @@ These hold everywhere in the code. A change that breaks one needs a very good re
 | 2 | **The main thread only draws.** | A search over thousands of notes on the page would stutter typing. The index lives in the worker; the page sends a query and paints the answer. |
 | 3 | **Results are never stale.** | A slow answer for text you have already changed would replace the right list. Every query carries a sequence number, and an answer that is not the latest is ignored. |
 | 4 | **The index stays outside the vault.** | It is kept in IndexedDB, so it is never synced, never shows in a file list, and never ends up in a backup of your notes. |
-| 5 | **No network.** | Notes stay on the device. The one exception is the optional meaning model, downloaded only after you confirm, from a pinned revision, and checked against a pinned SHA-256. |
+| 5 | **No network.** | Notes stay on the device. The one exception is the optional meaning model, downloaded only after you confirm, from a pinned revision, and checked against a pinned SHA-256. Reporting a problem opens a page in your browser when you click a link; Jet makes no request and posts nothing. |
 | 6 | **Pure where possible.** | Analysis, ranking, filters, scopes and the double-tap detector take plain values and return plain values. They run in tests with no Obsidian. |
 
 Rule 6 shapes the folders. Anything that can be pure lives under `engine/`, `scopes/generate.ts`, `filters/`, `keys/` or `excerpt/` and imports nothing from Obsidian. Anything that touches Obsidian is in a small file next to it (`gather.ts`, `host.ts`, `snapshot-obsidian.ts`). That is why most of the test suite runs without Obsidian.
@@ -94,6 +95,7 @@ The source tree follows the picture:
 | `src/excerpt/`, `src/preview/` | The line under a hit, and the preview pane. |
 | `src/filters/`, `src/scopes/` | Typed pieces and chips; named sets of notes and the generator that proposes them. |
 | `src/meaning/`, `src/answers/` | The on-device model, note vectors, and the best line for a question. |
+| `src/diag/`, `src/explain/` | The report window, the counters, the flight recorder and the trace; the explanation of a search and its view models. |
 | `src/main.ts`, `src/data.ts`, `src/settings*` | The plugin, saved data, the settings tab. |
 
 Deeper: [system overview](architecture-reference.md#3-system-overview), [repository layout](architecture-reference.md#4-repository-layout), [the contracts between the parts](architecture-reference.md#5-the-contracts-between-the-parts).
@@ -250,7 +252,7 @@ The order of the list:
 
 **Stale answers are dropped at four layers.** The worker skips a query when a newer one is queued. The client returns `null` unless the reply is for the latest sequence number. `Search` checks that the box still holds the same text after any slow side path (phrase reads, meaning, answers). And the modal ignores a paint from an older `list()` call, or after it closed. Each guards a different timing; none is the only one.
 
-Deeper: [merging the two answers](architecture-reference.md#66-merging-the-two-answers), [the worker and its protocol](architecture-reference.md#63-the-worker-and-its-protocol) (all 23 messages), [failure paths](architecture-reference.md#76-failure-paths).
+Deeper: [merging the two answers](architecture-reference.md#66-merging-the-two-answers), [the worker and its protocol](architecture-reference.md#63-the-worker-and-its-protocol) (all 24 messages), [failure paths](architecture-reference.md#76-failure-paths).
 
 ## 9. The window
 
@@ -306,9 +308,32 @@ Filters work the same way at the boundary: they are worked out on the main threa
 
 Deeper: [scopes](architecture-reference.md#612-scopes), [query syntax and filters](architecture-reference.md#613-query-syntax-and-filters).
 
-## 11. Build, tests and speed
+## 11. Support: the report, Explain and the trace
 
-**Build.** `esbuild` bundles `src/main.ts` into one CommonJS `main.js` (about 330 KB). The worker is not a separate file: it is bundled on its own by a small plugin in `esbuild.config.mjs` and inlined into `main.js` as a string. At run time `JetClient` wraps that string in a Blob URL and starts the Worker. Obsidian installs exactly `main.js`, `manifest.json` and `styles.css`; inlining means the worker needs no extra read and cannot go missing or fall out of step.
+When someone says "it is slow" or "my note is missing", the plugin has to be able to say why, without a debugger and without sending anything anywhere. Three tools do that. Each runs only when asked, keeps what it knows in memory, and is held out of the search path by tests that read the source.
+
+| Tool | What it gives | When it runs |
+|---|---|---|
+| **The report** (`src/diag/`) | One text: versions, device, vault size, the index, the worker, the last 100 searches as numbers, settings and the last problems. A window to read it, copy it, or open as a GitHub issue | While the window is open |
+| **Explain** (`src/explain/`, `src/engine/explain.ts`) | Why a search lists what it does, how each word was read, and where one note stands | While the pane is open |
+| **The trace** (`src/diag/trace.ts`) | A timeline of what Jet did over a few minutes, to the millisecond | From Record until Stop or the end |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/arch-support-dark.png">
+  <img alt="Support. The diag counters, the recorder of the last 100 searches and the trace ring feed collect, which makes one snapshot. The snapshot goes to the Report issue window, whose Open on GitHub button clicks a link that opens the browser. A kept explanation also feeds collect. The Explain pane asks the Explainer, which asks the worker's Router.explain, and its Report issue button keeps the explanation and opens the window." src="assets/arch-support-light.png">
+</picture>
+
+* **The report is one snapshot.** `collect` reads the counters (`diag`), the flight recorder (`recorder`), the trace and the kept explanation into a `Snapshot`, and `report.ts` turns it into lines. The window draws those lines and Copy puts the same text on the clipboard, so what you read is what you send. It holds counts, times and codes. A note title, a path, a scope name, a search word or the text of an error appears only when the person ticks a box, and then only in the part the box names. An explanation is written with tags (`word#1`, `note#1`) until its box is ticked.
+* **Open on GitHub is a link click.** `issue.ts` builds the address of a new bug report with the form's fields as query parameters (`what`, `support`, `versions`, `size`) and keeps it within 6,000 characters, because GitHub refuses a longer one. The sentence goes in first and then the report, each only while the link fits; what does not fit is copied for the person to paste. The window clicks an `<a>` element to open it, because `window.open` does nothing on desktop Obsidian. Jet makes no request and posts nothing: the browser opens a page and the person presses Submit. Rule 5 holds.
+* **The trace is a ring of numbers.** `trace.start()` makes typed arrays for 500 events. Every later `trace.add(` sits behind one boolean, `trace.on`, so a call site costs one test while no trace runs. An event is a kind, a time and four numbers: there is no string in it, so no word of a search or a note name can get in. The ring drops the oldest event when it is full. Its one timer is made in `start()`. "Also record the next start" starts a trace once at the next Obsidian start, then turns itself off. The report sums the trace up and lists a timeline in which searches less than 2 seconds apart count as one query.
+* **Explain asks the question again.** The pane waits 120 ms after the last change, then `Explainer.run` opens the index and sends the worker an `explain` message. The router runs the real query once, uncut, and looks up each word as an exact word, a prefix, another form and a typo, so the explanation reads the index the way a search does. In meaning mode it scores the notes against the question's vector instead. `view.ts` turns the answer into sentences and tables and the pane draws them. **Report issue** in the pane keeps the explanation (`keepExplained`) and opens the report with it marked.
+* **What it costs.** Nothing runs at Obsidian start, and nothing asks the worker for an explanation until the pane opens. Paired A/B runs in a real Obsidian showed no measurable change in search time with the trace off or on. The off test is about 0.9 ns, an event is about 30 ns, and the code adds about 0.08 MB of heap.
+
+Deeper: [the report, Explain and the trace in full](architecture-reference.md#615-support-the-report-explain-and-the-trace), [a report and a trace, step by step](architecture-reference.md#77-a-report-and-a-trace), [Explain a search, step by step](architecture-reference.md#78-explain-a-search), [add a trace event](architecture-reference.md#1016-add-a-trace-event), [add a line to the report](architecture-reference.md#1017-add-a-line-to-the-report).
+
+## 12. Build, tests and speed
+
+**Build.** `esbuild` bundles `src/main.ts` into one CommonJS `main.js` (about 390 KB). The worker is not a separate file: it is bundled on its own by a small plugin in `esbuild.config.mjs` and inlined into `main.js` as a string. At run time `JetClient` wraps that string in a Blob URL and starts the Worker. Obsidian installs exactly `main.js`, `manifest.json` and `styles.css`; inlining means the worker needs no extra read and cannot go missing or fall out of step.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/arch-build-dark.png">
@@ -317,7 +342,7 @@ Deeper: [scopes](architecture-reference.md#612-scopes), [query syntax and filter
 
 `npm run check` runs formatting (oxfmt), lint (oxlint, then ESLint with the Obsidian community-plugin rules), the type check (native TypeScript 7) and every test. CI runs it on each push and pull request. A pushed tag that equals the manifest version builds `main.js`, attests the build and publishes the three files. The release job runs no tests of its own; it relies on CI having passed.
 
-**Tests.** About 750, in five kinds:
+**Tests.** About 1,060, in five kinds:
 
 | Kind | How it runs |
 |---|---|
@@ -344,7 +369,7 @@ Windows and Linux were not measured. See [benchmarks](benchmarks.md) for the met
 
 Deeper: [build pipeline](architecture-reference.md#11-build-pipeline), [testing strategy](architecture-reference.md#12-testing-strategy), [performance budget](architecture-reference.md#13-performance-budget), [contributing](architecture-reference.md#16-contributing).
 
-## 12. Rules that must not break
+## 13. Rules that must not break
 
 A rule is only a rule if something fails when it breaks. The ones that matter most, with what holds them:
 
@@ -368,10 +393,14 @@ A rule is only a rule if something fails when it breaks. The ones that matter mo
 | The index and vectors stay outside the vault | `idbStore`; the model lives in the plugin folder |
 | Settings never lose data on load: a bad value falls back | `normalizeData`, field by field |
 | Private Obsidian APIs are optional and guarded | `internals.ts`, every member optional-chained |
+| A trace that is off costs one boolean, and a trace never holds text | `trace.on` before every `trace.add(`; `trace-feed` and `trace-proof` tests |
+| The report holds no note name, scope name or search word unless a box is ticked | `collect`, behind `ReportOptions`; `diag-collect` and `explain-view` tests |
+| Opening a bug report posts nothing, and its link stays within 6,000 characters | `openLink`, `issueLink`; `issue-link` and `diag-collect` tests |
+| Nothing asks the worker for an explanation until the pane opens, and search, rank and names never name it | `explain-cost` test |
 
 Deeper: [all invariants](architecture-reference.md#8-invariants-and-where-they-are-enforced) (each with the code and test that hold it), [the defect register](architecture-reference.md#14-defect-register) (what went wrong, how it was found, the fix).
 
-## 13. Where it is weak
+## 14. Where it is weak
 
 The honest short list. The reference has [the full one](architecture-reference.md#15-limitations).
 
@@ -382,9 +411,10 @@ The honest short list. The reference has [the full one](architecture-reference.m
 * **Mobile is not officially supported yet.** `isDesktopOnly` is off. The code is written for mobile (8 ms slices, pause while hidden, a phone layout under `body.is-mobile` and `body.is-phone`, a start-up check in `src/compat.ts` for iOS 15.4 or Android WebView 98) and was checked on an emulated phone and in WebKit, not on a real phone.
 * **The modal is one large class** with state in separate booleans. A change to scopes, filters or meaning touches several handlers.
 * **Accessibility is partial.** Roles and `aria-activedescendant` are in place, but there is no live region to announce results, and it was not tried with a screen reader.
+* **The support tools are young.** The trace keeps the last 500 events, so a long recording keeps the end of it and not the start. The GitHub link has a budget of 6,000 characters, so a long report is pasted by hand, and the form reads the report's field only from the default branch. Explain re-runs the real query each time it asks, and asking for a meaning explanation after the worker has slept can answer "not ready" until meaning has loaded.
 * **Release job** builds but runs no lint or tests.
 
-## 14. Where to go next
+## 15. Where to go next
 
 | You want to | Read |
 |---|---|
@@ -396,5 +426,6 @@ The honest short list. The reference has [the full one](architecture-reference.m
 | Change the window, a key or a setting | [The modal](architecture-reference.md#67-the-modal-and-the-host), [keys](architecture-reference.md#69-keys-and-the-double-tap), [settings and saved data](architecture-reference.md#614-settings-and-saved-data) |
 | Look up a constant | [The engine's tunable numbers](architecture-reference.md#171-the-engines-tunable-numbers) |
 | Set up, run the checks and send a change | [CONTRIBUTING.md](../CONTRIBUTING.md) and [contributing](architecture-reference.md#16-contributing) |
+| Follow a bug report, a trace or an explanation | [The report, Explain and the trace](architecture-reference.md#615-support-the-report-explain-and-the-trace), then [a report and a trace](architecture-reference.md#77-a-report-and-a-trace) |
 | Redraw a picture | [docs/diagrams/README.md](diagrams/README.md) |
 | See how it was measured | [benchmarks](benchmarks.md) |
