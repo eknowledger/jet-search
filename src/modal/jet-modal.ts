@@ -6,6 +6,7 @@ import { comboLabel, type KeyAction, type KeyMap, keyMap, systemCopy } from "../
 import { type BothLayout, layoutBoth, type MeaningMode } from "./both";
 import { Preview, type PreviewAction } from "../preview/preview";
 import type { Explained } from "../explain/explainer";
+import { hintStrip } from "./hint-strip";
 import { type Candidate, ExplainPane, type Mode as ExplainMode } from "./explain-pane";
 import { highlight } from "./format";
 import { closeness } from "../answers/show";
@@ -376,6 +377,8 @@ export class JetModal extends Modal {
 	private resize: ResizeObserver | null = null;
 	// Scopes: the applied chip, what the text says, and their elements.
 	/** The last scope applied: ⌫ selects it, ⇥ cycles its name, its card opens on hover. */
+	/** Tells the hints bar that the window changed its width. */
+	private hintsUpdate: (() => void) | null = null;
 	private chip: ScopeView | null = null;
 	/** The scopes added before it: the search covers them all, first added first. */
 	private kept: ScopeView[] = [];
@@ -641,6 +644,7 @@ export class JetModal extends Modal {
 		const ro = new win.ResizeObserver(() => {
 			const was = this.modalEl.hasClass("is-narrow");
 			this.modalEl.toggleClass("is-narrow", this.modalEl.clientWidth < NARROW_PX);
+			this.hintsUpdate?.();
 			// Wide enough again: the preview follows the selection.
 			if (was && !this.modalEl.hasClass("is-narrow")) {
 				this.preview.path = null;
@@ -1620,14 +1624,22 @@ export class JetModal extends Modal {
 		// ⌘⇧E, whenever there is a search to explain.
 		if (!this.ac && this.host.explain && (text.trim() || this.filters.length))
 			hints.splice(Math.min(4, hints.length), 0, [this.lab("explain"), "Explain"]);
-		for (const [key, label] of hints) {
-			const h = this.footEl.createSpan({ cls: "jet-ht" });
-			h.createEl("kbd", { text: key });
-			h.appendText(label);
-		}
+		this.hintsRow(hints, true);
+	}
+
+	/** The key hints on the footer's one line, then the settings button; measured last, once its room is known. */
+	private hintsRow(keys: ReadonlyArray<readonly [string, string]>, settings: boolean): void {
+		const update = hintStrip(this.footEl, keys);
+		this.hintsUpdate = update;
+		if (settings) this.settingsButton();
+		update();
+	}
+
+	/** The footer's settings button and its popover, after the key hints. */
+	private settingsButton(): void {
 		const render = this.host.renderSettings?.bind(this.host);
 		if (!render) return;
-		this.footEl.createSpan({ cls: "jet-sp" });
+		this.footEl.createSpan({ cls: "jet-fsep" });
 		const btn = this.footEl.createSpan({
 			cls: "jet-fbt",
 			attr: { "aria-label": "Search settings", role: "button" },
@@ -2136,11 +2148,7 @@ export class JetModal extends Modal {
 			[this.lab("explain"), "Back to preview"],
 			["Esc", "Back"],
 		];
-		for (const [key, label] of keys) {
-			const h = this.footEl.createSpan({ cls: "jet-ht" });
-			h.createEl("kbd", { text: key });
-			h.appendText(label);
-		}
+		this.hintsRow(keys, true);
 	}
 
 	// ── The ⌘K panel ──────────────────────────────────
@@ -2248,11 +2256,7 @@ export class JetModal extends Modal {
 			["↑↓", "Choose"],
 			["Esc", "Back to results"],
 		];
-		for (const [key, label] of keys) {
-			const h = this.footEl.createSpan({ cls: "jet-ht" });
-			h.createEl("kbd", { text: key });
-			h.appendText(label);
-		}
+		this.hintsRow(keys, false);
 	}
 
 	private atStart(): boolean {

@@ -1,8 +1,8 @@
 /* Jet Search. Theme variables only. */
 
 .modal.jet-modal {
-	width: 800px;
-	height: 572px;
+	width: 900px;
+	height: 620px;
 	max-width: calc(100vw - 32px);
 	max-height: calc(100vh - 64px);
 	padding: 0;
@@ -257,13 +257,94 @@
 	border-top: 1px solid var(--background-modifier-border);
 	display: flex;
 	align-items: center;
-	gap: 18px;
-	padding: 0 8px 0 16px;
+	padding: 0 8px 0 0;
 	font-size: 12px;
 	color: var(--text-muted);
 }
 
+/* The key hints: one line that slides sideways when they do not all fit. */
+.jet-fstrip {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+}
+
+.jet-ftrack {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	height: 100%;
+	padding: 0 16px;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.jet-ftrack::-webkit-scrollbar {
+	display: none;
+}
+
+.jet-fedge {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 46px;
+	display: none;
+	align-items: center;
+	color: var(--text-normal);
+	cursor: pointer;
+}
+
+.jet-fedge.is-left {
+	left: 0;
+	justify-content: flex-start;
+	padding-left: 6px;
+	background: linear-gradient(to right, var(--background-primary) 55%, transparent);
+}
+
+.jet-fedge.is-right {
+	right: 0;
+	justify-content: flex-end;
+	padding-right: 6px;
+	background: linear-gradient(to left, var(--background-primary) 55%, transparent);
+}
+
+.jet-fstrip.more-left .jet-fedge.is-left,
+.jet-fstrip.more-right .jet-fedge.is-right {
+	display: flex;
+}
+
+.jet-fchev {
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-modifier-hover);
+}
+
+.jet-fchev svg {
+	width: 13px;
+	height: 13px;
+}
+
+.jet-fedge:hover .jet-fchev {
+	border-color: var(--interactive-accent);
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.jet-fsep {
+	flex: none;
+	width: 1px;
+	height: 20px;
+	margin-right: 4px;
+	background: var(--background-modifier-border);
+}
+
 .jet-ht {
+	flex: none;
 	display: inline-flex;
 	align-items: center;
 	gap: 7px;
@@ -493,6 +574,7 @@
 
 /* Footer settings popover */
 .jet-fbt {
+	flex: none;
 	display: grid;
 	place-items: center;
 	width: 28px;

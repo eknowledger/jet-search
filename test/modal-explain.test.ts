@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, type Scope } from "obsidian";
 import type { Explained } from "../src/explain/explainer";
 import type { View } from "../src/explain/view";
@@ -113,6 +113,37 @@ describe("explaining from the dialog", () => {
 		press(m, "Escape");
 		expect($(".jet-modal")?.classList.contains("is-explaining")).toBe(false);
 		expect(m.inputEl.value).toBe("walnut");
+	});
+
+	it("keeps the settings button in the footer while the pane is open", async () => {
+		const { host } = rig([item("Pilot.md")]);
+		host.renderSettings = () => undefined;
+		const m = open(host);
+		type(m, "walnut");
+		expect($(".jet-ft .jet-fbt")).not.toBeNull();
+		press(m, "e", ["Mod", "Shift"]);
+		await wait();
+		expect(hints().join(" ")).toContain("Back to preview");
+		expect($(".jet-ft .jet-fbt")).not.toBeNull();
+		// It sits outside the sliding hints, so it never slides away.
+		expect($(".jet-ftrack .jet-fbt")).toBeNull();
+	});
+
+	it("marks that the hints slide only after it knows the room the settings button leaves", () => {
+		const { host } = rig([item("Pilot.md")]);
+		host.renderSettings = () => undefined;
+		// 20 px too short for the hints once the settings button is beside them, and enough before it.
+		vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+			if (!this.classList.contains("jet-ftrack")) return 0;
+			return this.closest(".jet-ft")?.querySelector(".jet-fbt") ? 700 : 740;
+		});
+		vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+			return this.classList.contains("jet-ftrack") ? 720 : 0;
+		});
+		const m = open(host);
+		type(m, "walnut");
+		expect($(".jet-fstrip")?.classList.contains("more-right")).toBe(true);
+		vi.restoreAllMocks();
 	});
 
 	it("Tab changes the tab while the pane is open", async () => {
