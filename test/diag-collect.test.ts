@@ -87,7 +87,7 @@ describe("the support info", () => {
 		const { plugin } = make();
 		await plugin.onload();
 		const cmd = plugin.commands.find((c) => c.id === "support-info");
-		expect(cmd?.name).toBe("Copy support info");
+		expect(cmd?.name).toBe("Report issue");
 		cmd?.callback?.();
 		const modal = document.querySelector(".jet-support-modal");
 		expect(modal).not.toBeNull();
@@ -98,7 +98,7 @@ describe("the support info", () => {
 		const { plugin } = make();
 		await plugin.onload();
 		const el = goTo(tabOf(plugin), "advanced");
-		buttonNamed(el, "Report issue")?.click();
+		buttonNamed(el, "Open")?.click();
 		expect(document.querySelector(".jet-support-modal")).not.toBeNull();
 	});
 
@@ -114,7 +114,7 @@ describe("the support info", () => {
 			?.click();
 		await new Promise((r) => setTimeout(r, 0));
 		expect(written).toEqual([shown]);
-		expect(Notice.shown).toContain("Support info copied");
+		expect(Notice.shown).toContain("Report copied");
 	});
 
 	it("opens a bug report on GitHub with the sentence and the report filled in, and waits for the person to submit", async () => {

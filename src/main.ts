@@ -228,7 +228,7 @@ export default class JetSearchPlugin extends Plugin {
 		};
 		this.addCommand({ id: "open", name: "Search notes", callback: () => this.open() });
 		this.addCommand({ id: "open-in-note", name: "Search in this note", callback: () => this.openInNote() });
-		this.addCommand({ id: "support-info", name: "Copy support info", callback: () => this.supportInfo() });
+		this.addCommand({ id: "support-info", name: "Report issue", callback: () => this.supportInfo() });
 		this.addCommand({ id: "explain", name: "Explain why a note is found", callback: () => this.explainSearch() });
 		this.addCommand({
 			id: "trace-start",

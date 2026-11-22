@@ -191,7 +191,7 @@ export class SupportModal extends Modal {
 
 	async copy(): Promise<void> {
 		if (await copyText(this.text())) {
-			new Notice("Support info copied");
+			new Notice("Report copied");
 			return;
 		}
 		this.selectReport("Could not copy. The text is selected: press Ctrl/Cmd+C.");

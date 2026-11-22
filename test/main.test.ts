@@ -119,7 +119,7 @@ describe("settings tab", () => {
 		expect(textsOf(goTo(tab, "advanced"), ".jet-set-name")).toEqual([
 			"Word forms",
 			"Folders to leave out",
-			"Support",
+			"Report issue",
 			"Trace",
 			"Why is a note not found?",
 			"Version",

@@ -15,13 +15,13 @@ export const leftText = (ms: number): string => {
 
 /** The notice when a trace starts. */
 export const startedNotice = (minutes: number): string =>
-	`Jet is recording a trace. It stops by itself in ${minutes} minutes. Open the support info to stop it or to copy the report.`;
+	`Jet is recording a trace. It stops by itself in ${minutes} minutes. Open Report issue to stop it or copy the report.`;
 
 /** The notice when it ends (not when Jet is turned off: nobody is there to read it). */
 export const stoppedNotice = (events: number): string =>
-	`Jet stopped recording. The trace is in the support info, with ${events} events.`;
+	`Jet stopped recording. The trace is in the report, with ${events} events.`;
 
-/** The line in the status bar while a trace records: its time left, and a click opens the support info. */
+/** The line in the status bar while a trace records: its time left, and a click opens Report issue. */
 export class TraceIndicator {
 	private item: HTMLElement | null = null;
 	private timer: ReturnType<typeof setInterval> | null = null;
@@ -32,7 +32,7 @@ export class TraceIndicator {
 		if (Platform.isMobile || this.item) return;
 		this.item = this.plugin.addStatusBarItem();
 		this.item.addClass("jet-trace-status");
-		this.item.setAttr("aria-label", "Jet is recording a trace. Click to open the support info.");
+		this.item.setAttr("aria-label", "Jet is recording a trace. Click to open Report issue.");
 		this.item.addEventListener("click", () => this.plugin.supportInfo());
 		this.draw();
 		this.timer = window.setInterval(() => this.draw(), 15_000);
