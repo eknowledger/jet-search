@@ -1,6 +1,7 @@
 name: Feature request
 description: An idea for Jet Search
 labels: [enhancement]
+type: Feature
 body:
   - type: textarea
     id: need

@@ -74,6 +74,11 @@ describe("the form the link fills in", () => {
 		for (const k of keys) expect(ids, k).toContain(k);
 	});
 
+	it("sets the issue type to Bug, not only the label", () => {
+		expect(form).toMatch(/^type: Bug$/m);
+		expect(readFileSync(".github/ISSUE_TEMPLATE/feature_request.yml", "utf8")).toMatch(/^type: Feature$/m);
+	});
+
 	it("asks for nothing but the sentence as required, so a report from the button can be submitted", () => {
 		const required = [...form.matchAll(/id: (\w+)[\s\S]*?(?=\n  - type|$)/g)]
 			.filter((m) => /required: true/.test(m[0]))
