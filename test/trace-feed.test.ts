@@ -109,9 +109,9 @@ describe("the trace stays out of the hot paths", () => {
 
 	it("a trace that has not been asked for does nothing when the file loads: its one timer is made in start()", () => {
 		const src = read("src/diag/trace.ts");
-		expect(src.match(/setTimeout\(/g)).toHaveLength(1);
+		expect(src.match(/window\.setTimeout\(/g)).toHaveLength(1);
 		expect(src).not.toMatch(/setInterval|requestAnimationFrame|addEventListener|registerEvent|new Worker/);
 		const start = src.slice(src.indexOf("\tstart("), src.indexOf("\tstop("));
-		expect(start).toMatch(/setTimeout\(/);
+		expect(start).toMatch(/window\.setTimeout\(/);
 	});
 });

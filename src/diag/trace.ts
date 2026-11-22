@@ -6,6 +6,9 @@
  * at Obsidian's start, and a trace that is off costs the one `on` test its callers make.
  */
 
+/** The two timer calls the trace makes. Named here because the node benchmarks compile this file without the page's types. */
+declare const window: { setTimeout(fn: () => void, ms: number): number; clearTimeout(id: number): void };
+
 /** What an event is. The numbers each one carries (a, b, c, d and the flags) are said beside it. */
 export const KIND = {
 	/** The trace began. a: minutes it was asked to run. */
@@ -90,7 +93,7 @@ class Trace {
 	private flags: Uint16Array | null = null;
 	private v: Float32Array | null = null;
 	private labels: Array<string | null> | null = null;
-	private timer: ReturnType<typeof setTimeout> | null = null;
+	private timer: number | null = null;
 	private readonly listeners = new Set<() => void>();
 
 	/** Called when a trace starts or ends (not for each event). Returns the way to stop listening. */
@@ -118,7 +121,7 @@ class Trace {
 		this.stoppedBy = null;
 		this.on = true;
 		this.add(KIND.start, minutes);
-		this.timer = setTimeout(() => this.stop("time"), minutes * 60_000);
+		this.timer = window.setTimeout(() => this.stop("time"), minutes * 60_000);
 		this.changed();
 	}
 
@@ -129,7 +132,7 @@ class Trace {
 		this.on = false;
 		this.stoppedBy = by;
 		this.endsAt = null;
-		if (this.timer !== null) clearTimeout(this.timer);
+		if (this.timer !== null) window.clearTimeout(this.timer);
 		this.timer = null;
 		this.changed();
 	}
@@ -186,7 +189,7 @@ class Trace {
 
 	/** Forget everything, and end a running trace without an event (for tests and for a fresh session). */
 	reset(): void {
-		if (this.timer !== null) clearTimeout(this.timer);
+		if (this.timer !== null) window.clearTimeout(this.timer);
 		this.timer = null;
 		this.on = false;
 		this.startedAt = null;

@@ -35,11 +35,11 @@ export class TraceIndicator {
 		this.item.setAttr("aria-label", "Jet is recording a trace. Click to open the support info.");
 		this.item.addEventListener("click", () => this.plugin.supportInfo());
 		this.draw();
-		this.timer = setInterval(() => this.draw(), 15_000);
+		this.timer = window.setInterval(() => this.draw(), 15_000);
 	}
 
 	hide(): void {
-		if (this.timer !== null) clearInterval(this.timer);
+		if (this.timer !== null) window.clearInterval(this.timer);
 		this.timer = null;
 		this.item?.remove();
 		this.item = null;
@@ -114,9 +114,9 @@ export class TraceBox {
 		if (s.startedAt !== null)
 			this.tick("Include the full timeline", this.timeline.get(), (on) => this.timeline.set(on));
 		// A countdown moves: draw again each half minute while it runs and the window is on screen.
-		if (this.timer !== null) clearInterval(this.timer);
+		if (this.timer !== null) window.clearInterval(this.timer);
 		this.timer = s.recording
-			? setInterval(() => (this.el.isConnected ? this.update() : this.stop()), 30_000)
+			? window.setInterval(() => (this.el.isConnected ? this.update() : this.stop()), 30_000)
 			: null;
 	}
 
@@ -130,7 +130,7 @@ export class TraceBox {
 
 	/** The window closed: no more redrawing. */
 	stop(): void {
-		if (this.timer !== null) clearInterval(this.timer);
+		if (this.timer !== null) window.clearInterval(this.timer);
 		this.timer = null;
 	}
 }
