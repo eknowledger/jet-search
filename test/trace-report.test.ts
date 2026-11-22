@@ -110,7 +110,7 @@ describe("what a trace says in the report", () => {
 		expect(lines[0]).toBe("0:00.000  trace started, for 15 min");
 		expect(lines).toContain("0:02.100  index opened: loaded, 410 ms");
 		expect(lines).toContain(
-			"1:15.123  search of 12 characters, 142 ms (index wait 118, worker 19), 40 hits, worker had to start",
+			"1:15.123  query 3 (1 of 1): search of 12 characters, 142 ms (index wait 118, worker 19), 40 hits, worker had to start",
 		);
 		expect(lines).toContain("1:20.000  error search.failed");
 		expect(lines.at(-1)).toBe("15:00.000  trace stopped by itself");
@@ -118,7 +118,56 @@ describe("what a trace says in the report", () => {
 		const cut = timelineLines(many);
 		expect(cut).toHaveLength(300);
 		expect(cut.at(-1)).toContain("699 ms");
-		expect(lines).toContain("0:04.000  search of 5 characters, 7.0 ms (index wait 0, worker 4.0), 11 hits");
+		expect(lines).toContain(
+			"0:04.000  query 1 (1 of 1): search of 5 characters, 7.0 ms (index wait 0, worker 4.0), 11 hits",
+		);
+	});
+});
+
+describe("which searches belong to one query", () => {
+	const typed = (at: number, chars: number) =>
+		ev(at, KIND.search, { a: 5, b: 0, c: 1, d: 9, flags: FLAG.words | (chars << 8) });
+	const burst: Event[] = [
+		ev(0, KIND.start, { a: 15 }),
+		typed(4_000, 1),
+		typed(4_250, 2),
+		ev(4_300, KIND.workerSleep),
+		typed(4_500, 3),
+		typed(9_000, 1),
+		typed(9_300, 2),
+		typed(10_100, 1),
+	];
+
+	it("numbers the queries and each search's place in its own, leaving every row in the timeline", () => {
+		const lines = timelineLines(burst);
+		expect(lines).toHaveLength(burst.length);
+		expect(lines[1]).toContain("0:04.000  query 1 (1 of 3): search of 1 character,");
+		expect(lines[2]).toContain("query 1 (2 of 3)");
+		expect(lines[4]).toContain("query 1 (3 of 3)");
+		expect(lines[5]).toContain("0:09.000  query 2 (1 of 3)");
+		expect(lines[6]).toContain("query 2 (2 of 3)");
+		expect(lines[7]).toContain("0:10.100  query 2 (3 of 3)");
+	});
+
+	it("starts a new query after a pause, and keeps editing in the same one", () => {
+		const t = summarize(burst, state(), NOW);
+		expect(t.searches.n).toBe(6);
+		expect(t.queries).toBe(2);
+	});
+
+	it("says in the summary how many queries the searches make, and how they were counted", () => {
+		const text = traceLines(summarize(burst, state(), NOW)).map((l) => l.text);
+		expect(text).toContain("queries about 2, searches less than 2 s apart counted as one");
+		const none = traceLines(summarize([ev(0, KIND.start, { a: 5 })], state(), NOW)).map((l) => l.text);
+		expect(none.join("\n")).not.toContain("queries about");
+	});
+
+	it("counts a trace's cut-off searches by the whole run, not by what the timeline shows", () => {
+		const many = Array.from({ length: 700 }, (_, i) => typed(i * 3_000, 3));
+		const cut = timelineLines(many);
+		expect(cut).toHaveLength(300);
+		expect(cut[0]).toContain("query 401 (1 of 1)");
+		expect(cut.at(-1)).toContain("query 700 (1 of 1)");
 	});
 });
 

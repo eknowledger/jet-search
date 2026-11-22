@@ -26,6 +26,8 @@ export type TraceSummary = {
 	events: number;
 	kept: number;
 	searches: { n: number; median: number; p95: number; slowest: SlowSearch[] };
+	/** The searches counted as queries: see `QUERY_GAP_MS`. */
+	queries: number;
 	worker: { starts: number; stops: number; sleeps: number; crashes: number };
 	opens: Array<{ how: string; ms: number }>;
 	builds: Array<{ notes: number; ms: number }>;
@@ -34,6 +36,35 @@ export type TraceSummary = {
 	catchUp: { notes: number; removed: number; ms: number } | null;
 	changes: { times: number; notes: number; removed: number; slowest: number };
 	problems: Array<{ code: string; warn: boolean; at: number }>;
+};
+
+/** Search runs as the user types, so one query makes a search per keystroke. Searches less than this apart count as one query. */
+const QUERY_GAP_MS = 2000;
+
+/** Where a search stands among the searches of its query. */
+type Place = { query: number; index: number; of: number };
+
+/** Number the queries of a trace's searches, from their times only. */
+const placeSearches = (events: Event[]): { places: Map<Event, Place>; queries: number } => {
+	const places = new Map<Event, Place>();
+	let group: Event[] = [];
+	let queries = 0;
+	let last: Event | null = null;
+	const close = (): void => {
+		group.forEach((e, i) => places.set(e, { query: queries, index: i + 1, of: group.length }));
+		group = [];
+	};
+	for (const e of events) {
+		if (e.kind !== KIND.search) continue;
+		if (!last || e.t - last.t >= QUERY_GAP_MS) {
+			close();
+			queries++;
+		}
+		group.push(e);
+		last = e;
+	}
+	close();
+	return { places, queries };
 };
 
 const MAX_SLOW = 3;
@@ -97,6 +128,7 @@ export const summarize = (events: Event[], state: TraceState, now: number): Trac
 			default:
 		}
 	}
+	const { queries } = placeSearches(events);
 	const sorted = [...totals].sort((a, b) => a - b);
 	const median = sorted.length
 		? sorted.length % 2
@@ -113,6 +145,7 @@ export const summarize = (events: Event[], state: TraceState, now: number): Trac
 		events: state.events,
 		kept: state.kept,
 		searches: { n: totals.length, median, p95, slowest: slow.sort((a, b) => b.total - a.total).slice(0, MAX_SLOW) },
+		queries,
 		worker,
 		opens,
 		builds,
@@ -176,6 +209,7 @@ export const traceLines = (t: TraceSummary): Line[] => {
 				? `searches ${num(s.n)}, median ${msText(s.median)} ms, 95% under ${msText(s.p95)} ms`
 				: "no searches",
 		},
+		...(s.n ? [{ text: `queries about ${num(t.queries)}, searches less than 2 s apart counted as one` }] : []),
 		...s.slowest.map((x, i) => ({ text: `${i === 0 ? "slowest" : "next"}: ${slowText(x)}` })),
 		{
 			text: `worker started ${t.worker.starts}x, slept ${t.worker.sleeps}x, crashed ${t.worker.crashes}x`,
@@ -244,6 +278,11 @@ const eventText = (e: Event): string => {
 	}
 };
 
-/** The events as lines of time and words, the newest `max` of them. */
-export const timelineLines = (events: Event[], max = MAX_TIMELINE): string[] =>
-	events.slice(-max).map((e) => `${at(e.t)}  ${eventText(e)}`);
+/** The events as lines of time and words, the newest `max` of them. A search says which query it belongs to. */
+export const timelineLines = (events: Event[], max = MAX_TIMELINE): string[] => {
+	const { places } = placeSearches(events);
+	return events.slice(-max).map((e) => {
+		const p = places.get(e);
+		return `${at(e.t)}  ${p ? `query ${num(p.query)} (${num(p.index)} of ${num(p.of)}): ` : ""}${eventText(e)}`;
+	});
+};
