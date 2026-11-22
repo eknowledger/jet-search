@@ -2148,10 +2148,6 @@ table.jet-set-keys {
 	gap: 8px;
 	margin-top: 12px;
 }
-.jet-support-note {
-	color: var(--text-muted);
-	font-size: var(--font-ui-small);
-}
 .jet-support-buttons {
 	display: flex;
 	gap: 8px;

@@ -105,14 +105,10 @@ export class SupportModal extends Modal {
 		});
 
 		const foot = body.createDiv({ cls: "jet-support-foot" });
-		foot.createSpan({
-			cls: "jet-support-note",
-			text: "Jet sends nothing. You press Submit on GitHub.",
-		});
 		const buttons = foot.createDiv({ cls: "jet-support-buttons" });
-		buttons.createEl("button", { text: "Copy as plain text" }).addEventListener("click", () => void this.copy());
+		buttons.createEl("button", { text: "Copy" }).addEventListener("click", () => void this.copy());
 		buttons
-			.createEl("button", { cls: "mod-cta", text: "Report on GitHub" })
+			.createEl("button", { cls: "mod-cta", text: "Report issue" })
 			.addEventListener("click", () => void this.reportOnGithub());
 	}
 
@@ -167,19 +163,19 @@ export class SupportModal extends Modal {
 		});
 		window.open(url, "_blank");
 		if (filled.support) {
-			new Notice("GitHub is open with the report filled in. Read it, then press Submit.");
+			new Notice("GitHub is open with the report filled in. Press Submit when ready.");
 			return;
 		}
 		// What is not in the link goes on the clipboard, for the person to paste into the form.
 		const text = filled.what ? formatForGithub(this.snap, "") : formatForGithub(this.snap, this.what.value);
 		if (await copyText(text)) {
 			new Notice(
-				"GitHub is open. The report is too long for the link: it is on your clipboard, paste it into the Support info box.",
+				"GitHub is open. The report is too long for the link, so it is copied: paste it into the Support info box.",
 			);
 			return;
 		}
 		this.selectReport(
-			"Jet could not copy by itself. The text is selected: press Ctrl/Cmd+C, then paste it into the Support info box on GitHub.",
+			"Could not copy. The text is selected: press Ctrl/Cmd+C, then paste it into the Support info box on GitHub.",
 		);
 	}
 
@@ -188,7 +184,7 @@ export class SupportModal extends Modal {
 			new Notice("Support info copied");
 			return;
 		}
-		this.selectReport("Jet could not copy by itself. The text is selected: press Ctrl/Cmd+C.");
+		this.selectReport("Could not copy. The text is selected: press Ctrl/Cmd+C.");
 	}
 
 	/** Select the report in the window, so Ctrl/Cmd+C finishes a copy the platform would not allow. */

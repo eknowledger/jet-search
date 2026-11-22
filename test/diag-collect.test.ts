@@ -101,7 +101,7 @@ describe("the support info", () => {
 		plugin.supportInfo();
 		const shown = [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
 		[...document.querySelectorAll<HTMLButtonElement>(".jet-support-modal button")]
-			.find((b) => b.textContent === "Copy as plain text")
+			.find((b) => b.textContent === "Copy")
 			?.click();
 		await new Promise((r) => setTimeout(r, 0));
 		expect(written).toEqual([shown]);
@@ -119,7 +119,7 @@ describe("the support info", () => {
 		if (what) what.value = "Double Shift does nothing";
 		const shown = [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
 		[...document.querySelectorAll<HTMLButtonElement>(".jet-support-modal button")]
-			.find((b) => b.textContent === "Report on GitHub")
+			.find((b) => b.textContent === "Report issue")
 			?.click();
 		await Promise.resolve();
 		expect(open).toHaveBeenCalledTimes(1);
@@ -132,7 +132,7 @@ describe("the support info", () => {
 		expect(url.searchParams.get("support")).toContain(shown.split("\n")[0]);
 		// Nothing is sent by Jet and nothing is posted: the page is open, the person presses Submit.
 		expect(written).toEqual([]);
-		expect(Notice.shown.at(-1)).toContain("press Submit");
+		expect(Notice.shown.at(-1)).toContain("Press Submit");
 	});
 
 	it("puts the report on the clipboard when it is too long for the link, and says to paste it", async () => {
@@ -148,7 +148,7 @@ describe("the support info", () => {
 		const what = document.querySelector<HTMLTextAreaElement>(".jet-support-what");
 		if (what) what.value = "It is slow";
 		[...document.querySelectorAll<HTMLButtonElement>(".jet-support-modal button")]
-			.find((b) => b.textContent === "Report on GitHub")
+			.find((b) => b.textContent === "Report issue")
 			?.click();
 		await new Promise((r) => setTimeout(r, 0));
 		const url = new URL(String(open.mock.calls[0]?.[0]));
@@ -168,11 +168,11 @@ describe("the support info", () => {
 		vi.stubGlobal("navigator", { clipboard: { writeText: () => Promise.reject(new Error("denied")) } });
 		plugin.supportInfo();
 		const copy = [...document.querySelectorAll<HTMLButtonElement>(".jet-support-modal button")].find(
-			(b) => b.textContent === "Copy as plain text",
+			(b) => b.textContent === "Copy",
 		);
 		copy?.click();
 		await new Promise((r) => setTimeout(r, 0));
-		expect(Notice.shown.at(-1)).toContain("could not copy by itself");
+		expect(Notice.shown.at(-1)).toContain("Could not copy");
 	});
 
 	it("says what the worker and the errors did since Obsidian started", async () => {
@@ -268,10 +268,10 @@ describe("the support info", () => {
 		const modal = document.querySelector(".jet-support-modal");
 		expect(modal?.querySelector(".jet-support-lead")).toBeNull();
 		const buttons = [...(modal?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-		expect(buttons).toEqual(["Record", "Copy as plain text", "Report on GitHub"]);
+		expect(buttons).toEqual(["Record", "Copy", "Report issue"]);
 		expect(modal?.querySelector(".jet-support-side")?.textContent).toContain("Add to the report");
 		expect(modal?.querySelectorAll(".jet-support-side input[type=checkbox]")).toHaveLength(4);
-		expect(modal?.querySelector(".jet-support-foot")?.textContent).toContain("Jet sends nothing");
+		expect(modal?.querySelector(".jet-support-foot")?.textContent).not.toContain("sends nothing");
 	});
 
 	it("puts the sentence on what happened in its own card across the window, and the trace under the ticks", async () => {
