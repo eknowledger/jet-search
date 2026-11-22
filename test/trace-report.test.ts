@@ -33,12 +33,12 @@ const EVENTS: Event[] = [
 	ev(2_000, KIND.workerStart),
 	ev(2_100, KIND.indexOpen, { a: 410, flags: OPENED.loaded }),
 	ev(3_000, KIND.changes, { a: 850, b: 12, c: 3, flags: 1 }),
-	ev(4_000, KIND.search, { a: 7, b: 0, c: 4, d: 11, flags: FLAG.words }),
+	ev(4_000, KIND.search, { a: 7, b: 0, c: 4, d: 11, flags: FLAG.words | (5 << 8) }),
 	ev(9_000, KIND.search, { a: 6, b: 0, c: 3, d: 11, flags: FLAG.words }),
 	ev(41_000, KIND.workerSleep),
 	ev(41_001, KIND.workerStop),
 	ev(75_000, KIND.workerStart),
-	ev(75_100, KIND.search, { a: 142, b: 118, c: 19, d: 40, flags: FLAG.words | FLAG.cold }),
+	ev(75_123, KIND.search, { a: 142, b: 118, c: 19, d: 40, flags: FLAG.words | FLAG.cold | (12 << 8) }),
 	ev(80_000, KIND.problem, { label: "search.failed", flags: 0 }),
 	ev(90_000, KIND.changes, { a: 120, b: 4, c: 0 }),
 	ev(95_000, KIND.changes, { a: 60, b: 1, c: 0 }),
@@ -53,7 +53,7 @@ describe("what a trace says in the report", () => {
 		expect(text[0]).toBe("recorded 15 min, stopped by itself, 14 events");
 		expect(text).toContain("searches 3, median 7.0 ms, 95% under 142 ms");
 		expect(text).toContain(
-			"slowest: 142 ms at 1:15 (index wait 118, worker 19, other 5.0), 40 hits, worker had to start",
+			"slowest: 142 ms at 1:15.123 (index wait 118, worker 19, other 5.0), 40 hits, worker had to start",
 		);
 	});
 
@@ -80,7 +80,7 @@ describe("what a trace says in the report", () => {
 		const lines = traceLines(summarize(withBuild, state(), NOW));
 		expect(lines.map((l) => l.text)).toContain("index built: 15,000 notes in 41 s");
 		const p = lines.find((l) => l.text.includes("search.failed"));
-		expect(p).toEqual({ text: "problem search.failed at 1:20", warn: true });
+		expect(p).toEqual({ text: "problem search.failed at 1:20.000", warn: true });
 	});
 
 	it("shows a trace still recording with the time left, and one that was stopped by the user", () => {
@@ -107,15 +107,18 @@ describe("what a trace says in the report", () => {
 
 	it("writes the timeline as time and words, newest 300 at most, with no word of a search", () => {
 		const lines = timelineLines(EVENTS);
-		expect(lines[0]).toBe("0:00  trace started, for 15 min");
-		expect(lines).toContain("0:02  index opened: loaded, 410 ms");
-		expect(lines).toContain("1:15  search, 142 ms (index wait 118, worker 19), 40 hits, worker had to start");
-		expect(lines).toContain("1:20  error search.failed");
-		expect(lines.at(-1)).toBe("15:00  trace stopped by itself");
+		expect(lines[0]).toBe("0:00.000  trace started, for 15 min");
+		expect(lines).toContain("0:02.100  index opened: loaded, 410 ms");
+		expect(lines).toContain(
+			"1:15.123  search of 12 characters, 142 ms (index wait 118, worker 19), 40 hits, worker had to start",
+		);
+		expect(lines).toContain("1:20.000  error search.failed");
+		expect(lines.at(-1)).toBe("15:00.000  trace stopped by itself");
 		const many = Array.from({ length: 700 }, (_, i) => ev(i * 1000, KIND.search, { a: i }));
 		const cut = timelineLines(many);
 		expect(cut).toHaveLength(300);
 		expect(cut.at(-1)).toContain("699 ms");
+		expect(lines).toContain("0:04.000  search of 5 characters, 7.0 ms (index wait 0, worker 4.0), 11 hits");
 	});
 });
 
@@ -136,16 +139,16 @@ describe("the trace in the whole report", () => {
 		expect(labels.indexOf("Trace")).toBe(labels.indexOf("Searches") + 1);
 		expect(labels).not.toContain("Timeline");
 		expect(buildReport(withTrace(true)).map((s) => s.label)).toContain("Timeline");
-		expect(formatReport(withTrace(true))).toContain("0:02  index opened: loaded, 410 ms");
+		expect(formatReport(withTrace(true))).toContain("0:02.100  index opened: loaded, 410 ms");
 	});
 
 	it("folds the timeline in a block of its own in the GitHub copy", () => {
 		const md = formatForGithub(withTrace(true), "");
 		const [main, rest] = md.split("<details>");
 		expect(main).toContain("Trace:");
-		expect(main).not.toContain("0:02  index opened");
+		expect(main).not.toContain("0:02.100  index opened");
 		expect(rest).toContain("<summary>Trace timeline (14 lines)</summary>");
-		expect(rest).toContain("0:02  index opened: loaded, 410 ms");
+		expect(rest).toContain("0:02.100  index opened: loaded, 410 ms");
 		expect(rest).toContain("</details>");
 		expect(formatForGithub(withTrace(), "")).not.toContain("<details>");
 	});

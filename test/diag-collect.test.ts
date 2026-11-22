@@ -222,6 +222,22 @@ describe("the support info", () => {
 		expect(modal?.querySelector(".jet-support-foot")?.textContent).toContain("Nothing leaves this device");
 	});
 
+	it("puts the sentence on what happened in its own card across the window, and the trace under the ticks", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		plugin.supportInfo();
+		const modal = document.querySelector(".jet-support-modal");
+		const card = modal?.querySelector(".jet-support-what-card");
+		expect(card?.textContent).toContain("What happened");
+		expect(card?.querySelector("textarea")).not.toBeNull();
+		expect(modal?.querySelector(".jet-support-side textarea")).toBeNull();
+		expect(card?.nextElementSibling?.className).toContain("jet-support-body");
+		const side = modal?.querySelector(".jet-support-side");
+		expect(side?.lastElementChild?.className).toContain("jet-trace-box");
+		expect(side?.querySelectorAll(":scope > .jet-support-tick")).toHaveLength(3);
+		expect(side?.firstElementChild?.textContent).toBe("Add to the report");
+	});
+
 	it("says what was added, and marks the explanation's lines, when it is shown after adding one", async () => {
 		const { plugin } = make();
 		await plugin.onload();
@@ -276,7 +292,7 @@ describe("the support info", () => {
 		const text = () => [...document.querySelectorAll(".jet-support-line")].map((l) => l.textContent).join("\n");
 		expect(text()).not.toContain("secret-sauce");
 		expect(text()).not.toContain("Nebula Payroll");
-		const [, scopes, plugins] = [
+		const [scopes, plugins] = [
 			...document.querySelectorAll<HTMLInputElement>(".jet-support-side input[type=checkbox]"),
 		];
 		scopes!.checked = true;

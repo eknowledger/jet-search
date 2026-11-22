@@ -53,7 +53,20 @@ describe("what a trace is fed with", () => {
 		trace.start(5);
 		recorder.add(FLAG.words | FLAG.cold, 12, 2, 40, 31, 20, 5, 2, 3, 1);
 		const e = trace.list()[1];
-		expect(e).toMatchObject({ kind: KIND.search, a: 31, b: 20, c: 5, d: 40, flags: FLAG.words | FLAG.cold });
+		expect(e).toMatchObject({
+			kind: KIND.search,
+			a: 31,
+			b: 20,
+			c: 5,
+			d: 40,
+			flags: FLAG.words | FLAG.cold | (12 << 8),
+		});
+	});
+
+	it("keeps only how long a search was (255 at most), never its text", () => {
+		trace.start(5);
+		recorder.add(FLAG.words, 4000, 1, 1, 1, 1, 1, 1, 1, 1);
+		expect(trace.list()[1]?.flags).toBe(FLAG.words | (255 << 8));
 	});
 
 	it("makes nothing while it is off", () => {

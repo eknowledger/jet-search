@@ -31,7 +31,7 @@ const copyText = async (text: string): Promise<boolean> => {
  * sent anywhere. It is read when the window opens and again when a tick box changes.
  */
 export class SupportModal extends Modal {
-	private opts: ReportOptions = { ...NO_OPTIONS };
+	private opts: ReportOptions = { ...NO_OPTIONS, traceTimeline: true };
 	private snap: Snapshot;
 	private pre!: HTMLElement;
 	private what!: HTMLTextAreaElement;
@@ -45,7 +45,7 @@ export class SupportModal extends Modal {
 		private readonly added = false,
 	) {
 		super(app);
-		this.snap = collect(plugin);
+		this.snap = collect(plugin, Date.now(), this.opts);
 	}
 
 	onOpen(): void {
@@ -53,6 +53,12 @@ export class SupportModal extends Modal {
 		this.titleEl.setText("Support info");
 		const body = this.contentEl;
 		body.empty();
+		const card = body.createDiv({ cls: "jet-support-what-card" });
+		card.createEl("h4", { text: "What happened" });
+		this.what = card.createEl("textarea", {
+			cls: "jet-support-what",
+			attr: { rows: "3", placeholder: "Optional: a sentence for the issue" },
+		});
 		if (this.added)
 			body.createDiv({
 				cls: "jet-support-added",
@@ -74,6 +80,14 @@ export class SupportModal extends Modal {
 			});
 
 		const side = grid.createDiv({ cls: "jet-support-side" });
+		side.createEl("h4", { text: "Add to the report" });
+		side.createDiv({
+			cls: "jet-support-hint",
+			text: "Off by default. A ticked item appears in the text on the left.",
+		});
+		this.tick(side, "Scope names", "scopeNames");
+		this.tick(side, "Names of enabled plugins", "pluginNames");
+		this.tick(side, "Search text and note names (in the explanation)", "explainNames");
 		this.traceBox = new TraceBox(side, this.plugin, {
 			get: () => this.opts.traceTimeline,
 			set: (on) => {
@@ -86,19 +100,6 @@ export class SupportModal extends Modal {
 			if (!this.pre.isConnected) return;
 			this.traceBox?.update();
 			this.again();
-		});
-		side.createEl("h4", { text: "Add to the report" });
-		side.createDiv({
-			cls: "jet-support-hint",
-			text: "Off by default. A ticked item appears in the text on the left.",
-		});
-		this.tick(side, "Scope names", "scopeNames");
-		this.tick(side, "Names of enabled plugins", "pluginNames");
-		this.tick(side, "Search text and note names (in the explanation)", "explainNames");
-		side.createEl("h4", { cls: "jet-support-what-title", text: "What happened" });
-		this.what = side.createEl("textarea", {
-			cls: "jet-support-what",
-			attr: { rows: "4", placeholder: "Optional: a sentence for the issue" },
 		});
 
 		const foot = body.createDiv({ cls: "jet-support-foot" });

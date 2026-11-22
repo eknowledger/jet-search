@@ -4,7 +4,7 @@
  * and word here comes from the events, which hold codes and numbers only.
  */
 import type { Line } from "./report";
-import { FLAG } from "./recorder";
+import { FLAG, SEARCH_CHARS } from "./recorder";
 import { KIND, OPENED, type Event, type Stopped, type TraceState } from "./trace";
 import { msText, num, plural } from "./format";
 
@@ -123,13 +123,15 @@ export const summarize = (events: Event[], state: TraceState, now: number): Trac
 	};
 };
 
-/** Seconds into the trace as `m:ss` (`h:mm:ss` past an hour). */
+/** Time into the trace as `m:ss.mmm` (`h:mm:ss.mmm` past an hour), so two events a hair apart can be told apart. */
 const at = (ms: number): string => {
-	const s = Math.round(ms / 1000);
+	const whole = Math.max(0, Math.round(ms));
+	const milli = String(whole % 1000).padStart(3, "0");
+	const s = Math.floor(whole / 1000);
 	const sec = String(s % 60).padStart(2, "0");
 	return s >= 3600
-		? `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${sec}`
-		: `${Math.floor(s / 60)}:${sec}`;
+		? `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${sec}.${milli}`
+		: `${Math.floor(s / 60)}:${sec}.${milli}`;
 };
 
 const mins = (ms: number): string => {
@@ -227,7 +229,7 @@ const eventText = (e: Event): string => {
 			return `${e.flags & 1 ? "catch-up" : "changes sent"}: ${plural(e.b, "note")} changed, ${num(e.c)} removed, ${msText(e.a)} ms`;
 		case KIND.search:
 			return [
-				`search, ${msText(e.a)} ms (index wait ${msText(e.b)}, worker ${msText(e.c)})`,
+				`search${e.flags >> SEARCH_CHARS ? ` of ${plural(e.flags >> SEARCH_CHARS, "character")}` : ""}, ${msText(e.a)} ms (index wait ${msText(e.b)}, worker ${msText(e.c)})`,
 				plural(e.d, "hit"),
 				flagsText(e.flags),
 			]

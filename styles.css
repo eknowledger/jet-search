@@ -2112,9 +2112,6 @@ table.jet-set-keys {
 	margin: 0 0 6px;
 	font-size: var(--font-ui-small);
 }
-.jet-support-side .jet-support-what-title {
-	margin-top: 14px;
-}
 .jet-support-hint {
 	margin-bottom: 8px;
 	color: var(--text-muted);
@@ -2127,7 +2124,19 @@ table.jet-set-keys {
 	padding: 4px 0;
 	font-size: var(--font-ui-small);
 }
+.jet-support-what-card {
+	margin-bottom: 12px;
+	padding: 10px 14px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background-color: var(--background-secondary);
+}
+.jet-support-what-card h4 {
+	margin: 0 0 6px;
+	font-size: var(--font-ui-small);
+}
 .jet-support-what {
+	display: block;
 	width: 100%;
 	resize: vertical;
 }
@@ -2147,9 +2156,9 @@ table.jet-set-keys {
 	display: flex;
 	gap: 8px;
 }
-/* The trace's controls, at the top of the side column */
+/* The trace's controls, under the ticks of the side column */
 .jet-trace-box {
-	margin-bottom: 14px;
+	margin-top: 14px;
 	padding: 9px 10px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
@@ -2169,6 +2178,16 @@ table.jet-set-keys {
 	margin-right: 6px;
 	border-radius: 50%;
 	background-color: var(--color-red);
+	animation: jet-trace-blink 1.4s ease-in-out infinite;
+}
+@keyframes jet-trace-blink {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.12;
+	}
 }
 .jet-trace-state {
 	margin: 3px 0 8px;
@@ -2198,6 +2217,13 @@ table.jet-set-keys {
 	margin-right: 5px;
 	border-radius: 50%;
 	background-color: var(--color-red);
+	animation: jet-trace-blink 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.jet-trace-dot,
+	.status-bar-item.jet-trace-status::before {
+		animation: none;
+	}
 }
 @media (max-width: 600px) {
 	.jet-support-body {

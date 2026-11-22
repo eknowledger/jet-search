@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, Notice, Platform } from "obsidian";
 import { buttonNamed, goTo, tabOf } from "./settings-ui";
@@ -155,7 +156,7 @@ describe("the trace box in the support info", () => {
 		expect(report()).toContain("stopped by you");
 	});
 
-	it("keeps the recorded numbers in the report after it stopped, with the timeline only when ticked", async () => {
+	it("keeps the recorded numbers and the timeline in the report after it stopped, and drops the timeline when unticked", async () => {
 		const plugin = make();
 		await plugin.onload();
 		plugin.supportInfo();
@@ -163,14 +164,15 @@ describe("the trace box in the support info", () => {
 		recorder.add(1, 12, 2, 5, 20, 1, 8, 2, 6, 3);
 		buttonNamed(box(), "Stop")?.click();
 		expect(report()).toContain("searches 1, median 20 ms");
-		expect(report()).not.toContain("Timeline:");
+		expect(report()).toContain("Timeline:");
+		expect(report()).toContain("search of 12 characters, 20 ms");
 		const tick = [...box().querySelectorAll<HTMLInputElement>("input[type=checkbox]")].find((i) =>
 			i.parentElement?.textContent?.includes("full timeline"),
 		) as HTMLInputElement;
-		tick.checked = true;
+		expect(tick.checked).toBe(true);
+		tick.checked = false;
 		tick.dispatchEvent(new Event("change"));
-		expect(report()).toContain("Timeline:");
-		expect(report()).toContain("search, 20 ms");
+		expect(report()).not.toContain("Timeline:");
 	});
 
 	it("keeps the next-start choice", async () => {
@@ -211,5 +213,16 @@ describe("the trace card in the settings", () => {
 		expect(buttonNamed(again, "Stop recording")).not.toBeNull();
 		buttonNamed(again, "Stop recording")?.click();
 		expect(trace.on).toBe(false);
+	});
+});
+
+describe("the recording light", () => {
+	const css = readFileSync("styles.css", "utf8");
+
+	it("blinks like a camera's, in the window and in the status bar, and holds still when motion is reduced", () => {
+		expect(css).toContain("@keyframes jet-trace-blink");
+		expect(css).toMatch(/\.jet-trace-dot\s*\{[^}]*animation: jet-trace-blink/);
+		expect(css).toMatch(/\.jet-trace-status::before\s*\{[^}]*animation: jet-trace-blink/);
+		expect(css).toMatch(/prefers-reduced-motion: reduce\)\s*\{[^}]*\.jet-trace-dot[^}]*animation: none/s);
 	});
 });
