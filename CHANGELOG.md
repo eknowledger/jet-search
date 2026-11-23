@@ -4,6 +4,24 @@ All notable changes to Jet Search. The format follows [Keep a Changelog](https:/
 
 Each entry is a bold name, a colon and one short sentence. Detail, if any, goes on the lines below it. The notes on each GitHub release are built from the first line of every entry.
 
+## 0.8.0 - 2026-11-22
+
+### Added
+- **Report issue**: a window that gathers what Jet knows about itself, to copy or send with a bug report.
+  Open it from the command palette (Jet Search: Report issue) or from Settings, Advanced. It holds the version, the device, the settings, how the index opened, what the worker did and the last 100 searches as numbers. It names no note, search or scope unless you tick the box for it. The support tools add about 0.6 ms to the plugin's start and 0.4 MB of memory, and nothing measurable to a search.
+- **Open on GitHub**: a bug report opens on GitHub with your sentence and the report already filled in.
+  You press Submit yourself, and Jet sends nothing. A report too long for the link is copied, and you paste it into the Support info box.
+- **Explain**: see why a search lists what it does, and why a note you expected is missing.
+  Press Ctrl/Cmd + Shift + E in Jet's window. Three tabs cover the note you selected, the whole search and a note you name. It works for words and for meaning, and a nothing-found search offers Why? on its notice. The Explain command opens it on your last search. Its Report issue button adds the explanation to a report.
+- **Trace**: record what Jet does for 5, 10, 15, 30 or 60 minutes, to find a slow start or a slow search.
+  It keeps numbers and codes, never a word of a search or a note name. A red dot in the status bar shows while it records. Start it from Settings, Advanced, from the search window's settings or from a command, and "Also record the next start" records once at the next launch. Recording adds no measurable time to a search.
+
+### Fixed
+- **A hotkey bound to Omnisearch**: a hotkey or a double tap bound to Omnisearch now opens Jet at the first press after Omnisearch is turned off.
+- **Explain by meaning after a rest**: Explain by meaning now loads the model first, so it no longer says meaning is not ready.
+- **Explain with Title only**: Explain now says only names were searched, in place of figures from a text search that did not run.
+- **The Report issue window at unload**: turning Jet off now closes the window, and asking for it twice leaves one.
+
 ## 0.7.1 - 2026-11-20
 
 ### Changed
