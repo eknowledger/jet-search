@@ -143,16 +143,17 @@ export class SupportModal extends Modal {
 	private draw(): void {
 		this.pre.empty();
 		const sections = buildReport(this.snap);
-		// A long line that wraps goes back under its text, not under the heading.
+		// The label is a column of its own, so a long line that wraps goes back under its text, not under the heading.
 		this.pre.setCssProps({ "--jet-label": `${labelWidth(sections)}ch` });
 		for (const r of layout(sections)) {
 			const line = this.pre.createDiv({
 				cls: `jet-support-line${this.added && r.section === "Explain" ? " is-added" : ""}`,
 			});
-			if (r.first) line.createSpan({ cls: "jet-support-key", text: r.label });
-			else line.appendText(r.label);
-			if (r.warn) line.createSpan({ cls: "jet-support-warn", text: r.text });
-			else line.appendText(r.text);
+			line.createSpan({
+				cls: r.first ? "jet-support-label jet-support-key" : "jet-support-label",
+				text: r.label,
+			});
+			line.createSpan({ cls: r.warn ? "jet-support-text jet-support-warn" : "jet-support-text", text: r.text });
 		}
 	}
 

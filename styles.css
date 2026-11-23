@@ -2083,8 +2083,8 @@ table.jet-set-keys {
 	user-select: text;
 }
 .jet-support-line {
-	padding-left: var(--jet-label, 0ch);
-	text-indent: calc(-1 * var(--jet-label, 0ch));
+	display: grid;
+	grid-template-columns: var(--jet-label, 0ch) minmax(0, 1fr);
 }
 .jet-support-key {
 	color: var(--text-accent);
