@@ -80,6 +80,8 @@ export default class JetSearchPlugin extends Plugin {
 	private built = false;
 	/** The status bar line while a trace records (nothing exists until one does). */
 	private readonly traceIndicator = new TraceIndicator(this);
+	/** The Report issue window, while it is open. */
+	private support: SupportModal | null = null;
 	readonly save = debounce(() => void this.saveData(this.data), 1000, true);
 
 	async onload(): Promise<void> {
@@ -301,6 +303,7 @@ export default class JetSearchPlugin extends Plugin {
 		for (const [id, cmd] of this.standIns) if (commandAt(this.app, id) === cmd) removeCommand(this.app, id);
 		this.standIns.clear();
 		this.modal?.close();
+		this.support?.close();
 		this.feeder.stop();
 		this.watcher.stop();
 		this.jade?.stop();
@@ -324,7 +327,9 @@ export default class JetSearchPlugin extends Plugin {
 
 	/** The support info window: what Jet knows about itself, to read and copy. */
 	supportInfo(added = false): void {
-		new SupportModal(this.app, this, added).open();
+		this.support?.close();
+		this.support = new SupportModal(this.app, this, added);
+		this.support.open();
 	}
 
 	/** Every window that holds a leaf (the main one too). */

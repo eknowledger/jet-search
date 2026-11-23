@@ -68,7 +68,8 @@ const placeSearches = (events: Event[]): { places: Map<Event, Place>; queries: n
 };
 
 const MAX_SLOW = 3;
-const MAX_PROBLEMS = 10;
+/** Problems the trace summary lists (the report keeps more of its own). */
+const SHOWN_PROBLEMS = 10;
 export const MAX_TIMELINE = 300;
 
 export const summarize = (events: Event[], state: TraceState, now: number): TraceSummary => {
@@ -152,7 +153,7 @@ export const summarize = (events: Event[], state: TraceState, now: number): Trac
 		building,
 		catchUp,
 		changes,
-		problems: problems.slice(-MAX_PROBLEMS),
+		problems: problems.slice(-SHOWN_PROBLEMS),
 	};
 };
 

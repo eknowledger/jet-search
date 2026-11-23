@@ -28,7 +28,8 @@ const TABS: Array<[Tab, string]> = [
 ];
 /** The rest after the last change in the list or the selection, before the worker is asked. */
 const REST_MS = 120;
-const SUGGESTIONS = 6;
+/** Notes the pane offers for "a note I expected". */
+export const SUGGESTIONS = 6;
 
 /**
  * The explanation, in the place of the preview. It asks for nothing until it is opened, and then once

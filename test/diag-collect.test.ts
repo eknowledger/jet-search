@@ -102,6 +102,16 @@ describe("the support info", () => {
 		expect(document.querySelector(".jet-support-modal")).not.toBeNull();
 	});
 
+	it("closes the window when Jet unloads, and keeps one window when asked again", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		plugin.supportInfo();
+		plugin.supportInfo();
+		expect(document.querySelectorAll(".jet-support-modal")).toHaveLength(1);
+		plugin.onunload();
+		expect(document.querySelector(".jet-support-modal")).toBeNull();
+	});
+
 	it("copies exactly what the window shows", async () => {
 		const { plugin } = make();
 		await plugin.onload();

@@ -14,6 +14,7 @@ import {
 	realNames,
 	searchView,
 	tagNames,
+	titleOnlyView,
 	type Namer,
 	type View,
 	viewLines,
@@ -80,6 +81,16 @@ const filterWords = (f: Filter): FilterWords => {
 	}
 };
 
+/** The views as the window shows them, and as lines for a report (tags in place of the names unless `names`). */
+const explained = (req: ExplainRequest, build: (n: Namer) => { search: View; note: View | null }): Explained => ({
+	...build(realNames),
+	lines: (names) => {
+		const v = build(names ? realNames : tagNames());
+		const head = names ? `search "${req.text.trim()}"` : "the search";
+		return [head, ...viewLines(v.search), ...(v.note ? ["", ...viewLines(v.note)] : [])];
+	},
+});
+
 /**
  * Explains a search the window just ran. It asks the worker only now, once; no search calls it. The facts only
  * the main thread knows (the exclude rules, the scope, the filters, a quoted phrase) are added to what the
@@ -89,17 +100,6 @@ export class Explainer {
 	constructor(private readonly d: ExplainDeps) {}
 
 	async run(req: ExplainRequest): Promise<Explained> {
-		await this.d.ensure();
-		if (req.mode === "meaning") await this.d.ensureMeaning?.();
-		const { app, client } = this.d;
-		const reply: ExplainReply = await client.explain({
-			mode: req.mode,
-			text: req.text,
-			path: req.path,
-			limit: LIMIT,
-			allow: req.narrowed ? [...req.narrowed] : undefined,
-			scope: req.narrowed ? undefined : wireWhere(req.scope),
-		});
 		const ctx: Context = {
 			text: req.text,
 			mode: req.mode,
@@ -113,6 +113,19 @@ export class Explainer {
 			limit: LIMIT,
 			building: this.d.progress(),
 		};
+		// Names only: the worker's text index is not what the window searched, so it is not asked.
+		if (ctx.titleOnly) return this.titleOnly(req, ctx);
+		await this.d.ensure();
+		if (req.mode === "meaning") await this.d.ensureMeaning?.();
+		const { app, client } = this.d;
+		const reply: ExplainReply = await client.explain({
+			mode: req.mode,
+			text: req.text,
+			path: req.path,
+			limit: LIMIT,
+			allow: req.narrowed ? [...req.narrowed] : undefined,
+			scope: req.narrowed ? undefined : wireWhere(req.scope),
+		});
 		const note: NoteContext | null =
 			req.path === null
 				? null
@@ -128,15 +141,25 @@ export class Explainer {
 			search: searchView(ctx, reply, n),
 			note: note ? noteView(ctx, reply, note, n) : null,
 		});
-		const real = build(realNames);
-		return {
-			...real,
-			lines: (names) => {
-				const v = build(names ? realNames : tagNames());
-				const head = names ? `search "${req.text.trim()}"` : "the search";
-				return [head, ...viewLines(v.search), ...(v.note ? ["", ...viewLines(v.note)] : [])];
-			},
-		};
+		return explained(req, build);
+	}
+
+	private titleOnly(req: ExplainRequest, ctx: Context): Explained {
+		const note: NoteContext | null =
+			req.path === null
+				? null
+				: {
+						name: req.name,
+						excluded: excluder(this.d.app, this.d.excluded())(req.path),
+						inScope: req.inScope ? req.inScope.has(req.path) : null,
+						passesFilters: req.narrowed ? req.narrowed.has(req.path) : null,
+						phrase: null,
+						shown: null,
+					};
+		return explained(req, (n) => ({
+			search: titleOnlyView(ctx, null, n),
+			note: note ? titleOnlyView(ctx, note, n) : null,
+		}));
 	}
 
 	/** Whether the note holds the search's quoted phrases (null: none were quoted, or it is not listed). */

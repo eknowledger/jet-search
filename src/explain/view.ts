@@ -326,6 +326,29 @@ export const noteView = (
 	return out;
 };
 
+const TITLE_ONLY = "Title only is on: only note names are searched.";
+const TITLE_ONLY_DETAIL =
+	"Jet looks at the names of notes, not their text, so there is no reading of the text to explain. Turn Title only off to see how the text is read.";
+
+/** A Title only search: the text index is not asked, so the answer says that, and what the main thread knows still holds. */
+export const titleOnlyView = (c: Context, nc: NoteContext | null, n: Namer = realNames): View => {
+	const out: View = {
+		tone: "warn",
+		head: TITLE_ONLY,
+		detail: TITLE_ONLY_DETAIL,
+		...base(c, n),
+		tables: [],
+		notes: [],
+	};
+	if (!nc) return out;
+	const outside = reasonOut(c, nc, true, true);
+	if (outside) {
+		out.head = outside[0];
+		out.detail = outside[1];
+	}
+	return out;
+};
+
 const meaningNote = (c: Context, r: MeaningExplanation, nc: NoteContext, n: Namer): View => {
 	const out: View = { tone: "warn", head: "", detail: null, ...base(c, n), tables: [], notes: [] };
 	const note = r.note;
