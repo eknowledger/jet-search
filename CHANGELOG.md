@@ -17,7 +17,7 @@ Each entry is a bold name, a colon and one short sentence. Detail, if any, goes 
   It keeps numbers and codes, never a word of a search or a note name. A red dot in the status bar shows while it records. Start it from Settings, Advanced, from the search window's settings or from a command, and "Also record the next start" records once at the next launch. Recording adds no measurable time to a search.
 
 ### Fixed
-- **A hotkey bound to Omnisearch**: a hotkey or a double tap bound to Omnisearch now opens Jet at the first press after Omnisearch is turned off.
+- **A hotkey bound to another plugin**: a hotkey or double tap bound to another search plugin now opens Jet at the first press after it is turned off.
 - **Explain by meaning after a rest**: Explain by meaning now loads the model first, so it no longer says meaning is not ready.
 - **Explain with Title only**: Explain now says only names were searched, in place of figures from a text search that did not run.
 - **The Report issue window at unload**: turning Jet off now closes the window, and asking for it twice leaves one.
