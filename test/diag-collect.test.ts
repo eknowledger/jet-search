@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, Notice, TFile } from "obsidian";
 import { buttonNamed, goTo, tabOf } from "./settings-ui";
@@ -343,6 +344,23 @@ describe("the support info", () => {
 		);
 		const drawn = [...(pre?.querySelectorAll(".jet-support-line") ?? [])].map((l) => l.textContent).join("\n");
 		expect(drawn).toBe(formatReport(collect(plugin)));
+	});
+
+	it("draws each line as a label and a text, so a long line wraps under its text without a hanging indent", async () => {
+		const { plugin } = make();
+		await plugin.onload();
+		plugin.supportInfo();
+		const lines = [...document.querySelectorAll(".jet-support-line")];
+		expect(lines.length).toBeGreaterThan(3);
+		for (const l of lines) {
+			expect([...l.children].map((c) => c.className.split(" ")[0])).toEqual([
+				"jet-support-label",
+				"jet-support-text",
+			]);
+		}
+		const css = readFileSync("styles.css", "utf8");
+		expect(css).not.toMatch(/text-indent/);
+		expect(css).toMatch(/\.jet-support-line \{[^}]*grid-template-columns: var\(--jet-label/);
 	});
 
 	it("adds scope and plugin names only after their box is ticked, and takes them out again", async () => {
