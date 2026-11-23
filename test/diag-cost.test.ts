@@ -53,10 +53,10 @@ describe("the support info stays out of the hot paths", () => {
 
 	it("the report is built only on request: Obsidian's start does not import its collector eagerly into a listener", () => {
 		const main = read("src/main.ts");
-		// The only mention of the window in main is the command that opens it.
-		const mentions = main.split("\n").filter((l) => /SupportModal|collect\(/.test(l) && !l.startsWith("import"));
-		expect(mentions.length).toBe(1);
-		expect(mentions[0]).toMatch(/new SupportModal/);
+		// The window is made in one place, the method that opens it; the collector is never named.
+		const lines = main.split("\n").filter((l) => !l.startsWith("import"));
+		expect(lines.filter((l) => /collect\(/.test(l))).toEqual([]);
+		expect(lines.filter((l) => /new SupportModal/.test(l))).toHaveLength(1);
 	});
 
 	it("the recorder is touched only by the full-text and meaning searches, outside loops and callbacks", () => {

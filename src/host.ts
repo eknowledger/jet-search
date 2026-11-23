@@ -44,7 +44,7 @@ import type { IndexStatus } from "./index-status";
 import { fail } from "./diag/diag";
 import type { Explainer } from "./explain/explainer";
 import { keepExplained } from "./explain/last";
-import type { Candidate } from "./modal/explain-pane";
+import { type Candidate, SUGGESTIONS } from "./modal/explain-pane";
 
 /** The icon for a note, by its `type` property: email, project, otherwise a page. */
 export const iconOf = (app: App, file: TFile): string => {
@@ -153,7 +153,7 @@ export class JetHost implements ModalHost {
 		}
 		return out
 			.sort((a, b) => Number(b.start) - Number(a.start) || b.file.stat.mtime - a.file.stat.mtime)
-			.slice(0, 8)
+			.slice(0, SUGGESTIONS)
 			.map(({ file }) => ({
 				path: file.path,
 				name: file.basename,

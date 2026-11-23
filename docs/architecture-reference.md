@@ -1039,7 +1039,7 @@ Other host duties:
 | The Command-K actions and their keys | `actions(path)`, `act(id, path)` (open, copy link, URL, path, reveal, move, bookmark, backlinks, search in this note) |
 | Completion lists for filters and scopes | the `filters` getter, `complete()` |
 | Remember on close | `closed(text, opened, scope, filters, also)`: bumps scope usage, stores the last scope and filters when Persist filters is on, remembers the search (with its scopes and filters in the form that applies them again), calls `Search.idle()`, saves |
-| Explain a search | the `explain` getter (`run`, `find`, `keep`, `support`): `run` adds the scope names and the path sets the scope and the filters keep, then calls `Explainer.run`; `find` is `findNotes`, which lists up to 8 notes whose name has every word typed. The ⌘K list gains "Explain this result" only when an explainer exists |
+| Explain a search | the `explain` getter (`run`, `find`, `keep`, `support`): `run` adds the scope names and the path sets the scope and the filters keep, then calls `Explainer.run`; `find` is `findNotes`, which lists up to `SUGGESTIONS` (6) notes whose name has every word typed. The ⌘K list gains "Explain this result" only when an explainer exists |
 | The trace in the settings popover | `traceRow`: how long to record, and a Record or Stop button that follows the trace |
 
 #### Rows and the result list
@@ -1668,7 +1668,7 @@ An answer that arrives after a newer question is dropped (a token in the pane). 
 |---|---|
 | This note | The selected row. Absent when no row is selected |
 | The search | The search alone: how each word was read, and the rule that decided what is listed |
-| A note I expected | A box that suggests notes by name as you type (`JetHost.findNotes`: names with every word typed, names that start with the first word first, then the newest; up to 8 asked for, 6 drawn). Arrows and Enter pick one; Esc clears the typed name first, then leaves the pane |
+| A note I expected | A box that suggests notes by name as you type (`JetHost.findNotes`: names with every word typed, names that start with the first word first, then the newest; up to 6, the number the pane draws). Arrows and Enter pick one; Esc clears the typed name first, then leaves the pane |
 
 When the window shows both words and meaning, the pane has a "By words / By meaning" switch and follows the selected row's kind.
 
@@ -1682,7 +1682,7 @@ For meaning, `explainMeaning` (`src/meaning/explain.ts`) scores every note in th
 
 #### Explain: keeping it for the report
 
-The pane's "Report issue" button calls `io.keep(result)`, which is `keepExplained` in `src/explain/last.ts`: a module-level variable holding the `Explained`, and nothing else. Then `io.support()` opens the report window with `added` true. `collect` reads `keptExplained()?.lines(opts.explainNames)`: the lines come out with tags (`word#1`, `note#1`, `scope#1`, a filter by its kind) unless the person ticked "Search text and note names". The explanation stays kept, and goes into any later report, until a newer one replaces it or Jet is turned off (`keepExplained(null)` in `onunload`).
+The pane's "Report issue" button calls `io.keep(result)`, which is `keepExplained` in `src/explain/last.ts`: a module-level variable holding the `Explained`, and nothing else. Then `io.support()` opens the report window with `added` true. `collect` reads `keptExplained()?.lines(opts.explainNames)`: the lines come out with tags (`word#1`, `note#1`, `scope#1`, a filter by its kind) unless the person ticked "Search text and note names". The explanation stays kept, and goes into any later report, until a newer one replaces it or Jet is turned off (`keepExplained(null)` in `onunload`). Asking for the report window again closes the one open, and `onunload` closes it too.
 
 #### What each costs
 
@@ -2611,9 +2611,8 @@ What Jet does not do, and what is not yet verified. Where a number is known, it 
 - **"Queries" in the trace are a guess from time.** Searches less than 2 seconds apart (`QUERY_GAP_MS`) count as one query, with no look at the text, so two quick unrelated searches are one, and a slow typist's one query is several. The summary says "about".
 - **The GitHub link has a budget, and the form comes from the default branch.** A report over `URL_BUDGET` (6,000 characters) goes to the clipboard and the person pastes it, which is what a report with a long timeline does. GitHub reads the issue form from the repository's default branch, so a changed form reaches the link only after it is merged there. Jet cannot tell whether the person pressed Submit.
 - **Explain runs the real query again.** It costs one query, uncut (every matching note is scored and listed, not the top 50), plus lookups for each word, each time the pane asks. It is asked once per settled change while the pane is open, not per keystroke, and its cost on a large vault is measured by `npm run bench:explain` and not asserted by a test.
-- **Explain shows the figures of a text search even when the window did not run one.** With Title only on, the window asks no worker, but the pane still asks the text index, adds a note that only names are searched, and gives ranks of a search the window did not make. A note the window lists by its name, and the text search does not list, is told it is "listed under Titles", with no figures for the names tier.
+- **Explain says little for a Title only search.** The window searches names only, and the text index is not what it ran, so Explain does not ask the worker. It says that only names were searched and that the text is not looked at; an exclude rule, the scope and the filters are still told for a note. It does not say why a name matched.
 - **Explain does not cover every list.** The in-note window has none. The Answers list has no explanation of its own: a note the text search does not list but the window shows under another heading is told it is "listed under" that heading, "not by the text". The wording of the explanation is English only.
-- **A report window open at unload stays open.** `onunload` closes Jet's search window but does not keep or close the report window; its trace listener is released only when that window is closed.
 
 ## 16. Contributing
 
@@ -2835,7 +2834,7 @@ Nested shapes: `Scope {id, name, aliases, kind, rules, combine, mode, source, or
 | `SEARCH_CHARS` | 8 | `src/diag/recorder.ts` | the shift that puts a query's length in the high byte of a search event's flags (255 at most) |
 | `KEEP` (recorder) | 100 | same | searches held; rows of 7 floats and 3 integers |
 | `MAX_PROBLEMS` (diag) | 20 | `src/diag/diag.ts` | problems held, oldest dropped |
-| `MAX_PROBLEMS` (trace report) | 10 | `src/diag/trace-report.ts` | the newest problems the Trace section lists |
+| `SHOWN_PROBLEMS` (trace report) | 10 | `src/diag/trace-report.ts` | the newest problems the Trace section lists |
 | `QUERY_GAP_MS` | 2,000 ms | same | searches less apart than this count as one query |
 | `MAX_SLOW` | 3 | same | slowest searches the Trace section names |
 | `MAX_TIMELINE` | 300 | same | the newest events the Timeline lists |
@@ -2845,7 +2844,7 @@ Nested shapes: `Scope {id, name, aliases, kind, rules, combine, mode, source, or
 | `LIMIT` | 50 | `src/explain/explainer.ts` | what the window lists, and so how far the explanation reads "the cut" (also `k` for meaning) |
 | `REST_MS` | 120 ms | `src/modal/explain-pane.ts` | rest after the last change before the worker is asked |
 | `SUGGESTIONS` | 6 | same | notes drawn under "A note I expected" |
-| candidates asked | 8 | `JetHost.findNotes` in `src/host.ts` (a literal `slice(0, 8)`) | notes whose name has the words typed |
+| candidates asked | 6 | `JetHost.findNotes` in `src/host.ts` (`SUGGESTIONS`, the constant above) | notes whose name has the words typed |
 
 ### 17.5 Where to find more
 

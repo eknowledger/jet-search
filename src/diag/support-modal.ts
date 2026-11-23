@@ -209,8 +209,11 @@ export class SupportModal extends Modal {
 	}
 
 	onClose(): void {
+		// Asked to close twice (a second window opening, Jet unloading): the second finds nothing to undo.
 		this.offTrace?.();
+		this.offTrace = null;
 		this.traceBox?.stop();
+		this.traceBox = null;
 		this.contentEl.empty();
 	}
 }
