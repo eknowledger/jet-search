@@ -56,6 +56,8 @@ export type ExplainDeps = {
 	client: JetClient;
 	/** The index is open (it opens it if asleep). */
 	ensure: () => Promise<void>;
+	/** The model is in the worker (it loads it if the worker slept); asked only for an explanation by meaning. */
+	ensureMeaning?: () => Promise<boolean>;
 	progress: () => Progress;
 	excluded: () => readonly string[];
 };
@@ -88,6 +90,7 @@ export class Explainer {
 
 	async run(req: ExplainRequest): Promise<Explained> {
 		await this.d.ensure();
+		if (req.mode === "meaning") await this.d.ensureMeaning?.();
 		const { app, client } = this.d;
 		const reply: ExplainReply = await client.explain({
 			mode: req.mode,

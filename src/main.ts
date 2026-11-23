@@ -200,6 +200,7 @@ export default class JetSearchPlugin extends Plugin {
 				app: this.app,
 				client: this.client,
 				ensure: () => this.feeder.ensure(),
+				ensureMeaning: () => this.feeder.ensureMeaning(),
 				progress: () => this.feeder.progress,
 				excluded: () => this.data.settings.exclude,
 			}),
